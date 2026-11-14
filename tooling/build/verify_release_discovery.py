@@ -20,7 +20,8 @@ def main():
         shutil.copyfile(ROOT / 'tooling/build/build.py', tooling / 'build.py')
         tests = root / 'tests/Release Only'
         tests.mkdir(parents=True)
-        (tests / 'Regression.csproj').write_text('''<Project Sdk="Microsoft.NET.Sdk">
+        # Byte writes preserve repository LF on Windows too; text mode translates to CRLF.
+        (tests / 'Regression.csproj').write_bytes('''<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <OutputType>Exe</OutputType>
@@ -33,8 +34,8 @@ def main():
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
   </ItemGroup>
 </Project>
-''', encoding='utf-8')
-        (tests / 'RegressionTests.cs').write_text('''namespace Regression;
+'''.encode('utf-8'))
+        (tests / 'RegressionTests.cs').write_bytes('''namespace Regression;
 
 public sealed class RegressionTests
 {
@@ -42,7 +43,7 @@ public sealed class RegressionTests
     public void ReleaseOnlyFailureMustNotBeSkipped() =>
         Xunit.Assert.Fail("deliberate Release-only regression fixture");
 }
-''', encoding='utf-8')
+'''.encode('utf-8'))
         command = [sys.executable, str(tooling / 'build.py')]
         subprocess.run([*command, 'sync'], cwd=root, check=True)
         subprocess.run([*command, 'update-locks'], cwd=root, check=True,
