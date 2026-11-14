@@ -272,6 +272,17 @@ public sealed class StorageTests : IDisposable
         Assert.Equal(StorageFailure.MigrationFailed, failure.Failure);
         Assert.NotNull(failure.BackupPath);
         Assert.True(File.Exists(failure.BackupPath));
+        // A read-only SQLite connection can leave WAL/SHM files behind. Create fixture
+        // sidecars with the same strict ownership as the store rather than the elevated
+        // Windows token's default Administrators owner. Never repair existing files.
+        foreach (string suffix in new[]
+        {
+            "-wal",
+            "-shm"
+        })
+        {
+            using FileStream sidecar = StorageLocation.CreateOrOpen(failure.BackupPath + suffix);
+        }
         await using SqliteConnection backup = new SqliteConnection(new SqliteConnectionStringBuilder
         {
             DataSource = failure.BackupPath,
