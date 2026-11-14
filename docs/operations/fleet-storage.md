@@ -168,3 +168,7 @@ Implementation evidence: macOS 27.2.1 arm64; SDK 10.0.404, runtime .NET 10;
 19 tests passed, zero skipped; standalone test and format checks passed. Windows runtime, full-disk/kill-during-migration chaos,
 malicious filesystem races, 20-instance load, line/branch coverage and mutation
 thresholds have not been verified. These remain independent QA/integration gates.
+
+## Later owner policy: explicit C# types
+
+All checked-in C# now uses explicit types, including tests and migration source. Root `.editorconfig` rejects `var` through IDE0008; standalone validation copies the policy and enables style checks during compilation. Existing namespace/braces formatting was normalized to the shared baseline. After conversion, standalone warning-as-error compilation, all 19 SQLite tests (zero failures/skips), and formatting passed. This does not constitute independent QA or native platform acceptance.

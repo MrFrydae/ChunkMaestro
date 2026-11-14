@@ -34,13 +34,13 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var directory = location.Prepare();
+            string directory = location.Prepare();
             try { controller = StorageLocation.CreateOrOpen(Path.Combine(directory, "controller.lock")); }
             catch (IOException) { throw new FleetStorageException(StorageFailure.ControllerInUse, "Another controller holds this local store."); }
-            using var migrationLock = StorageLocation.CreateOrOpen(Path.Combine(directory, "migration.lock"));
-            var databasePath = Path.Combine(directory, "fleet.db");
+            using FileStream migrationLock = StorageLocation.CreateOrOpen(Path.Combine(directory, "migration.lock"));
+            string databasePath = Path.Combine(directory, "fleet.db");
             using (StorageLocation.CreateOrOpen(databasePath)) { }
-            var connectionString = new SqliteConnectionStringBuilder
+            string connectionString = new SqliteConnectionStringBuilder
             {
                 DataSource = databasePath,
                 Mode = SqliteOpenMode.ReadWrite,
@@ -48,31 +48,46 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
                 ForeignKeys = true,
                 DefaultTimeout = 3
             }.ToString();
-            var options = new DbContextOptionsBuilder<FleetDbContext>().UseSqlite(connectionString).Options;
-            await using var db = new FleetDbContext(options);
+            DbContextOptions<FleetDbContext> options = new DbContextOptionsBuilder<FleetDbContext>().UseSqlite(connectionString).Options;
+            await using FleetDbContext db = new FleetDbContext(options);
             await db.Database.OpenConnectionAsync(cancellationToken);
-            var connection = (SqliteConnection)db.Database.GetDbConnection();
+            SqliteConnection connection = (SqliteConnection)db.Database.GetDbConnection();
             await VerifyIntegrityAsync(connection, cancellationToken);
-            var known = db.Database.GetMigrations().ToArray();
-            var applied = (await db.Database.GetAppliedMigrationsAsync(cancellationToken)).ToArray();
+            string[] known = db.Database.GetMigrations().ToArray();
+            string[] applied = (await db.Database.GetAppliedMigrationsAsync(cancellationToken)).ToArray();
             if (applied.Any(x => !known.Contains(x, StringComparer.Ordinal)))
+            {
                 throw new FleetStorageException(StorageFailure.NewerSchema, "Database migration history is newer or incompatible. Open it with the matching application; no downgrade was attempted.");
+            }
+
             if (!applied.SequenceEqual(known.Take(applied.Length)))
+            {
                 throw new FleetStorageException(StorageFailure.UnsupportedSchema, "Database migration history is not a supported prefix.");
-            using (var command = connection.CreateCommand())
+            }
+
+            using (SqliteCommand command = connection.CreateCommand())
             {
                 command.CommandText = "PRAGMA user_version";
-                var version = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
-                if (version > known.Length) throw new FleetStorageException(StorageFailure.NewerSchema, "Database schema version is newer than this application.");
+                int version = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
+                if (version > known.Length)
+                {
+                    throw new FleetStorageException(StorageFailure.NewerSchema, "Database schema version is newer than this application.");
+                }
+
                 command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '__EF%'";
                 if (applied.Length == 0 && Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken)) != 0)
+                {
                     throw new FleetStorageException(StorageFailure.UnsupportedSchema, "Unversioned database contains tables. No migration was attempted.");
+                }
+
                 command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='__EFMigrationsLock'";
                 if (Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken)) != 0)
                 {
                     command.CommandText = "SELECT COUNT(*) FROM __EFMigrationsLock WHERE Id=1";
                     if (Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken)) != 0)
+                    {
                         throw new FleetStorageException(StorageFailure.MigrationFailed, "An abandoned EF migration lock requires reviewed recovery. Database was preserved.");
+                    }
                 }
             }
             if (applied.Length < known.Length)
@@ -80,8 +95,15 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
                 backupPath = await CreateBackupAsync(connection, directory, cancellationToken);
                 try
                 {
-                    if (migrate is null) await db.Database.MigrateAsync(cancellationToken);
-                    else await migrate(db, cancellationToken);
+                    if (migrate is null)
+                    {
+                        await db.Database.MigrateAsync(cancellationToken);
+                    }
+                    else
+                    {
+                        await migrate(db, cancellationToken);
+                    }
+
                     await VerifyIntegrityAsync(connection, cancellationToken);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
@@ -91,7 +113,7 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
                 }
             }
             await db.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL", cancellationToken);
-            var result = new LocalFleetStore(controller, options);
+            LocalFleetStore result = new LocalFleetStore(controller, options);
             controller = null;
             return result;
         }
@@ -109,9 +131,9 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
 
     internal static async Task<string> CreateBackupAsync(SqliteConnection connection, string directory, CancellationToken token)
     {
-        var candidate = Path.Combine(directory, $"before-migration-{Guid.NewGuid():N}.db");
+        string candidate = Path.Combine(directory, $"before-migration-{Guid.NewGuid():N}.db");
         using (StorageLocation.CreateOrOpen(candidate)) { }
-        using var backup = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = candidate, Pooling = false }.ToString());
+        using SqliteConnection backup = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = candidate, Pooling = false }.ToString());
         await backup.OpenAsync(token);
         connection.BackupDatabase(backup);
         await VerifyIntegrityAsync(backup, token);
@@ -120,11 +142,13 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
 
     private static async Task VerifyIntegrityAsync(SqliteConnection connection, CancellationToken token)
     {
-        using var command = connection.CreateCommand();
+        using SqliteCommand command = connection.CreateCommand();
         command.CommandText = "PRAGMA quick_check";
-        using var reader = await command.ExecuteReaderAsync(token);
+        using System.Data.Common.DbDataReader reader = await command.ExecuteReaderAsync(token);
         if (!await reader.ReadAsync(token) || reader.GetString(0) != "ok" || await reader.ReadAsync(token))
+        {
             throw new FleetStorageException(StorageFailure.CorruptDatabase, "SQLite integrity check failed; files were preserved.");
+        }
     }
 
     /// <inheritdoc/>
@@ -134,11 +158,11 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
         try
         {
             ObjectDisposedException.ThrowIf(disposed, this);
-            await using var db = new FleetDbContext(options);
-            var fleets = await db.Fleets.AsNoTracking().OrderBy(x => x.Id).ToArrayAsync(cancellationToken);
-            var hosts = await db.Hosts.AsNoTracking().OrderBy(x => x.Id).ToArrayAsync(cancellationToken);
-            var instances = await db.Instances.AsNoTracking().OrderBy(x => x.Id).ToArrayAsync(cancellationToken);
-            var endpoints = await db.Endpoints.AsNoTracking().ToArrayAsync(cancellationToken);
+            await using FleetDbContext db = new FleetDbContext(options);
+            FleetRow[] fleets = await db.Fleets.AsNoTracking().OrderBy(x => x.Id).ToArrayAsync(cancellationToken);
+            HostRow[] hosts = await db.Hosts.AsNoTracking().OrderBy(x => x.Id).ToArrayAsync(cancellationToken);
+            InstanceRow[] instances = await db.Instances.AsNoTracking().OrderBy(x => x.Id).ToArrayAsync(cancellationToken);
+            EndpointRow[] endpoints = await db.Endpoints.AsNoTracking().ToArrayAsync(cancellationToken);
             return new(fleets.Select(x => new Fleet(new(x.Id), x.Name)).ToArray(),
                 hosts.Select(x => new Host(new(x.Id), new(x.FleetId), x.Name, x.Address, DateTimeOffset.FromUnixTimeMilliseconds(x.RegisteredAt), Observation.Unknown)).ToArray(),
                 instances.Select(x => new Instance(new(x.Id), new(x.HostId), x.Name, x.ServiceName, DateTimeOffset.FromUnixTimeMilliseconds(x.RegisteredAt),
@@ -152,7 +176,7 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
     public Task RegisterFleetAsync(FleetId id, string name, CancellationToken cancellationToken = default)
     {
         Identity(id.Value);
-        var row = new FleetRow { Id = id.Value, Name = Label(name) };
+        FleetRow row = new FleetRow { Id = id.Value, Name = Label(name) };
         return WriteAsync(db => { db.Fleets.Add(row); return Task.CompletedTask; }, cancellationToken);
     }
 
@@ -160,7 +184,7 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
     public Task RegisterHostAsync(HostId id, FleetId fleetId, string name, string address, CancellationToken cancellationToken = default)
     {
         Identity(id.Value); Identity(fleetId.Value);
-        var row = new HostRow { Id = id.Value, FleetId = fleetId.Value, Name = Label(name), Address = Address(address), RegisteredAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() };
+        HostRow row = new HostRow { Id = id.Value, FleetId = fleetId.Value, Name = Label(name), Address = Address(address), RegisteredAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() };
         return WriteAsync(db => { db.Hosts.Add(row); return Task.CompletedTask; }, cancellationToken);
     }
 
@@ -168,14 +192,26 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
     public Task RegisterInstanceAsync(InstanceId id, HostId hostId, string name, string serviceName, IReadOnlyList<Endpoint> endpoints, CancellationToken cancellationToken = default)
     {
         Identity(id.Value); Identity(hostId.Value);
-        if (serviceName is null || !Regex.IsMatch(serviceName, @"\A[a-zA-Z0-9][a-zA-Z0-9_.-]{0,120}\.service\z") || endpoints is null || endpoints.Count is < 1 or > 16) throw Invalid();
-        var row = new InstanceRow { Id = id.Value, HostId = hostId.Value, Name = Label(name), ServiceName = serviceName, RegisteredAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() };
-        var endpointRows = endpoints.Select(e =>
+        if (serviceName is null || !Regex.IsMatch(serviceName, @"\A[a-zA-Z0-9][a-zA-Z0-9_.-]{0,120}\.service\z") || endpoints is null || endpoints.Count is < 1 or > 16)
         {
-            if (e is null || !Enum.IsDefined(e.Edition) || e.Port is < 1 or > 65535) throw Invalid();
+            throw Invalid();
+        }
+
+        InstanceRow row = new InstanceRow { Id = id.Value, HostId = hostId.Value, Name = Label(name), ServiceName = serviceName, RegisteredAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() };
+        EndpointRow[] endpointRows = endpoints.Select(e =>
+        {
+            if (e is null || !Enum.IsDefined(e.Edition) || e.Port is < 1 or > 65535)
+            {
+                throw Invalid();
+            }
+
             return new EndpointRow { InstanceId = id.Value, HostId = hostId.Value, Edition = (int)e.Edition, Address = Address(e.Address), Port = e.Port };
         }).ToArray();
-        if (endpointRows.DistinctBy(e => (e.Edition, e.Port)).Count() != endpointRows.Length) throw Invalid();
+        if (endpointRows.DistinctBy(e => (e.Edition, e.Port)).Count() != endpointRows.Length)
+        {
+            throw Invalid();
+        }
+
         return WriteAsync(db =>
         {
             db.Instances.Add(row); db.Endpoints.AddRange(endpointRows); return Task.CompletedTask;
@@ -188,7 +224,7 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
         try
         {
             ObjectDisposedException.ThrowIf(disposed, this);
-            await using var db = new FleetDbContext(options);
+            await using FleetDbContext db = new FleetDbContext(options);
             await add(db);
             try { await db.SaveChangesAsync(token); }
             catch (DbUpdateException ex) when (ex.InnerException is SqliteException sql && sql.SqliteErrorCode == 19) { throw Invalid(); }
@@ -196,18 +232,40 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
         finally { gate.Release(); }
     }
 
-    private static void Identity(Guid id) { if (id == Guid.Empty) throw Invalid(); }
+    private static void Identity(Guid id)
+    {
+        if (id == Guid.Empty)
+        {
+            throw Invalid();
+        }
+    }
     private static string Label(string value)
     {
-        if (string.IsNullOrWhiteSpace(value) || value.Length > 120 || value.Any(char.IsControl)) throw Invalid();
+        if (string.IsNullOrWhiteSpace(value) || value.Length > 120 || value.Any(char.IsControl))
+        {
+            throw Invalid();
+        }
+
         return value.Trim();
     }
     private static string Address(string value)
     {
-        if (string.IsNullOrWhiteSpace(value) || value.Length > 253 || value != value.Trim()) throw Invalid();
-        if (IPAddress.TryParse(value, out var ip)) return ip.ToString().ToLowerInvariant();
-        var host = value.TrimEnd('.').ToLowerInvariant();
-        if (Uri.CheckHostName(host) != UriHostNameType.Dns || host.Contains('_')) throw Invalid();
+        if (string.IsNullOrWhiteSpace(value) || value.Length > 253 || value != value.Trim())
+        {
+            throw Invalid();
+        }
+
+        if (IPAddress.TryParse(value, out IPAddress? ip))
+        {
+            return ip.ToString().ToLowerInvariant();
+        }
+
+        string host = value.TrimEnd('.').ToLowerInvariant();
+        if (Uri.CheckHostName(host) != UriHostNameType.Dns || host.Contains('_'))
+        {
+            throw Invalid();
+        }
+
         return host;
     }
     private static FleetStorageException Invalid() => new(StorageFailure.InvalidRegistration, "Invalid or duplicate registration target; inventory was not changed.");

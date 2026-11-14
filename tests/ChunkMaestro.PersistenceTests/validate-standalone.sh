@@ -4,6 +4,7 @@ repo="$(cd "$(dirname "$0")/../.." && pwd)"
 validation="$(mktemp -d "${TMPDIR:-/tmp}/chunkmaestro-storage-validation.XXXXXXXX")"
 sdk="${CHUNKMAESTRO_DOTNET:-/Users/derek/.local/share/chunkmaestro/dotnet/dotnet}"
 mkdir -p "$validation/src" "$validation/tests"
+cp "$repo/.editorconfig" "$validation/.editorconfig"
 for project in Domain Application Persistence; do
   rsync -a --exclude bin --exclude obj "$repo/src/ChunkMaestro.$project" "$validation/src/"
 done
@@ -25,6 +26,7 @@ cat > "$validation/Directory.Build.props" <<'PROPS'
 <Project><PropertyGroup>
   <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
 </PropertyGroup></Project>
 PROPS
 cd "$validation"
