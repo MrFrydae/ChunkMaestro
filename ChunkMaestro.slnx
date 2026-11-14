@@ -1,4 +1,8 @@
 <Solution>
+  <Project Path="src/ChunkMaestro.Application/ChunkMaestro.Application.csproj" />
+  <Project Path="src/ChunkMaestro.Domain/ChunkMaestro.Domain.csproj" />
+  <Project Path="src/ChunkMaestro.Persistence/ChunkMaestro.Persistence.csproj" />
+  <Project Path="tests/ChunkMaestro.PersistenceTests/ChunkMaestro.PersistenceTests.csproj" />
   <Project Path="tooling/build/StyleCheck/StyleCheck.csproj" />
   <Project Path="tooling/build/Validation/BuildValidation.csproj" />
 </Solution>

@@ -6,4 +6,11 @@
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
   </ItemGroup>
+  <!-- Compile an explicit contract suite on unsupported build hosts; no runtime tests are skipped. -->
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows')) Or $([MSBuild]::IsOSPlatform('OSX'))">
+    <Compile Remove="UnsupportedPlatformTests.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="!$([MSBuild]::IsOSPlatform('Windows')) And !$([MSBuild]::IsOSPlatform('OSX'))">
+    <Compile Remove="StorageTests.cs;PlatformSecurityTests.cs" />
+  </ItemGroup>
 </Project>

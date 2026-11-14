@@ -19,6 +19,7 @@ public sealed class StorageLocation
     /// this directory is on local, non-synchronized storage; portable .NET does not prove volume locality.</summary>
     public static StorageLocation ForCurrentUser(bool localStorageConfirmed)
     {
+        EnsureSupportedPlatform();
         if (!localStorageConfirmed)
         {
             throw Invalid();
@@ -37,6 +38,7 @@ public sealed class StorageLocation
 
     internal string Prepare()
     {
+        EnsureSupportedPlatform();
         string path = Path.GetFullPath(DirectoryPath);
         if (!Path.IsPathFullyQualified(DirectoryPath) || path.StartsWith(@"\\", StringComparison.Ordinal))
         {
@@ -53,7 +55,17 @@ public sealed class StorageLocation
 
         if (OperatingSystem.IsWindows())
         {
-            Directory.CreateDirectory(path);
+            if (!Directory.Exists(path))
+            {
+                SecurityIdentifier user = WindowsIdentity.GetCurrent().User ?? throw Invalid();
+                DirectorySecurity security = new DirectorySecurity();
+                security.SetOwner(user);
+                security.SetAccessRuleProtection(true, false);
+                security.AddAccessRule(new FileSystemAccessRule(user, FileSystemRights.FullControl,
+                    InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                    PropagationFlags.None, AccessControlType.Allow));
+                new DirectoryInfo(path).Create(security);
+            }
         }
         else
         {
@@ -71,6 +83,7 @@ public sealed class StorageLocation
 
     internal static void CheckScope(string path, bool directory = false)
     {
+        EnsureSupportedPlatform();
         if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
         {
             throw Invalid();
@@ -105,9 +118,24 @@ public sealed class StorageLocation
                 throw Invalid();
             }
 
-            if (!OperatingSystem.IsMacOS())
+            // macOS mode bits do not describe extended ACL grants. Fail closed on any ACL.
+            nint acl = GetAcl(path, 0x100);
+            if (acl == 0)
             {
-                throw Invalid();
+                // Darwin reports ENOENT when an existing inode has no extended ACL.
+                if (Marshal.GetLastPInvokeError() != 2)
+                {
+                    throw Invalid();
+                }
+            }
+            else
+            {
+                int entryResult = GetAclEntry(acl, 0, out nint _);
+                int freeResult = FreeAcl(acl);
+                if (entryResult == 0 || freeResult != 0)
+                {
+                    throw Invalid();
+                }
             }
 
             nint buffer = Marshal.AllocHGlobal(512);
@@ -128,9 +156,20 @@ public sealed class StorageLocation
 
     internal static FileStream CreateOrOpen(string path)
     {
+        EnsureSupportedPlatform();
         if (File.Exists(path))
         {
             CheckScope(path);
+        }
+        else if (OperatingSystem.IsWindows())
+        {
+            SecurityIdentifier user = WindowsIdentity.GetCurrent().User ?? throw Invalid();
+            FileSecurity security = new FileSecurity();
+            security.SetOwner(user);
+            security.SetAccessRuleProtection(true, false);
+            security.AddAccessRule(new FileSystemAccessRule(user, FileSystemRights.FullControl, AccessControlType.Allow));
+            return new FileInfo(path).Create(FileMode.CreateNew, FileSystemRights.FullControl,
+                FileShare.None, 4096, FileOptions.None, security);
         }
 
         FileStreamOptions options = new FileStreamOptions
@@ -146,6 +185,21 @@ public sealed class StorageLocation
 
         return new FileStream(path, options);
     }
+
+    private static void EnsureSupportedPlatform()
+    {
+        if (!OperatingSystem.IsWindows() && !OperatingSystem.IsMacOS())
+        {
+            throw new PlatformNotSupportedException("Fleet controller storage requires Windows or macOS. Linux is reserved for the restricted agent.");
+        }
+    }
+
+    [DllImport("libc", EntryPoint = "acl_get_file", SetLastError = true, BestFitMapping = false, ThrowOnUnmappableChar = true)]
+    private static extern nint GetAcl([MarshalAs(UnmanagedType.LPUTF8Str)] string path, int type);
+    [DllImport("libc", EntryPoint = "acl_get_entry")]
+    private static extern int GetAclEntry(nint acl, int entryId, out nint entry);
+    [DllImport("libc", EntryPoint = "acl_free")]
+    private static extern int FreeAcl(nint acl);
 
     private static FleetStorageException Invalid() => new(StorageFailure.InvalidLocation,
         "Storage must be an owner-scoped, local directory without symbolic links or shared access.");
