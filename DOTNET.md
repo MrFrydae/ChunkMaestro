@@ -34,8 +34,11 @@ preferences were overridden, and source generated-code exemptions and warning
 suppression were excluded. Naming suggestions are not a claim that every naming
 rule is a build error; explicit types and multiline syntax have separate checks.
 The normal verifier includes the formatter: a standalone `dotnet build` does not
-diagnose every IDE style rule. File-scoped namespace violations are also checked
-through that formatter gate ([IDE0161](https://learn.microsoft.com/en-us/dotnet/fundamentals/code-analysis/style-rules/ide0160-ide0161)).
+diagnose every IDE style rule. File-scoped namespace violations are checked by the
+syntax guard across owned ordinary/generated sources, as well as the formatter
+where [IDE0161](https://learn.microsoft.com/en-us/dotnet/fundamentals/code-analysis/style-rules/ide0160-ide0161)
+runs. Including a generated file in formatter input does not override every
+analyzer's generated-code exclusions.
 
 ## Data and API design
 
