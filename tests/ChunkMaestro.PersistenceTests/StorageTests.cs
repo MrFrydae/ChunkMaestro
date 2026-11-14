@@ -146,6 +146,71 @@ public sealed class StorageTests : IDisposable
     private static async Task InvalidAsync(Func<Task> action) =>
         Assert.Equal(StorageFailure.InvalidRegistration, (await Assert.ThrowsAsync<FleetStorageException>(action)).Failure);
 
+    [Theory]
+    [InlineData("minecraft@survival.service")]
+    [InlineData("minecraft@creative-1.service")]
+    public async Task InstantiatedServiceMetadataPersistsWithoutEnrollment(string serviceName)
+    {
+        FleetId fleet = new FleetId(Guid.NewGuid());
+        HostId host = new HostId(Guid.NewGuid());
+        InstanceId instance = new InstanceId(Guid.NewGuid());
+        await using (LocalFleetStore store = await LocalFleetStore.OpenAsync(Location))
+        {
+            await store.RegisterFleetAsync(fleet, "Fleet");
+            await store.RegisterHostAsync(host, fleet, "Host", "mc.example");
+            await store.RegisterInstanceAsync(instance, host, "Survival", serviceName,
+                [new Endpoint(EndpointEdition.Java, "mc.example", 25565)]);
+        }
+        await using LocalFleetStore reopened = await LocalFleetStore.OpenAsync(Location);
+        Instance saved = Assert.Single((await reopened.ReadAsync()).Instances);
+        Assert.Equal(instance, saved.Id);
+        Assert.Equal(serviceName, saved.ServiceName);
+        Assert.Equal(Observation.Unknown, saved.Observation);
+    }
+
+    [Theory]
+    [InlineData("minecraft@.service")]
+    [InlineData("@survival.service")]
+    [InlineData("minecraft@@survival.service")]
+    [InlineData("minecraft@survival;echo.service")]
+    [InlineData("minecraft@../survival.service")]
+    [InlineData("minecraft@survival.service\n")]
+    public async Task InvalidInstantiatedServiceMetadataIsRejected(string serviceName)
+    {
+        await using LocalFleetStore store = await LocalFleetStore.OpenAsync(Location);
+        FleetId fleet = new FleetId(Guid.NewGuid());
+        HostId host = new HostId(Guid.NewGuid());
+        await store.RegisterFleetAsync(fleet, "Fleet");
+        await store.RegisterHostAsync(host, fleet, "Host", "mc.example");
+        await InvalidAsync(() => store.RegisterInstanceAsync(new InstanceId(Guid.NewGuid()), host, "Rejected", serviceName,
+            [new Endpoint(EndpointEdition.Java, "mc.example", 25565)]));
+        Assert.Empty((await store.ReadAsync()).Instances);
+    }
+
+    [Fact]
+    public async Task InstantiatedServiceComponentsRemainBounded()
+    {
+        await using LocalFleetStore store = await LocalFleetStore.OpenAsync(Location);
+        FleetId fleet = new FleetId(Guid.NewGuid());
+        HostId host = new HostId(Guid.NewGuid());
+        await store.RegisterFleetAsync(fleet, "Fleet");
+        await store.RegisterHostAsync(host, fleet, "Host", "mc.example");
+        string boundary = new string('m', 121) + "@" + new string('s', 121) + ".service";
+        await store.RegisterInstanceAsync(new InstanceId(Guid.NewGuid()), host, "Boundary", boundary,
+            [new Endpoint(EndpointEdition.Java, "mc.example", 25565)]);
+        string[] overlong =
+        [
+            new string('m', 122) + "@survival.service",
+            "minecraft@" + new string('s', 122) + ".service"
+        ];
+        foreach (string serviceName in overlong)
+        {
+            await InvalidAsync(() => store.RegisterInstanceAsync(new InstanceId(Guid.NewGuid()), host, "Rejected", serviceName,
+                [new Endpoint(EndpointEdition.Java, "mc.example", 25566)]));
+        }
+        Assert.Equal(boundary, Assert.Single((await store.ReadAsync()).Instances).ServiceName);
+    }
+
     [Fact]
     public async Task CommittedModelMatchesSnapshotAndDirectDowngradeIsDisabled()
     {

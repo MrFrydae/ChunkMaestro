@@ -308,7 +308,7 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
     {
         Identity(id.Value);
         Identity(hostId.Value);
-        if (serviceName is null || !Regex.IsMatch(serviceName, @"\A[a-zA-Z0-9][a-zA-Z0-9_.-]{0,120}\.service\z") || endpoints is null || endpoints.Count is < 1 or > 16)
+        if (serviceName is null || !Regex.IsMatch(serviceName, @"\A[a-zA-Z0-9][a-zA-Z0-9_.-]{0,120}(?:@[a-zA-Z0-9][a-zA-Z0-9_.-]{0,120})?\.service\z") || endpoints is null || endpoints.Count is < 1 or > 16)
         {
             throw Invalid();
         }

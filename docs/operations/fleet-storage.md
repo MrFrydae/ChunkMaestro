@@ -281,3 +281,20 @@ or creating the main database. Actual Windows confirmation remains pending;
 these results do not establish the outstanding safety or independent QA gates.
 References: [Windows default file security](https://learn.microsoft.com/en-us/windows/win32/fileio/file-security-and-access-rights)
 and [SQLite WAL lifecycle](https://www.sqlite.org/wal.html).
+
+### Instantiated service metadata
+
+Registration accepts plain names and literal `prefix@instance.service` names,
+including `minecraft@survival.service`. Each part retains the conservative
+alphanumeric-leading, letters/digits/underscore/dot/hyphen subset and a 121-character
+bound; an instance must be nonempty. Multiple `@`, paths, shell punctuation,
+trailing control characters and overlong components are rejected. This is not the
+complete systemd escaped-name grammar. The largest accepted instantiated name is
+251 ASCII characters, within systemd's documented 255-character total limit.
+See [systemd unit naming](https://www.freedesktop.org/software/systemd/man/255/systemd.unit.html).
+
+These names are metadata, not enrollment or execution authorization. Reopen tests
+verify names/identities persist with unknown observation; negative and boundary
+cases verify rejection without inventory mutation. Local normal verification now
+passes 50 tests with zero skips/build warnings/errors. Current-head hosted checks
+and the outstanding safety/independent QA gates remain required.
