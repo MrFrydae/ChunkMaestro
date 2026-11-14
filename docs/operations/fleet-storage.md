@@ -7,7 +7,7 @@ It is not completion of Q153, controller migration, Phase 1, or independent QA.
 
 Reference Application for `IFleetInventory` and Domain for immutable identity/metadata records.
 The desktop composition root references Persistence and owns a single
-`await using var store = await LocalFleetStore.OpenAsync(StorageLocation.ForCurrentUser(localStorageConfirmed: true), token)`.
+`await using LocalFleetStore store = await LocalFleetStore.OpenAsync(StorageLocation.ForCurrentUser(localStorageConfirmed: true), token)`.
 Only pass true after confirming that the OS local-application-data directory is
 local and not synchronized/shared. Do not expose this choice through remote input.
 No arbitrary path overload is public. A separate internal fixture path exists only for tests.
@@ -53,15 +53,16 @@ The active DB is fixed to the user's OS LocalApplicationData/ChunkMaestro/Fleet/
 The store rejects UNC paths, reparse points/symbolic links in existing ancestors or
 contents, and files outside the owner scope. New Unix directories/files request 0700/0600;
 existing modes are never changed. macOS checks effective UID ownership with Darwin stat,
-and denies group/other mode access. Windows checks the owner SID and rejects allow ACLs
-except current user, SYSTEM and Administrators; it inherits existing user-directory ACLs.
+and denies group/other mode access and any extended ACL. Windows checks the owner SID and rejects allow ACLs
+except current user, SYSTEM and Administrators. New directories and explicitly created files
+set the current user as owner and use a protected user-only DACL at creation.
 No permission repair occurs. If scope is unacceptable, initialization fails.
 
 Portable path validation does not prove network-volume locality, Windows redirected
-profile locality, macOS extended ACL confinement, cloud synchronization exclusions,
+profile locality, cloud synchronization exclusions,
 hard-link identity, or resistance to a malicious same-user process swapping paths.
 Do not claim those native checks are implemented. macOS and Windows are the product
-targets; Linux store startup deliberately rejects unsupported owner semantics.
+targets; Linux store startup throws PlatformNotSupportedException before filesystem mutation.
 Windows ACL/lock behavior is implemented but requires Windows execution by independent QA.
 A copied DB on another desktop is not prevented by a local file lock; cross-device
 controller ownership/trust handoff remains future work.
@@ -113,66 +114,61 @@ A desktop recovery/import workflow must explicitly coordinate DB, OS credentials
 and controller ownership before adoption of that recovered copy. This slice supplies
 no dangerous partial implementation of that workflow.
 
-## Integration dependencies and validation
+## Baseline integration and platform validation (2026-11-14 follow-up)
 
-Add these projects to the root solution:
+Rebased with signing onto main f7095c476ffa698ab4d02555f1a31429d9430c41.
+The root solution now includes the four storage projects. CPVM pins EF 10.0.15,
+SQLitePCLRaw.bundle_e_sqlite3 3.0.5, Test SDK 18.12.0 and VS runner 4.0.1
+(xUnit 2.9.3). The dependency probe also directly references the bundle; its lock
+was regenerated with the rest of the solution, not copied from another branch.
 
-- src/ChunkMaestro.Domain/ChunkMaestro.Domain.csproj
-- src/ChunkMaestro.Application/ChunkMaestro.Application.csproj (references Domain)
-- src/ChunkMaestro.Persistence/ChunkMaestro.Persistence.csproj (references Domain/Application)
-- tests/ChunkMaestro.PersistenceTests/ChunkMaestro.PersistenceTests.csproj (references Persistence)
-
-Required central PackageVersion entries used in validation:
-
-| Package | Version |
-| --- | --- |
-| Microsoft.EntityFrameworkCore.Sqlite | 10.0.15 |
-| Microsoft.EntityFrameworkCore.Design | 10.0.15 |
-| SQLitePCLRaw.bundle_e_sqlite3 | 3.0.5 |
-| Microsoft.NET.Test.Sdk | 17.14.1 |
-| xunit | 2.9.3 |
-| xunit.runner.visualstudio | 3.1.5 |
-
-Design and test runner are PrivateAssets=all. The explicit SQLite bundle overrides
-the old native SQLite transitive dependency. Early EF 10.0.0 validation produced
-NuGet vulnerability warnings; it is not the delivery dependency set.
-Commit the included project package lock files with these versions; lead integration
-must regenerate locks if the central baseline differs. Target net10.0, nullable and
-implicit usings enabled. Central props/solution/package files were not edited.
-
-The self-contained validation command is:
+Use CHUNKMAESTRO_DOTNET to select the pinned SDK, then:
 
 ```sh
-bash tests/ChunkMaestro.PersistenceTests/validate-standalone.sh
+python3 tooling/build/build.py sync
+python3 tooling/build/build.py update-locks
+# After removing project bin/obj, force a cold locked restore:
+dotnet restore ChunkMaestro.slnx --locked-mode --force --no-cache --packages .artifacts/cold-packages
+python3 tooling/build/build.py verify
 ```
 
-It copies only owned projects into a new temporary directory, creates standalone
-central package/build props and solution outside the checkout, retains evidence,
-and runs these exact checks there:
+The legacy validate-standalone.sh now invokes the actual root verifier. It no longer
+synthesizes different packages or weaker analyzer policy outside the repository.
 
-```sh
-dotnet test StorageValidation.slnx --nologo --logger 'trx;LogFileName=storage.trx'
-dotnet format StorageValidation.slnx --verify-no-changes --no-restore
-```
+Downstream native run 43561704499 (head 27a9162) is failure evidence, not acceptance:
+Linux's 20 SQLite tests reached the unsupported OS check at StorageLocation.cs:110;
+Windows failed the owner check at :86 after inherited directory creation. Seven
+headless UI tests passed, which did not establish storage correctness.
 
-Set CHUNKMAESTRO_DOTNET to a .NET 10 SDK executable on another machine.
-Tests use actual temporary SQLite DBs, not mocks: empty initialization,
-persistent identities/reload, TCP versus UDP, invalid and duplicate targets,
-atomicity, competing process and forced exit/reacquisition, newer history/version,
-corruption preservation, failed migration with recoverable backup, online WAL
-backup, abandoned migration lock, symlink refusal and cached-state provenance.
-Failure injection uses an internal migration executor seam; only the public path
-uses EF MigrateAsync. Initial schema creation is exercised by every ordinary test.
+The test project explicitly compiles StorageTests + PlatformSecurityTests on Windows
+and macOS (25 cases), and UnsupportedPlatformTests on other build hosts (one contract
+case). There are no runtime skips. Linux runs assertions that public construction,
+internal preparation, file creation and store opening throw before creating anything.
+It does not run or attest the Windows/macOS SQLite runtime suite. This preserves the
+Q014 Windows/macOS controller boundary; the restricted Linux agent is a later component.
 
-Implementation evidence: macOS 27.2.1 arm64; SDK 10.0.404, runtime .NET 10;
-19 tests passed, zero skipped; standalone test and format checks passed. Windows runtime, full-disk/kill-during-migration chaos,
-malicious filesystem races, 20-instance load, line/branch coverage and mutation
-thresholds have not been verified. These remain independent QA/integration gates.
+Local macOS 27.2 arm64 / SDK 10.0.404: normal root verifier passed with 25 tests,
+zero failures/skips and zero build warnings. Tests use real SQLite and cover empty
+initialization, persisted identity/protocols, invalid/duplicate registration, atomicity,
+competing process + forced exit/reacquisition, migration/model consistency, newer
+schema rejection, corruption preservation, interrupted migration and consistent backup,
+uncheckpointed WAL backup, abandoned EF lock refusal, Unicode paths and provenance.
+New security cases cover secure creation/reopening, unsafe existing directory/file
+refusal, linked ancestor and dangling entry, and macOS extended ACL rejection.
+Windows additionally tests foreign Administrators ownership in a disposable fixture;
+that negative test requires the elevated hosted Windows runner and fails if its fixture
+cannot be established. Windows execution must be established from this PR's CI, never
+inferred from macOS. Prior 19/20-test claims are superseded by these scoped results.
 
-## Later owner policy: explicit C# types
+No signing settings, QA/secret gates, live hosts or other branches were changed.
+Backup, schema and locking code remains unchanged. Existing unsafe permissions are
+never repaired; users must choose a separate secure location through reviewed recovery.
 
-All checked-in C# now uses explicit types, including tests and migration source. Root `.editorconfig` rejects `var` through IDE0008; standalone validation copies the policy and enables style checks during compilation. Existing namespace/braces formatting was normalized to the shared baseline. After conversion, standalone warning-as-error compilation, all 19 SQLite tests (zero failures/skips), and formatting passed. This does not constitute independent QA or native platform acceptance.
-
-Later owner policy: all C# brace-delimited constructs now span multiple lines (including properties, empty blocks and initializers); interpolation delimiters are unchanged. Formatter and syntax-aware policy checks passed. The 19 real SQLite tests and standalone build/format passed after this formatting change. Repository-wide CI enforcement is supplied by the dependent engineering baseline PR.
-
-Current integration with the engineering baseline now builds with the normal recommended analyzer policy and zero warnings: explicit UTF-8 native path marshalling with best-fit mapping disabled, invariant SQLite numeric conversions, cached migration index column arrays, instance-backed unknown endpoint health and analyzer-compatible test names. Existing migration/model-consistency tests still pass. A Unicode-path case extends the suite to 20 tests. The desktop integration's normal locked restore/Release build/format and all 20 storage tests passed without diagnostic warning overrides. Independent QA and Windows execution remain separate gates. Reference: [CA2101 native string marshaling guidance](https://learn.microsoft.com/en-us/dotnet/fundamentals/code-analysis/quality-rules/ca2101).
+Remaining unknowns: native volume/sync detection, hard-link identity, malicious same-user
+path swaps, macOS foreign-UID fixtures (no privilege escalation), Windows elevated native
+SQLite sidecar ownership after abrupt crashes, full-disk/mid-migration chaos, 20-instance
+load, coverage and mutation thresholds. Windows/macOS SQLite may create transient sidecars;
+existing sidecars remain subject to the same strict owner/permission validation. No broad
+ACL/owner exception is introduced for recovery. Preserve a rejected directory and its
+sidecars/backup for reviewed recovery using the compatible app. Independent QA remains
+lead-owned; neither green tests nor this document authorize merge.
