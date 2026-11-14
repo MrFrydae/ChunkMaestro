@@ -20,11 +20,7 @@ def main():
             pass
         else:
             raise AssertionError('Single-line braces were accepted.')
-        build.dotnet(checker, root, '--fix')
-        build.dotnet(checker, root)
-        first = source.read_bytes()
-        build.dotnet(checker, root, '--fix')
-        assert first == source.read_bytes(), 'Brace normalization is not idempotent.'
+        assert b'public void Run() { }' in source.read_bytes(), 'Read-only checker modified source.'
         source.write_bytes(b'''internal sealed class Fixture
 {
     // Braces in comments {} and interpolation aren't code blocks.
@@ -32,7 +28,7 @@ def main():
 }
 ''')
         build.dotnet(checker, root)
-        print('PASS: single-line blocks/properties rejected; normalization stable; interpolation/comments accepted.')
+        print('PASS: single-line blocks/properties rejected; source unchanged; interpolation/comments accepted.')
 
 
 if __name__ == '__main__':
