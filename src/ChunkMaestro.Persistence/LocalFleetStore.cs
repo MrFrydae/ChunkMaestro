@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Text.RegularExpressions;
 using ChunkMaestro.Application;
@@ -80,23 +81,23 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
             using (SqliteCommand command = connection.CreateCommand())
             {
                 command.CommandText = "PRAGMA user_version";
-                int version = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
+                int version = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
                 if (version > known.Length)
                 {
                     throw new FleetStorageException(StorageFailure.NewerSchema, "Database schema version is newer than this application.");
                 }
 
                 command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '__EF%'";
-                if (applied.Length == 0 && Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken)) != 0)
+                if (applied.Length == 0 && Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture) != 0)
                 {
                     throw new FleetStorageException(StorageFailure.UnsupportedSchema, "Unversioned database contains tables. No migration was attempted.");
                 }
 
                 command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='__EFMigrationsLock'";
-                if (Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken)) != 0)
+                if (Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture) != 0)
                 {
                     command.CommandText = "SELECT COUNT(*) FROM __EFMigrationsLock WHERE Id=1";
-                    if (Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken)) != 0)
+                    if (Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture) != 0)
                     {
                         throw new FleetStorageException(StorageFailure.MigrationFailed, "An abandoned EF migration lock requires reviewed recovery. Database was preserved.");
                     }
@@ -209,14 +210,12 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
         {
             Id = id.Value,
             Name = Label(name)
-        }
-;
+        };
         return WriteAsync(db =>
 {
     db.Fleets.Add(row);
     return Task.CompletedTask;
-}
-, cancellationToken);
+}, cancellationToken);
     }
 
     /// <inheritdoc/>
@@ -231,14 +230,12 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
             Name = Label(name),
             Address = Address(address),
             RegisteredAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-        }
-;
+        };
         return WriteAsync(db =>
 {
     db.Hosts.Add(row);
     return Task.CompletedTask;
-}
-, cancellationToken);
+}, cancellationToken);
     }
 
     /// <inheritdoc/>
@@ -258,8 +255,7 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
             Name = Label(name),
             ServiceName = serviceName,
             RegisteredAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-        }
-;
+        };
         EndpointRow[] endpointRows = endpoints.Select(e =>
         {
             if (e is null || !Enum.IsDefined(e.Edition) || e.Port is < 1 or > 65535)
@@ -274,8 +270,7 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
                 Edition = (int)e.Edition,
                 Address = Address(e.Address),
                 Port = e.Port
-            }
-;
+            };
         }).ToArray();
         if (endpointRows.DistinctBy(e => (e.Edition, e.Port)).Count() != endpointRows.Length)
         {

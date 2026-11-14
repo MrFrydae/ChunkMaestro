@@ -8,6 +8,10 @@ namespace ChunkMaestro.Persistence.Migrations;
 /// <inheritdoc />
 public partial class InitialFleet : Migration
 {
+    private static readonly string[] EndpointIndexColumns = ["HostId", "Edition", "Port"];
+    private static readonly string[] HostIndexColumns = ["FleetId", "Address"];
+    private static readonly string[] InstanceIndexColumns = ["HostId", "ServiceName"];
+
     /// <inheritdoc />
     protected override void Up(MigrationBuilder migrationBuilder)
     {
@@ -83,8 +87,7 @@ public partial class InitialFleet : Migration
                     x.Edition,
                     x.Address,
                     x.Port
-                }
-);
+                });
                 table.ForeignKey(
                     name: "FK_Endpoints_Hosts_HostId",
                     column: x => x.HostId,
@@ -102,30 +105,21 @@ public partial class InitialFleet : Migration
         migrationBuilder.CreateIndex(
             name: "IX_Endpoints_HostId_Edition_Port",
             table: "Endpoints",
-            columns: new[]
-{
-"HostId", "Edition", "Port"
-}
+            columns: EndpointIndexColumns
 ,
             unique: true);
 
         migrationBuilder.CreateIndex(
             name: "IX_Hosts_FleetId_Address",
             table: "Hosts",
-            columns: new[]
-{
-"FleetId", "Address"
-}
+            columns: HostIndexColumns
 ,
             unique: true);
 
         migrationBuilder.CreateIndex(
             name: "IX_Instances_HostId_ServiceName",
             table: "Instances",
-            columns: new[]
-{
-"HostId", "ServiceName"
-}
+            columns: InstanceIndexColumns
 ,
             unique: true);
     }
