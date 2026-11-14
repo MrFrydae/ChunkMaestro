@@ -13,13 +13,17 @@ namespace ChunkMaestro.Persistence;
 public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
 {
     private readonly FileStream controllerLock;
+    private readonly StorageIdentity identity;
+    private readonly SqliteConnection session;
     private readonly DbContextOptions<FleetDbContext> options;
     private readonly SemaphoreSlim gate = new(1, 1);
     private bool disposed;
-    private LocalFleetStore(FileStream controllerLock, DbContextOptions<FleetDbContext> options)
+    private LocalFleetStore(FileStream controllerLock, DbContextOptions<FleetDbContext> options, StorageIdentity identity, SqliteConnection session)
     {
         this.controllerLock = controllerLock;
         this.options = options;
+        this.identity = identity;
+        this.session = session;
     }
 
     /// <summary>Initialize safely or throw a categorized failure. Existing database and completed backup
@@ -27,15 +31,22 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
     public static Task<LocalFleetStore> OpenAsync(StorageLocation location, CancellationToken cancellationToken = default)
         => OpenCoreAsync(location, null, cancellationToken);
 
-    internal static async Task<LocalFleetStore> OpenCoreAsync(StorageLocation location,
+    internal static Task<LocalFleetStore> OpenCoreAsync(StorageLocation location,
+        Func<FleetDbContext, CancellationToken, Task>? migrate, CancellationToken cancellationToken = default)
+        => Task.Run(() => OpenWorkerAsync(location, migrate, cancellationToken), cancellationToken);
+
+    private static async Task<LocalFleetStore> OpenWorkerAsync(StorageLocation location,
         Func<FleetDbContext, CancellationToken, Task>? migrate, CancellationToken cancellationToken = default)
     {
         FileStream? controller = null;
+        StorageIdentity? identity = null;
+        SqliteConnection? session = null;
         string? backupPath = null;
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
             string directory = location.Prepare();
+            identity = new StorageIdentity(directory);
             try
             {
                 controller = StorageLocation.CreateOrOpen(Path.Combine(directory, "controller.lock"));
@@ -53,6 +64,8 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
 
             }
 
+            identity.BindFiles(controller);
+            identity.Verify();
             string connectionString = new SqliteConnectionStringBuilder
             {
                 DataSource = databasePath,
@@ -61,7 +74,10 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
                 ForeignKeys = true,
                 DefaultTimeout = 3
             }.ToString();
-            DbContextOptions<FleetDbContext> options = new DbContextOptionsBuilder<FleetDbContext>().UseSqlite(connectionString).Options;
+            session = new SqliteConnection(connectionString);
+            await session.OpenAsync(cancellationToken);
+            identity.Verify();
+            DbContextOptions<FleetDbContext> options = new DbContextOptionsBuilder<FleetDbContext>().UseSqlite(session).Options;
             await using FleetDbContext db = new FleetDbContext(options);
             await db.Database.OpenConnectionAsync(cancellationToken);
             SqliteConnection connection = (SqliteConnection)db.Database.GetDbConnection();
@@ -103,6 +119,8 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
                     }
                 }
             }
+            await SupportedSchema.VerifyAsync(connection, applied.LastOrDefault(), cancellationToken);
+            identity.Verify();
             if (applied.Length < known.Length)
             {
                 backupPath = await CreateBackupAsync(connection, directory, cancellationToken);
@@ -118,6 +136,7 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
                     }
 
                     await VerifyIntegrityAsync(connection, cancellationToken);
+                    await SupportedSchema.VerifyAsync(connection, known.Last(), cancellationToken);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -126,13 +145,18 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
                 }
             }
             await db.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL", cancellationToken);
-            LocalFleetStore result = new LocalFleetStore(controller, options);
+            identity.Verify();
+            await db.DisposeAsync();
+            LocalFleetStore result = new LocalFleetStore(controller, options, identity, session);
+            identity = null;
+            session = null;
             controller = null;
             return result;
         }
         catch (SqliteException ex)
         {
-            throw new FleetStorageException(ex.SqliteErrorCode is 11 or 26 ? StorageFailure.CorruptDatabase : StorageFailure.StorageUnavailable,
+            throw new FleetStorageException(ex.SqliteErrorCode is 11 or 26 ? StorageFailure.CorruptDatabase :
+                ex.SqliteErrorCode == 1 ? StorageFailure.UnsupportedSchema : StorageFailure.StorageUnavailable,
                 ex.SqliteErrorCode is 11 or 26 ? "SQLite integrity or format check failed. Preserve the database and sidecars for recovery." : "SQLite storage could not be initialized; data was preserved.", backupPath);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -141,7 +165,21 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
         }
         finally
         {
-            controller?.Dispose();
+            try
+            {
+                session?.Dispose();
+            }
+            finally
+            {
+                try
+                {
+                    identity?.Dispose();
+                }
+                finally
+                {
+                    controller?.Dispose();
+                }
+            }
         }
 
     }
@@ -175,25 +213,49 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
         {
             throw new FleetStorageException(StorageFailure.CorruptDatabase, "SQLite integrity check failed; files were preserved.");
         }
+        await reader.DisposeAsync();
+        command.CommandText = "PRAGMA foreign_key_check";
+        using System.Data.Common.DbDataReader references = await command.ExecuteReaderAsync(token);
+        if (await references.ReadAsync(token))
+        {
+            throw new FleetStorageException(StorageFailure.CorruptDatabase, "Database contains invalid references; preserve files for reviewed recovery.");
+        }
     }
 
     /// <inheritdoc/>
-    public async Task<FleetInventory> ReadAsync(CancellationToken cancellationToken = default)
+    public Task<FleetInventory> ReadAsync(CancellationToken cancellationToken = default)
+        => Task.Run(() => ReadWorkerAsync(cancellationToken), cancellationToken);
+
+    private async Task<FleetInventory> ReadWorkerAsync(CancellationToken cancellationToken)
     {
         await gate.WaitAsync(cancellationToken);
         try
         {
             ObjectDisposedException.ThrowIf(disposed, this);
+            identity.Verify();
             await using FleetDbContext db = new FleetDbContext(options);
             FleetRow[] fleets = await db.Fleets.AsNoTracking().OrderBy(x => x.Id).ToArrayAsync(cancellationToken);
             HostRow[] hosts = await db.Hosts.AsNoTracking().OrderBy(x => x.Id).ToArrayAsync(cancellationToken);
             InstanceRow[] instances = await db.Instances.AsNoTracking().OrderBy(x => x.Id).ToArrayAsync(cancellationToken);
             EndpointRow[] endpoints = await db.Endpoints.AsNoTracking().ToArrayAsync(cancellationToken);
+            identity.Verify();
             return new(fleets.Select(x => new Fleet(new(x.Id), x.Name)).ToArray(),
                 hosts.Select(x => new Host(new(x.Id), new(x.FleetId), x.Name, x.Address, DateTimeOffset.FromUnixTimeMilliseconds(x.RegisteredAt), Observation.Unknown)).ToArray(),
                 instances.Select(x => new Instance(new(x.Id), new(x.HostId), x.Name, x.ServiceName, DateTimeOffset.FromUnixTimeMilliseconds(x.RegisteredAt),
                     Observation.Unknown, endpoints.Where(e => e.InstanceId == x.Id).OrderBy(e => e.Edition).ThenBy(e => e.Port)
                         .Select(e => new Endpoint((EndpointEdition)e.Edition, e.Address, e.Port)).ToArray())).ToArray(), DateTimeOffset.UtcNow);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new FleetStorageException(StorageFailure.StorageUnavailable, "Storage is unavailable. Preserve files and review local access before retrying.");
+        }
+        catch (SqliteException)
+        {
+            throw new FleetStorageException(StorageFailure.StorageUnavailable, "SQLite operation failed; preserve files for reviewed recovery.");
+        }
+        catch (DbUpdateException)
+        {
+            throw new FleetStorageException(StorageFailure.StorageUnavailable, "SQLite update failed. Retry only after resolving storage contention or availability; no operation was replayed. Preserve files if recovery is required.");
         }
         finally
         {
@@ -285,17 +347,22 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
         }, cancellationToken);
     }
 
-    private async Task WriteAsync(Func<FleetDbContext, Task> add, CancellationToken token)
+    private Task WriteAsync(Func<FleetDbContext, Task> add, CancellationToken token)
+        => Task.Run(() => WriteWorkerAsync(add, token), token);
+
+    private async Task WriteWorkerAsync(Func<FleetDbContext, Task> add, CancellationToken token)
     {
         await gate.WaitAsync(token);
         try
         {
             ObjectDisposedException.ThrowIf(disposed, this);
+            identity.Verify();
             await using FleetDbContext db = new FleetDbContext(options);
             await add(db);
             try
             {
                 await db.SaveChangesAsync(token);
+                identity.Verify();
             }
 
             catch (DbUpdateException ex) when (ex.InnerException is SqliteException sql && sql.SqliteErrorCode == 19)
@@ -303,6 +370,18 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
                 throw Invalid();
             }
 
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new FleetStorageException(StorageFailure.StorageUnavailable, "Storage is unavailable. Preserve files and review local access before retrying.");
+        }
+        catch (SqliteException)
+        {
+            throw new FleetStorageException(StorageFailure.StorageUnavailable, "SQLite operation failed; preserve files for reviewed recovery.");
+        }
+        catch (DbUpdateException)
+        {
+            throw new FleetStorageException(StorageFailure.StorageUnavailable, "SQLite update failed. Retry only after resolving storage contention or availability; no operation was replayed. Preserve files if recovery is required.");
         }
         finally
         {
@@ -350,7 +429,9 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
     private static FleetStorageException Invalid() => new(StorageFailure.InvalidRegistration, "Invalid or duplicate registration target; inventory was not changed.");
 
     /// <summary>Wait for local reads/writes, then release controller ownership without deleting files.</summary>
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync() => new(Task.Run(DisposeWorkerAsync));
+
+    private async Task DisposeWorkerAsync()
     {
         await gate.WaitAsync();
         try
@@ -358,11 +439,37 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
             if (!disposed)
             {
                 disposed = true;
-                controllerLock.Dispose();
+                try
+                {
+                    session.Dispose();
+                }
+                finally
+                {
+                    try
+                    {
+                        identity.Dispose();
+                    }
+                    finally
+                    {
+                        controllerLock.Dispose();
+                    }
+                }
             }
 
         }
 
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new FleetStorageException(StorageFailure.StorageUnavailable, "Storage is unavailable. Preserve files and review local access before retrying.");
+        }
+        catch (SqliteException)
+        {
+            throw new FleetStorageException(StorageFailure.StorageUnavailable, "SQLite operation failed; preserve files for reviewed recovery.");
+        }
+        catch (DbUpdateException)
+        {
+            throw new FleetStorageException(StorageFailure.StorageUnavailable, "SQLite update failed. Retry only after resolving storage contention or availability; no operation was replayed. Preserve files if recovery is required.");
+        }
         finally
         {
             gate.Release();
