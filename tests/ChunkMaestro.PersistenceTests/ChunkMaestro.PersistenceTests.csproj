@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/ChunkMaestro.Persistence/ChunkMaestro.Persistence.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="coverlet.collector" PrivateAssets="all" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
   </ItemGroup>
@@ -11,6 +12,6 @@
     <Compile Remove="UnsupportedPlatformTests.cs" />
   </ItemGroup>
   <ItemGroup Condition="!$([MSBuild]::IsOSPlatform('Windows')) And !$([MSBuild]::IsOSPlatform('OSX'))">
-    <Compile Remove="StorageTests.cs;PlatformSecurityTests.cs" />
+    <Compile Remove="StorageTests.cs;PlatformSecurityTests.cs;StorageSafetyAcceptanceTests.cs" />
   </ItemGroup>
 </Project>

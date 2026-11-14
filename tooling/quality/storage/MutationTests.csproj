@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>ChunkMaestro.PersistenceTests</AssemblyName>
+    <IsTestProject>true</IsTestProject>
+    <OutputType>Exe</OutputType>
+    <GenerateProgramFile>false</GenerateProgramFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="volume/**/*.cs" />
+    <ProjectReference Include="../../../src/ChunkMaestro.Domain/ChunkMaestro.Domain.csproj" />
+    <ProjectReference Include="../../../src/ChunkMaestro.Application/ChunkMaestro.Application.csproj" />
+    <ProjectReference Include="../../../src/ChunkMaestro.Persistence/ChunkMaestro.Persistence.csproj" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+    <Compile Include="../../../tests/ChunkMaestro.PersistenceTests/*.cs" Exclude="../../../tests/ChunkMaestro.PersistenceTests/UnsupportedPlatformTests.cs" />
+  </ItemGroup>
+</Project>
