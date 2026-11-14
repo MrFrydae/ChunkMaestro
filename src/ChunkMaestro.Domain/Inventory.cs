@@ -54,7 +54,10 @@ public sealed record Observation(ObservationState State, DateTimeOffset? Observe
 public sealed record Endpoint(EndpointEdition Edition, string Address, int Port)
 {
     /// <summary>No endpoint probe is implemented in this slice; health evidence is unavailable.</summary>
-    public Observation Health => Observation.Unknown;
+    public Observation Health
+    {
+        get;
+    } = Observation.Unknown;
 
     /// <summary>Java uses TCP, Bedrock uses UDP.</summary>
     public EndpointTransport Transport => Edition == EndpointEdition.Java ? EndpointTransport.Tcp : EndpointTransport.Udp;

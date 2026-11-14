@@ -107,8 +107,7 @@ internal sealed class FleetDbContext(DbContextOptions<FleetDbContext> options) :
     e.ToTable("Fleets");
     e.HasKey(x => x.Id);
     e.Property(x => x.Name).IsRequired();
-}
-);
+});
         modelBuilder.Entity<HostRow>(e =>
         {
             e.ToTable("Hosts");
@@ -118,8 +117,7 @@ internal sealed class FleetDbContext(DbContextOptions<FleetDbContext> options) :
             {
                 x.FleetId,
                 x.Address
-            }
-).IsUnique();
+            }).IsUnique();
         });
         modelBuilder.Entity<InstanceRow>(e =>
         {
@@ -130,8 +128,7 @@ internal sealed class FleetDbContext(DbContextOptions<FleetDbContext> options) :
             {
                 x.HostId,
                 x.ServiceName
-            }
-).IsUnique();
+            }).IsUnique();
         });
         modelBuilder.Entity<EndpointRow>(e =>
         {
@@ -142,8 +139,7 @@ internal sealed class FleetDbContext(DbContextOptions<FleetDbContext> options) :
                 x.Edition,
                 x.Address,
                 x.Port
-            }
-);
+            });
             e.HasOne<InstanceRow>().WithMany().HasForeignKey(x => x.InstanceId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<HostRow>().WithMany().HasForeignKey(x => x.HostId).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => new
@@ -151,8 +147,7 @@ internal sealed class FleetDbContext(DbContextOptions<FleetDbContext> options) :
                 x.HostId,
                 x.Edition,
                 x.Port
-            }
-).IsUnique();
+            }).IsUnique();
         });
     }
 }

@@ -138,8 +138,7 @@ public sealed class StorageLocation
             Mode = FileMode.OpenOrCreate,
             Access = FileAccess.ReadWrite,
             Share = FileShare.None
-        }
-;
+        };
         if (!OperatingSystem.IsWindows())
         {
             options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
@@ -150,6 +149,6 @@ public sealed class StorageLocation
 
     private static FleetStorageException Invalid() => new(StorageFailure.InvalidLocation,
         "Storage must be an owner-scoped, local directory without symbolic links or shared access.");
-    [DllImport("libc", EntryPoint = "stat")] private static extern int Stat(string path, IntPtr buffer);
+    [DllImport("libc", EntryPoint = "stat", BestFitMapping = false, ThrowOnUnmappableChar = true)] private static extern int Stat([MarshalAs(UnmanagedType.LPUTF8Str)] string path, IntPtr buffer);
     [DllImport("libc", EntryPoint = "geteuid")] private static extern uint GetEffectiveUser();
 }

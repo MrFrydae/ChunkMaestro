@@ -43,7 +43,16 @@ public sealed class StorageTests : IDisposable
         return await command.ExecuteScalarAsync();
     }
     [Fact]
-    public async Task Empty_start_creates_versioned_database_without_sample_inventory()
+    public async Task UnicodeStoragePathPreservesExactDirectoryIdentity()
+    {
+        string unicodeDirectory = Path.Combine(directory, "世界-å-minecraft");
+        await using LocalFleetStore store = await LocalFleetStore.OpenAsync(StorageLocation.ForTests(unicodeDirectory));
+        Assert.Empty((await store.ReadAsync()).Hosts);
+        Assert.True(File.Exists(Path.Combine(unicodeDirectory, "fleet.db")));
+    }
+
+    [Fact]
+    public async Task EmptyStartCreatesVersionedDatabaseWithoutSampleInventory()
     {
         await using LocalFleetStore store = await LocalFleetStore.OpenAsync(Location);
         FleetInventory inventory = await store.ReadAsync();
@@ -54,7 +63,7 @@ public sealed class StorageTests : IDisposable
         Assert.Equal(1L, await ScalarAsync(connection, "SELECT COUNT(*) FROM __EFMigrationsHistory"));
     }
     [Fact]
-    public async Task Manual_inventory_reloads_with_unknown_health_and_distinct_protocols()
+    public async Task ManualInventoryReloadsWithUnknownHealthAndDistinctProtocols()
     {
         FleetId fleet = new FleetId(Guid.NewGuid());
         HostId host = new HostId(Guid.NewGuid());
@@ -83,7 +92,7 @@ public sealed class StorageTests : IDisposable
         Assert.Equal([EndpointTransport.Tcp, EndpointTransport.Udp], i.Endpoints.Select(e => e.Transport));
     }
     [Fact]
-    public async Task Duplicate_targets_and_missing_parents_are_rejected_atomically()
+    public async Task DuplicateTargetsAndMissingParentsAreRejectedAtomically()
     {
         await using LocalFleetStore store = await LocalFleetStore.OpenAsync(Location);
         FleetId f = new FleetId(Guid.NewGuid());
@@ -102,7 +111,7 @@ public sealed class StorageTests : IDisposable
     [InlineData("../target")]
     [InlineData("host; echo value")]
     [InlineData("")]
-    public async Task Invalid_addresses_do_not_enter_database(string address)
+    public async Task InvalidAddressesDoNotEnterDatabase(string address)
     {
         await using LocalFleetStore store = await LocalFleetStore.OpenAsync(Location);
         FleetId f = new FleetId(Guid.NewGuid());
@@ -111,7 +120,7 @@ public sealed class StorageTests : IDisposable
         Assert.Empty((await store.ReadAsync()).Hosts);
     }
     [Fact]
-    public async Task Invalid_endpoint_and_identity_are_rejected()
+    public async Task InvalidEndpointAndIdentityAreRejected()
     {
         await using LocalFleetStore store = await LocalFleetStore.OpenAsync(Location);
         await InvalidAsync(() => store.RegisterFleetAsync(new(Guid.Empty), "Fleet"));
@@ -119,11 +128,13 @@ public sealed class StorageTests : IDisposable
         HostId h = new HostId(Guid.NewGuid());
         await store.RegisterFleetAsync(f, "Fleet");
         await store.RegisterHostAsync(h, f, "Host", "localhost");
-        foreach (Endpoint e in new[]
-{
-new Endpoint((EndpointEdition)99, "localhost", 10), new Endpoint(EndpointEdition.Java, "localhost", 0), new Endpoint(EndpointEdition.Java, "localhost", 65536)
-}
-)
+        Endpoint[] invalidEndpoints =
+        [
+            new Endpoint((EndpointEdition)99, "localhost", 10),
+            new Endpoint(EndpointEdition.Java, "localhost", 0),
+            new Endpoint(EndpointEdition.Java, "localhost", 65536)
+        ];
+        foreach (Endpoint e in invalidEndpoints)
         {
             await InvalidAsync(() => store.RegisterInstanceAsync(new(Guid.NewGuid()), h, "One", "one.service", [e]));
         }
@@ -134,7 +145,7 @@ new Endpoint((EndpointEdition)99, "localhost", 10), new Endpoint(EndpointEdition
         Assert.Equal(StorageFailure.InvalidRegistration, (await Assert.ThrowsAsync<FleetStorageException>(action)).Failure);
 
     [Fact]
-    public async Task Committed_model_matches_snapshot_and_direct_downgrade_is_disabled()
+    public async Task CommittedModelMatchesSnapshotAndDirectDowngradeIsDisabled()
     {
         await using LocalFleetStore store = await LocalFleetStore.OpenAsync(Location);
         DbContextOptions<FleetDbContext> options = new DbContextOptionsBuilder<FleetDbContext>().UseSqlite(
@@ -152,7 +163,7 @@ new Endpoint((EndpointEdition)99, "localhost", 10), new Endpoint(EndpointEdition
     }
 
     [Fact]
-    public async Task Second_controller_process_is_rejected_and_exit_releases_lock()
+    public async Task SecondControllerProcessIsRejectedAndExitReleasesLock()
     {
         ProcessStartInfo start = new ProcessStartInfo(Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet")
 
@@ -161,8 +172,7 @@ new Endpoint((EndpointEdition)99, "localhost", 10), new Endpoint(EndpointEdition
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false
-        }
-;
+        };
         start.ArgumentList.Add(typeof(StorageTests).Assembly.Location);
         start.ArgumentList.Add("--hold-test-store");
         start.ArgumentList.Add(directory);
@@ -190,7 +200,7 @@ new Endpoint((EndpointEdition)99, "localhost", 10), new Endpoint(EndpointEdition
 
     }
     [Fact]
-    public async Task Newer_history_is_rejected_without_changing_database_or_attempting_downgrade()
+    public async Task NewerHistoryIsRejectedWithoutChangingDatabaseOrAttemptingDowngrade()
     {
         await using (LocalFleetStore store = await LocalFleetStore.OpenAsync(Location))
         {
@@ -208,7 +218,7 @@ new Endpoint((EndpointEdition)99, "localhost", 10), new Endpoint(EndpointEdition
         Assert.Equal(before, await File.ReadAllBytesAsync(Path.Combine(directory, "fleet.db")));
     }
     [Fact]
-    public async Task Newer_user_version_is_rejected()
+    public async Task NewerUserVersionIsRejected()
     {
         await using (LocalFleetStore store = await LocalFleetStore.OpenAsync(Location))
         {
@@ -223,7 +233,7 @@ new Endpoint((EndpointEdition)99, "localhost", 10), new Endpoint(EndpointEdition
         Assert.Equal(StorageFailure.NewerSchema, (await Assert.ThrowsAsync<FleetStorageException>(() => LocalFleetStore.OpenAsync(Location))).Failure);
     }
     [Fact]
-    public async Task Corrupted_database_has_safe_diagnostic_and_is_preserved()
+    public async Task CorruptedDatabaseHasSafeDiagnosticAndIsPreserved()
     {
         Location.Prepare();
         using (StorageLocation.CreateOrOpen(Path.Combine(directory, "fleet.db")))
@@ -239,7 +249,7 @@ new Endpoint((EndpointEdition)99, "localhost", 10), new Endpoint(EndpointEdition
         Assert.Equal(invalid, await File.ReadAllBytesAsync(Path.Combine(directory, "fleet.db")));
     }
     [Fact]
-    public async Task Failed_migration_preserves_consistent_backup_and_releases_controller_lock()
+    public async Task FailedMigrationPreservesConsistentBackupAndReleasesControllerLock()
     {
         // Start from a legitimate empty SQLite file with no migration history.
         Location.Prepare();
@@ -279,7 +289,7 @@ new Endpoint((EndpointEdition)99, "localhost", 10), new Endpoint(EndpointEdition
         Assert.Equal(StorageFailure.UnsupportedSchema, (await Assert.ThrowsAsync<FleetStorageException>(() => LocalFleetStore.OpenAsync(Location))).Failure);
     }
     [Fact]
-    public async Task Online_backup_includes_committed_uncheckpointed_WAL_data()
+    public async Task OnlineBackupIncludesCommittedUncheckpointedWALData()
     {
         Location.Prepare();
         using (StorageLocation.CreateOrOpen(Path.Combine(directory, "fleet.db")))
@@ -304,7 +314,7 @@ new Endpoint((EndpointEdition)99, "localhost", 10), new Endpoint(EndpointEdition
     }
 
     [Fact]
-    public async Task Abandoned_ef_lock_fails_promptly_instead_of_hanging_or_blindly_clearing_it()
+    public async Task AbandonedEfLockFailsPromptlyInsteadOfHangingOrBlindlyClearingIt()
     {
         await using (LocalFleetStore store = await LocalFleetStore.OpenAsync(Location))
         {
@@ -320,7 +330,7 @@ new Endpoint((EndpointEdition)99, "localhost", 10), new Endpoint(EndpointEdition
         Assert.Equal(StorageFailure.MigrationFailed, failure.Failure);
     }
     [Fact]
-    public async Task Symlink_database_is_rejected_without_modifying_target()
+    public async Task SymlinkDatabaseIsRejectedWithoutModifyingTarget()
     {
         Location.Prepare();
         string target = Path.Combine(directory, "target");
@@ -335,18 +345,17 @@ new Endpoint((EndpointEdition)99, "localhost", 10), new Endpoint(EndpointEdition
         Assert.Equal("preserve", await File.ReadAllTextAsync(target));
     }
     [Fact]
-    public void Unconfirmed_local_storage_is_rejected() =>
+    public void UnconfirmedLocalStorageIsRejected() =>
         Assert.Equal(StorageFailure.InvalidLocation, Assert.Throws<FleetStorageException>(() => StorageLocation.ForCurrentUser(false)).Failure);
     [Fact]
-    public void Cached_fresh_observation_becomes_stale_without_changing_provenance()
+    public void CachedFreshObservationBecomesStaleWithoutChangingProvenance()
     {
         DateTimeOffset time = DateTimeOffset.FromUnixTimeSeconds(100);
         Observation fresh = new Observation(ObservationState.Fresh, time, time, "future-agent");
         Assert.Equal(fresh with
         {
             State = ObservationState.Stale
-        }
-, fresh.AsCached());
+        }, fresh.AsCached());
         Assert.Equal(Observation.Unknown, Observation.Unknown.AsCached());
     }
     public void Dispose()
