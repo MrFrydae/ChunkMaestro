@@ -1,0 +1,22 @@
+<Application xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="ChunkMaestro.Desktop.App" RequestedThemeVariant="Default">
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+          <SolidColorBrush x:Key="ShellSurface">#FAFAF9</SolidColorBrush>
+          <SolidColorBrush x:Key="ShellAccent">#2563EB</SolidColorBrush>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Dark">
+          <SolidColorBrush x:Key="ShellSurface">#242427</SolidColorBrush>
+          <SolidColorBrush x:Key="ShellAccent">#60A5FA</SolidColorBrush>
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
+  <Application.Styles>
+    <FluentTheme />
+    <Style Selector="TextBlock"><Setter Property="TextWrapping" Value="Wrap" /></Style>
+    <Style Selector="Button"><Setter Property="CornerRadius" Value="6" /></Style>
+    <Style Selector="TextBox"><Setter Property="MaxLength" Value="253" /></Style>
+  </Application.Styles>
+</Application>
