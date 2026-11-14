@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="tooling/build/StyleCheck/StyleCheck.csproj" />
+  <Project Path="tooling/build/Validation/BuildValidation.csproj" />
+</Solution>

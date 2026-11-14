@@ -1,0 +1,5 @@
+<Project>
+  <Target Name="ValidateTargetBaseline" BeforeTargets="PrepareForBuild">
+    <Error Condition="'$(TargetFrameworkIdentifier)' == '.NETCoreApp' and '$(TargetFrameworkVersion)' != 'v10.0'" Text="ChunkMaestro managed projects must target the .NET 10 baseline." />
+  </Target>
+</Project>

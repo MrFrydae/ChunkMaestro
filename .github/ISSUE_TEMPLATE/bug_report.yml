@@ -1,0 +1,17 @@
+name: Bug report
+description: Report a reproducible defect without secrets
+body:
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction, expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: OS, app/agent versions, sanitized evidence
+  - type: textarea
+    id: recovery
+    attributes:
+      label: Data impact and recovery attempted

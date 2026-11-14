@@ -1,0 +1,17 @@
+name: Feature slice
+description: Propose a bounded, evidence-backed implementation
+body:
+  - type: textarea
+    id: requirements
+    attributes:
+      label: Source questions, scope and acceptance criteria
+    validations:
+      required: true
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Ownership, dependencies, threats and recovery
+  - type: textarea
+    id: tests
+    attributes:
+      label: Required tests and native evidence
