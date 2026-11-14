@@ -35,6 +35,22 @@ class BuildCommands(unittest.TestCase):
             dotnet.assert_called_once_with('msbuild', project, '-property:Configuration=Release',
                                            '-getProperty:IsTestProject', capture=True)
 
+    def test_format_includes_owned_generated_source_without_sdk_intermediates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for relative in ('src/Fixture/Owned.g.cs', 'src/Fixture/obj/Sdk.g.cs',
+                             'tests/Fixture/bin/Generated.cs'):
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.touch()
+            with patch.object(build, 'ROOT', root), patch.object(build, 'dotnet') as dotnet:
+                build.format_check()
+                arguments = dotnet.call_args.args
+                self.assertIn('--include-generated', arguments)
+                self.assertIn('src/Fixture/Owned.g.cs', arguments)
+                self.assertNotIn('src/Fixture/obj/Sdk.g.cs', arguments)
+                self.assertNotIn('tests/Fixture/bin/Generated.cs', arguments)
+
     def test_no_tests_is_error_for_explicit_test_command(self):
         with patch.object(build, 'projects', return_value=[]):
             with self.assertRaisesRegex(RuntimeError, 'no .NET test projects'):

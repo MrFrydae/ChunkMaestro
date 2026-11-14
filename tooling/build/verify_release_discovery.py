@@ -47,10 +47,11 @@ public sealed class RegressionTests
 }
 '''.encode('utf-8'))
         command = [sys.executable, str(tooling / 'build.py')]
-        subprocess.run([*command, 'sync'], cwd=root, check=True)
+        environment = {**os.environ, 'MSBUILDDISABLENODEREUSE': '1'}
+        subprocess.run([*command, 'sync'], cwd=root, check=True, env=environment)
         subprocess.run([*command, 'update-locks'], cwd=root, check=True,
-                       env={**os.environ, 'CI': 'false'})
-        result = subprocess.run([*command, 'verify'], cwd=root, capture_output=True, text=True)
+                       env={**environment, 'CI': 'false'})
+        result = subprocess.run([*command, 'verify'], cwd=root, capture_output=True, text=True, env=environment)
         evidence = ROOT / '.artifacts/build'
         evidence.mkdir(parents=True, exist_ok=True)
         (evidence / 'release-only-failure.log').write_text(result.stdout + result.stderr, encoding='utf-8')

@@ -90,6 +90,18 @@ def test(allow_absent=False):
                 raise RuntimeError(f'Zero tests executed: {result}')
 
 
+def format_check():
+    sources = sorted(path.relative_to(ROOT).as_posix()
+                     for directory in ('src', 'tests', 'tooling/build')
+                     for path in (ROOT / directory).rglob('*.cs')
+                     if not {'bin', 'obj'}.intersection(path.relative_to(ROOT).parts))
+    if not sources:
+        raise RuntimeError('No owned C# source is available for formatting verification.')
+    # Include checked-in generators' output, but leave SDK intermediate files out.
+    dotnet('format', SOLUTION, '--verify-no-changes', '--no-restore',
+           '--include-generated', '--include', *sources)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=['sync', 'restore', 'update-locks', 'build',
@@ -110,7 +122,7 @@ def main():
     elif args.command == 'build':
         build()
     elif args.command == 'format':
-        dotnet('format', SOLUTION, '--verify-no-changes', '--no-restore')
+        format_check()
     elif args.command == 'test':
         test()
     elif args.command == 'run':
@@ -121,7 +133,7 @@ def main():
     else:
         restore()
         build()
-        dotnet('format', SOLUTION, '--verify-no-changes', '--no-restore')
+        format_check()
         test(allow_absent=True)
 
 
