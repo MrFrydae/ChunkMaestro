@@ -77,7 +77,14 @@ public partial class InitialFleet : Migration
             },
             constraints: table =>
             {
-                table.PrimaryKey("PK_Endpoints", x => new { x.InstanceId, x.Edition, x.Address, x.Port });
+                table.PrimaryKey("PK_Endpoints", x => new
+                {
+                    x.InstanceId,
+                    x.Edition,
+                    x.Address,
+                    x.Port
+                }
+);
                 table.ForeignKey(
                     name: "FK_Endpoints_Hosts_HostId",
                     column: x => x.HostId,
@@ -95,19 +102,31 @@ public partial class InitialFleet : Migration
         migrationBuilder.CreateIndex(
             name: "IX_Endpoints_HostId_Edition_Port",
             table: "Endpoints",
-            columns: new[] { "HostId", "Edition", "Port" },
+            columns: new[]
+{
+"HostId", "Edition", "Port"
+}
+,
             unique: true);
 
         migrationBuilder.CreateIndex(
             name: "IX_Hosts_FleetId_Address",
             table: "Hosts",
-            columns: new[] { "FleetId", "Address" },
+            columns: new[]
+{
+"FleetId", "Address"
+}
+,
             unique: true);
 
         migrationBuilder.CreateIndex(
             name: "IX_Instances_HostId_ServiceName",
             table: "Instances",
-            columns: new[] { "HostId", "ServiceName" },
+            columns: new[]
+{
+"HostId", "ServiceName"
+}
+,
             unique: true);
     }
 
