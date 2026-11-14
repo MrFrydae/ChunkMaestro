@@ -5,7 +5,7 @@ description: "Build, format, test or diagnose ChunkMaestro C# and native build i
 
 # Validate .NET changes
 
-Read [AGENTS.md](../../../AGENTS.md) and
+Read [AGENTS.md](../../../AGENTS.md), [C# conventions](../../../DOTNET.md) and
 [development commands](../../../docs/operations/development.md). Resolve the SDK
 from `global.json`, dependencies from `Directory.Packages.props` and project locks,
 and commands from `tooling/build/build.py`; do not copy version numbers into plans.

@@ -31,6 +31,14 @@ Composed workflows retain the user's current authorization; a skill does not
 create a new approval reset or confer permission for external actions. The product
 source and orchestration directive remain authoritative and unchanged.
 
+The owner's C# follow-up also selected SchoolCal's `.editorconfig` conventions
+and `DOTNET.md` patterns. ChunkMaestro's [C# guide](../../DOTNET.md) and formatter
+retain compatible naming, spacing, modifiers and expression preferences while
+preserving the stricter explicit-type/multiline policy. Source warning suppression,
+generated-code exemptions, compact statements, CRLF preservation, MSTest-only
+testing and application-specific logger/database/timezone dependencies were not
+copied. Nullable design and existing analyzers are not weakened.
+
 ## Maintain and verify
 
 Give each skill a matching directory/name, discriminating description, concise

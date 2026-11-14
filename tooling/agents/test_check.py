@@ -19,6 +19,7 @@ class SkillPackageChecks(unittest.TestCase):
         shutil.copytree(check.ROOT / '.agents', self.root / '.agents')
         shutil.copytree(check.ROOT / 'docs', self.root / 'docs')
         shutil.copyfile(check.ROOT / 'AGENTS.md', self.root / 'AGENTS.md')
+        shutil.copyfile(check.ROOT / 'DOTNET.md', self.root / 'DOTNET.md')
         self.skill = self.root / '.agents/skills/chunkmaestro-dotnet'
 
     def edit(self, path, before, after):

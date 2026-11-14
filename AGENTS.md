@@ -6,6 +6,9 @@ Use explicit C# types. Do not use `var`, including local variables, `foreach`, `
 
 The owner explicitly requested this policy. Keep IDE0008 enabled as an error and all three `csharp_style_var_*` preferences set to `false`. Do not suppress or weaken the rule. Run the repository formatting/build checks after changes.
 
+For C# work, also read [DOTNET.md](DOTNET.md). It adapts the imported conventions
+to this repository; the owner's explicit-type and multiline rules remain binding.
+
 ## Multiline C# braces
 
 Every C# brace-delimited construct must span multiple lines, including empty blocks, methods, control flow, lambdas, property/accessor lists and object/collection/anonymous initializers. Use Allman braces on their own lines. Do not preserve single-line blocks or multiple statements on a line. String interpolation delimiters and braces inside strings/comments are not code blocks. Apply this policy to tests and checked-in generated code too. Keep the formatter settings and syntax-aware style check enabled.
