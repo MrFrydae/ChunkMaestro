@@ -1,0 +1,6 @@
+interface:
+  display_name: "Pinned .NET Validation"
+  short_description: "Validate the pinned SDK, build, style and tests"
+  default_prompt: "Use $chunkmaestro-dotnet to validate these C# changes with the repository SDK and commands."
+policy:
+  allow_implicit_invocation: true

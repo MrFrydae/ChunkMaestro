@@ -13,3 +13,28 @@ Every C# brace-delimited construct must span multiple lines, including empty blo
 ## Product and review boundaries
 
 Read `docs/product/requirements-source.md` and `docs/product/orchestration-directive.md` before implementation. Source answers and later owner decisions govern. Do not substitute a web app for the native desktop. Never claim unexecuted tests as passing or implement successful placeholders. Preserve configured commit signing. Implementation merges require the directive's independent QA gates.
+
+## Project skills
+
+Repo-local skills live in `.agents/skills/`. When a task matches a skill below,
+read its `SKILL.md`; load linked references only when relevant. An explicitly
+named skill also applies. Skills support the task's existing scope and authority;
+they do not override owner decisions, runtime instructions or the rules above.
+
+| Task | Skill |
+| --- | --- |
+| Scoped feature or defect implementation | [chunkmaestro-implement-slice](.agents/skills/chunkmaestro-implement-slice/SKILL.md) |
+| SDK, C#, build, style and test validation | [chunkmaestro-dotnet](.agents/skills/chunkmaestro-dotnet/SKILL.md) |
+| SQLite, migrations, authority and recovery | [chunkmaestro-persistence](.agents/skills/chunkmaestro-persistence/SKILL.md) |
+| Avalonia, native interactions and visual/accessibility evidence | [chunkmaestro-native-desktop](.agents/skills/chunkmaestro-native-desktop/SKILL.md) |
+| Independent role verdicts and exact-head aggregation | [chunkmaestro-independent-qa](.agents/skills/chunkmaestro-independent-qa/SKILL.md) |
+| Signed commits, PR creation/refresh and stack integration | [chunkmaestro-ship-pr](.agents/skills/chunkmaestro-ship-pr/SKILL.md) |
+| Review feedback, CI notifications and event-driven waiting | [chunkmaestro-pr-feedback](.agents/skills/chunkmaestro-pr-feedback/SKILL.md) |
+| NuGet, SDK, native, Java and Action dependency review | [chunkmaestro-dependency-review](.agents/skills/chunkmaestro-dependency-review/SKILL.md) |
+| Task isolation, restacking and requested cleanup | [chunkmaestro-worktrees](.agents/skills/chunkmaestro-worktrees/SKILL.md) |
+
+Keep shared policy here and task procedures in the owning skill. Keep mutable SDK,
+package, check and tool facts in their executable sources. When changing skills,
+routing or metadata, run `python3 tooling/agents/check.py` and
+`python3 -m unittest discover -s tooling/agents -p 'test_*.py' -v`.
+See [adaptation and maintenance](docs/operations/agent-skills.md).

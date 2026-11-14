@@ -1,0 +1,6 @@
+interface:
+  display_name: "Worktree Isolation"
+  short_description: "Isolate tasks and preserve active work and proof"
+  default_prompt: "Use $chunkmaestro-worktrees to isolate this task or inspect the requested cleanup scope."
+policy:
+  allow_implicit_invocation: true

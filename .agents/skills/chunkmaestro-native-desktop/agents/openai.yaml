@@ -1,0 +1,6 @@
+interface:
+  display_name: "Native Avalonia Desktop"
+  short_description: "Deliver truthful native UI and interaction proof"
+  default_prompt: "Use $chunkmaestro-native-desktop to implement this Avalonia interaction and verify its native evidence."
+policy:
+  allow_implicit_invocation: true

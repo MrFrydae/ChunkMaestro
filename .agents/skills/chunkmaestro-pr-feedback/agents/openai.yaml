@@ -1,0 +1,6 @@
+interface:
+  display_name: "PR Feedback"
+  short_description: "Handle current feedback and stale CI callbacks"
+  default_prompt: "Use $chunkmaestro-pr-feedback to investigate this PR notification and fix any current actionable cause."
+policy:
+  allow_implicit_invocation: true
