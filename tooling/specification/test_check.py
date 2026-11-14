@@ -4,6 +4,7 @@ import json
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 SPEC = importlib.util.spec_from_file_location('spec_check', Path(__file__).with_name('check.py'))
@@ -22,9 +23,9 @@ class IntegrityGateTests(unittest.TestCase):
 
     def mutate_row(self, fn):
         path = self.root / check.DATA
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding='utf-8'))
         fn(data['requirements'])
-        path.write_text(json.dumps(data))
+        path.write_text(json.dumps(data), encoding='utf-8')
 
     def assert_rejected(self, expected):
         errors = check.validate(self.root)
@@ -36,6 +37,21 @@ class IntegrityGateTests(unittest.TestCase):
         self.assertEqual(check.validate(self.root, write=True), [])
         self.assertEqual((self.root / check.MATRIX).read_bytes(), before)
 
+    def test_non_utf8_default_preserves_validation_and_render_bytes(self):
+        original_read_text = Path.read_text
+
+        def cp1252_default(path, encoding=None, errors=None, **kwargs):
+            return original_read_text(path, encoding=encoding or 'cp1252', errors=errors, **kwargs)
+
+        before = (self.root / check.MATRIX).read_bytes()
+        with mock.patch.object(Path, 'read_text', cp1252_default):
+            # Confirm the fixture really models a non-UTF-8 Windows default.
+            with self.assertRaises(UnicodeDecodeError):
+                (self.root / check.DATA).read_text()
+            self.assertEqual(check.validate(self.root), [])
+            self.assertEqual(check.validate(self.root, write=True), [])
+        self.assertEqual((self.root / check.MATRIX).read_bytes(), before)
+
     def test_missing_question_is_rejected(self):
         self.mutate_row(lambda rows: rows.pop())
         self.assert_rejected('exactly Q001–Q205')
@@ -45,7 +61,7 @@ class IntegrityGateTests(unittest.TestCase):
         self.assert_rejected('exactly Q001–Q205')
 
     def test_source_change_is_rejected(self):
-        with (self.root / 'docs/product/requirements-source.md').open('a') as stream:
+        with (self.root / 'docs/product/requirements-source.md').open('a', encoding='utf-8') as stream:
             stream.write('\nUnreviewed source change\n')
         self.assert_rejected('source digest mismatch')
 
@@ -66,28 +82,28 @@ class IntegrityGateTests(unittest.TestCase):
         self.assert_rejected('unknown scope')
 
     def test_stale_render_is_rejected(self):
-        with (self.root / check.MATRIX).open('a') as stream:
+        with (self.root / check.MATRIX).open('a', encoding='utf-8') as stream:
             stream.write('\nDrift\n')
         self.assert_rejected('rendering stale')
 
     def test_broken_local_link_is_rejected(self):
-        with (self.root / 'docs/architecture/README.md').open('a') as stream:
+        with (self.root / 'docs/architecture/README.md').open('a', encoding='utf-8') as stream:
             stream.write('\n[missing](missing.md)\n')
         self.assert_rejected('missing link')
 
     def test_broken_fragment_is_rejected(self):
-        with (self.root / 'docs/architecture/README.md').open('a') as stream:
+        with (self.root / 'docs/architecture/README.md').open('a', encoding='utf-8') as stream:
             stream.write('\n[missing](README.md#nonexistent)\n')
         self.assert_rejected('missing fragment')
 
     def test_missing_decision_is_rejected(self):
         path = self.root / 'docs/product/open-decisions.md'
-        path.write_text(path.read_text().replace('## OD-12 ', '## OMITTED '))
+        path.write_text(path.read_text(encoding='utf-8').replace('## OD-12 ', '## OMITTED '), encoding='utf-8')
         self.assert_rejected('twelve open decisions')
 
     def test_missing_adr_section_is_rejected(self):
         path = self.root / 'docs/architecture/adr/0004-helper.md'
-        path.write_text(path.read_text().replace('## Failure and recovery', '## Omitted'))
+        path.write_text(path.read_text(encoding='utf-8').replace('## Failure and recovery', '## Omitted'), encoding='utf-8')
         self.assert_rejected('missing Failure and recovery')
 
 

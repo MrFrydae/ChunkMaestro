@@ -16,7 +16,7 @@ OWNED = [Path('docs/architecture'), Path('docs/security'), Path('docs/qa/specifi
 
 
 def render(data, root):
-    header = (root / 'tooling/specification/matrix-header.txt').read_text()
+    header = (root / 'tooling/specification/matrix-header.txt').read_text(encoding='utf-8')
     lines = []
     for r in data['requirements']:
         case = r['acceptance'].replace('|', '\\|')
@@ -27,7 +27,7 @@ def render(data, root):
 
 
 def validate(root, write=False):
-    data = json.loads((root / DATA).read_text())
+    data = json.loads((root / DATA).read_text(encoding='utf-8'))
     source = root / data['source']
     raw = source.read_bytes()
     source_text = raw.decode()
@@ -64,7 +64,7 @@ def validate(root, write=False):
     if write and not errors:
         with (root / MATRIX).open('w', encoding='utf-8', newline='\n') as stream:
             stream.write(desired)
-    require((root / MATRIX).is_file() and (root / MATRIX).read_text() == desired, 'matrix rendering stale; use --render')
+    require((root / MATRIX).is_file() and (root / MATRIX).read_text(encoding='utf-8') == desired, 'matrix rendering stale; use --render')
     files = []
     for item in OWNED:
         path = root / item
@@ -77,7 +77,7 @@ def validate(root, write=False):
     # Validate relative Markdown targets and explicit/GitHub-style heading fragments in owned docs only.
     # Authoritative source has an absent original attachment; it is intentionally not rewritten or counted.
     for path in files:
-        content = path.read_text()
+        content = path.read_text(encoding='utf-8')
         for target in re.findall(r'(?<!!)\[[^\]]*\]\(([^)]+)\)', content):
             if re.match(r'[a-zA-Z][a-zA-Z0-9+.-]*:', target):
                 continue
@@ -85,18 +85,18 @@ def validate(root, write=False):
             resolved = (path.parent / dest).resolve() if dest else path
             require(resolved.is_file(), f'{path.relative_to(root)}: missing link {target}')
             if fragment and resolved.is_file():
-                body = resolved.read_text()
+                body = resolved.read_text(encoding='utf-8')
                 anchors = set(re.findall(r'id="([^"]+)"', body))
                 for heading in re.findall(r'^#+ (.+)$', body, re.M):
                     slug = re.sub(r'[^\w\- ]', '', heading.lower()).replace(' ', '-')
                     anchors.add(slug)
                 require(fragment in anchors, f'{path.relative_to(root)}: missing fragment {target}')
-    decisions = (root / 'docs/product/open-decisions.md').read_text()
+    decisions = (root / 'docs/product/open-decisions.md').read_text(encoding='utf-8')
     require(re.findall(r'^## OD-(\d\d) ', decisions, re.M) == [f'{i:02}' for i in range(1, 13)], 'expected twelve open decisions')
     adrs = sorted((root / 'docs/architecture/adr').glob('*.md'))
     require(len(adrs) == 13, 'expected thirteen boundary ADRs')
     for path in adrs:
-        body = path.read_text()
+        body = path.read_text(encoding='utf-8')
         for section in ['Status: Proposed', 'Source:', 'Decision', 'Alternatives', 'Consequences', 'Failure and recovery', 'Test strategy']:
             require(section in body, f'{path.name}: missing {section}')
     return errors
