@@ -8,7 +8,11 @@ namespace ChunkMaestro.Persistence;
 /// <summary>Fixed user-local store. No remote input or arbitrary database filename is accepted.</summary>
 public sealed class StorageLocation
 {
-    internal string DirectoryPath { get; }
+    internal string DirectoryPath
+    {
+        get;
+    }
+
     private StorageLocation(string path) => DirectoryPath = path;
 
     /// <summary>Use the OS user's local application-data directory. The native caller must first confirm
@@ -114,7 +118,11 @@ public sealed class StorageLocation
                     throw Invalid();
                 }
             }
-            finally { Marshal.FreeHGlobal(buffer); }
+            finally
+            {
+                Marshal.FreeHGlobal(buffer);
+            }
+
         }
     }
 
@@ -125,7 +133,13 @@ public sealed class StorageLocation
             CheckScope(path);
         }
 
-        FileStreamOptions options = new FileStreamOptions { Mode = FileMode.OpenOrCreate, Access = FileAccess.ReadWrite, Share = FileShare.None };
+        FileStreamOptions options = new FileStreamOptions
+        {
+            Mode = FileMode.OpenOrCreate,
+            Access = FileAccess.ReadWrite,
+            Share = FileShare.None
+        }
+;
         if (!OperatingSystem.IsWindows())
         {
             options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;

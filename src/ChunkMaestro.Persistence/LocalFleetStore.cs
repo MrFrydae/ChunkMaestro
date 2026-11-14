@@ -35,11 +35,23 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             string directory = location.Prepare();
-            try { controller = StorageLocation.CreateOrOpen(Path.Combine(directory, "controller.lock")); }
-            catch (IOException) { throw new FleetStorageException(StorageFailure.ControllerInUse, "Another controller holds this local store."); }
+            try
+            {
+                controller = StorageLocation.CreateOrOpen(Path.Combine(directory, "controller.lock"));
+            }
+
+            catch (IOException)
+            {
+                throw new FleetStorageException(StorageFailure.ControllerInUse, "Another controller holds this local store.");
+            }
+
             using FileStream migrationLock = StorageLocation.CreateOrOpen(Path.Combine(directory, "migration.lock"));
             string databasePath = Path.Combine(directory, "fleet.db");
-            using (StorageLocation.CreateOrOpen(databasePath)) { }
+            using (StorageLocation.CreateOrOpen(databasePath))
+            {
+
+            }
+
             string connectionString = new SqliteConnectionStringBuilder
             {
                 DataSource = databasePath,
@@ -126,14 +138,27 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
         {
             throw new FleetStorageException(StorageFailure.StorageUnavailable, "Local storage is unavailable; existing files were preserved.", backupPath);
         }
-        finally { controller?.Dispose(); }
+        finally
+        {
+            controller?.Dispose();
+        }
+
     }
 
     internal static async Task<string> CreateBackupAsync(SqliteConnection connection, string directory, CancellationToken token)
     {
         string candidate = Path.Combine(directory, $"before-migration-{Guid.NewGuid():N}.db");
-        using (StorageLocation.CreateOrOpen(candidate)) { }
-        using SqliteConnection backup = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = candidate, Pooling = false }.ToString());
+        using (StorageLocation.CreateOrOpen(candidate))
+        {
+
+        }
+
+        using SqliteConnection backup = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = candidate,
+            Pooling = false
+        }
+.ToString());
         await backup.OpenAsync(token);
         connection.BackupDatabase(backup);
         await VerifyIntegrityAsync(backup, token);
@@ -169,35 +194,72 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
                     Observation.Unknown, endpoints.Where(e => e.InstanceId == x.Id).OrderBy(e => e.Edition).ThenBy(e => e.Port)
                         .Select(e => new Endpoint((EndpointEdition)e.Edition, e.Address, e.Port)).ToArray())).ToArray(), DateTimeOffset.UtcNow);
         }
-        finally { gate.Release(); }
+        finally
+        {
+            gate.Release();
+        }
+
     }
 
     /// <inheritdoc/>
     public Task RegisterFleetAsync(FleetId id, string name, CancellationToken cancellationToken = default)
     {
         Identity(id.Value);
-        FleetRow row = new FleetRow { Id = id.Value, Name = Label(name) };
-        return WriteAsync(db => { db.Fleets.Add(row); return Task.CompletedTask; }, cancellationToken);
+        FleetRow row = new FleetRow
+        {
+            Id = id.Value,
+            Name = Label(name)
+        }
+;
+        return WriteAsync(db =>
+{
+    db.Fleets.Add(row);
+    return Task.CompletedTask;
+}
+, cancellationToken);
     }
 
     /// <inheritdoc/>
     public Task RegisterHostAsync(HostId id, FleetId fleetId, string name, string address, CancellationToken cancellationToken = default)
     {
-        Identity(id.Value); Identity(fleetId.Value);
-        HostRow row = new HostRow { Id = id.Value, FleetId = fleetId.Value, Name = Label(name), Address = Address(address), RegisteredAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() };
-        return WriteAsync(db => { db.Hosts.Add(row); return Task.CompletedTask; }, cancellationToken);
+        Identity(id.Value);
+        Identity(fleetId.Value);
+        HostRow row = new HostRow
+        {
+            Id = id.Value,
+            FleetId = fleetId.Value,
+            Name = Label(name),
+            Address = Address(address),
+            RegisteredAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+        }
+;
+        return WriteAsync(db =>
+{
+    db.Hosts.Add(row);
+    return Task.CompletedTask;
+}
+, cancellationToken);
     }
 
     /// <inheritdoc/>
     public Task RegisterInstanceAsync(InstanceId id, HostId hostId, string name, string serviceName, IReadOnlyList<Endpoint> endpoints, CancellationToken cancellationToken = default)
     {
-        Identity(id.Value); Identity(hostId.Value);
+        Identity(id.Value);
+        Identity(hostId.Value);
         if (serviceName is null || !Regex.IsMatch(serviceName, @"\A[a-zA-Z0-9][a-zA-Z0-9_.-]{0,120}\.service\z") || endpoints is null || endpoints.Count is < 1 or > 16)
         {
             throw Invalid();
         }
 
-        InstanceRow row = new InstanceRow { Id = id.Value, HostId = hostId.Value, Name = Label(name), ServiceName = serviceName, RegisteredAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() };
+        InstanceRow row = new InstanceRow
+        {
+            Id = id.Value,
+            HostId = hostId.Value,
+            Name = Label(name),
+            ServiceName = serviceName,
+            RegisteredAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+        }
+;
         EndpointRow[] endpointRows = endpoints.Select(e =>
         {
             if (e is null || !Enum.IsDefined(e.Edition) || e.Port is < 1 or > 65535)
@@ -205,7 +267,15 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
                 throw Invalid();
             }
 
-            return new EndpointRow { InstanceId = id.Value, HostId = hostId.Value, Edition = (int)e.Edition, Address = Address(e.Address), Port = e.Port };
+            return new EndpointRow
+            {
+                InstanceId = id.Value,
+                HostId = hostId.Value,
+                Edition = (int)e.Edition,
+                Address = Address(e.Address),
+                Port = e.Port
+            }
+;
         }).ToArray();
         if (endpointRows.DistinctBy(e => (e.Edition, e.Port)).Count() != endpointRows.Length)
         {
@@ -214,7 +284,9 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
 
         return WriteAsync(db =>
         {
-            db.Instances.Add(row); db.Endpoints.AddRange(endpointRows); return Task.CompletedTask;
+            db.Instances.Add(row);
+            db.Endpoints.AddRange(endpointRows);
+            return Task.CompletedTask;
         }, cancellationToken);
     }
 
@@ -226,10 +298,22 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
             ObjectDisposedException.ThrowIf(disposed, this);
             await using FleetDbContext db = new FleetDbContext(options);
             await add(db);
-            try { await db.SaveChangesAsync(token); }
-            catch (DbUpdateException ex) when (ex.InnerException is SqliteException sql && sql.SqliteErrorCode == 19) { throw Invalid(); }
+            try
+            {
+                await db.SaveChangesAsync(token);
+            }
+
+            catch (DbUpdateException ex) when (ex.InnerException is SqliteException sql && sql.SqliteErrorCode == 19)
+            {
+                throw Invalid();
+            }
+
         }
-        finally { gate.Release(); }
+        finally
+        {
+            gate.Release();
+        }
+
     }
 
     private static void Identity(Guid id)
@@ -274,7 +358,20 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await gate.WaitAsync();
-        try { if (!disposed) { disposed = true; controllerLock.Dispose(); } }
-        finally { gate.Release(); }
+        try
+        {
+            if (!disposed)
+            {
+                disposed = true;
+                controllerLock.Dispose();
+            }
+
+        }
+
+        finally
+        {
+            gate.Release();
+        }
+
     }
 }

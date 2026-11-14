@@ -41,7 +41,13 @@ public enum StorageFailure
 public sealed class FleetStorageException(StorageFailure failure, string message, string? backupPath = null) : Exception(message)
 {
     /// <summary>Machine-readable failure.</summary>
-    public StorageFailure Failure { get; } = failure;
+    public StorageFailure Failure
+    {
+        get;
+    } = failure;
     /// <summary>Completed SQLite-consistent pre-migration backup, if created.</summary>
-    public string? BackupPath { get; } = backupPath;
+    public string? BackupPath
+    {
+        get;
+    } = backupPath;
 }

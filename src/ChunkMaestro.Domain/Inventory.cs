@@ -39,9 +39,16 @@ public sealed record Observation(ObservationState State, DateTimeOffset? Observe
     DateTimeOffset? LastSuccessfulContactAt, string? Source)
 {
     /// <summary>No observation has been collected.</summary>
-    public static Observation Unknown { get; } = new(ObservationState.Unknown, null, null, null);
+    public static Observation Unknown
+    {
+        get;
+    } = new(ObservationState.Unknown, null, null, null);
     /// <summary>Cached evidence cannot establish current reachability after controller restart.</summary>
-    public Observation AsCached() => State == ObservationState.Fresh ? this with { State = ObservationState.Stale } : this;
+    public Observation AsCached() => State == ObservationState.Fresh ? this with
+    {
+        State = ObservationState.Stale
+    }
+: this;
 }
 /// <summary>Non-secret user-entered endpoint metadata. No probing is performed.</summary>
 public sealed record Endpoint(EndpointEdition Edition, string Address, int Port)

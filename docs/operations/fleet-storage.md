@@ -172,3 +172,5 @@ thresholds have not been verified. These remain independent QA/integration gates
 ## Later owner policy: explicit C# types
 
 All checked-in C# now uses explicit types, including tests and migration source. Root `.editorconfig` rejects `var` through IDE0008; standalone validation copies the policy and enables style checks during compilation. Existing namespace/braces formatting was normalized to the shared baseline. After conversion, standalone warning-as-error compilation, all 19 SQLite tests (zero failures/skips), and formatting passed. This does not constitute independent QA or native platform acceptance.
+
+Later owner policy: all C# brace-delimited constructs now span multiple lines (including properties, empty blocks and initializers); interpolation delimiters are unchanged. Formatter and syntax-aware policy checks passed. The 19 real SQLite tests and standalone build/format passed after this formatting change. Repository-wide CI enforcement is supplied by the dependent engineering baseline PR.
