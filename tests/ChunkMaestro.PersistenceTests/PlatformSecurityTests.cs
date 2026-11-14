@@ -130,6 +130,47 @@ public sealed class PlatformSecurityTests : IDisposable
         }
     }
 
+    [Fact]
+    public void UntrustedAncestorIsRejectedBeforeCreatingAnyStorage()
+    {
+        StorageLocation.ForTests(root).Prepare();
+        if (OperatingSystem.IsWindows())
+        {
+            DirectoryInfo info = new DirectoryInfo(root);
+            DirectorySecurity security = info.GetAccessControl();
+            security.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.WorldSid, null),
+                FileSystemRights.DeleteSubdirectoriesAndFiles, AccessControlType.Allow));
+            info.SetAccessControl(security);
+            string before = info.GetAccessControl().GetSecurityDescriptorSddlForm(AccessControlSections.All);
+            Invalid(StorageLocation.ForTests(Path.Combine(root, "missing", "Fleet")));
+            Assert.Equal(before, info.GetAccessControl().GetSecurityDescriptorSddlForm(AccessControlSections.All));
+            DirectorySecurity nullAcl = new DirectorySecurity();
+            nullAcl.SetSecurityDescriptorSddlForm("O:" + WindowsIdentity.GetCurrent().User!.Value + "D:NO_ACCESS_CONTROL");
+            info.SetAccessControl(nullAcl);
+            Invalid(StorageLocation.ForTests(Path.Combine(root, "missing", "Fleet")));
+            Assert.Null(new RawSecurityDescriptor(info.GetAccessControl().GetSecurityDescriptorBinaryForm(), 0).DiscretionaryAcl);
+        }
+        else
+        {
+            File.SetUnixFileMode(root, (UnixFileMode)511);
+            Invalid(StorageLocation.ForTests(Path.Combine(root, "missing", "Fleet")));
+            Assert.Equal((UnixFileMode)511, File.GetUnixFileMode(root));
+        }
+        Assert.Empty(Directory.EnumerateFileSystemEntries(root));
+    }
+
+    [Fact]
+    public void NativeUserPathHasTrustedAncestors()
+    {
+        string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        for (DirectoryInfo? item = new DirectoryInfo(home); item != null; item = item.Parent)
+        {
+            StorageLocation.CheckAncestor(item.FullName);
+        }
+        // All other fixtures use the actual trusted sticky macOS temp directory or Windows user temp.
+        Assert.Equal(root, StorageLocation.ForTests(root).Prepare());
+    }
+
     private static void Invalid(StorageLocation location)
     {
         Assert.Equal(StorageFailure.InvalidLocation, Assert.Throws<FleetStorageException>(() => location.Prepare()).Failure);

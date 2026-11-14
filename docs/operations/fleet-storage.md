@@ -161,7 +161,7 @@ cannot be established. Windows execution must be established from this PR's CI, 
 inferred from macOS. Prior 19/20-test claims are superseded by these scoped results.
 
 No signing settings, QA/secret gates, live hosts or other branches were changed.
-Backup, schema and locking code remains unchanged. Existing unsafe permissions are
+Those earlier test results predate the authority/schema correction described below. Existing unsafe permissions are
 never repaired; users must choose a separate secure location through reviewed recovery.
 
 Remaining unknowns: native volume/sync detection, hard-link identity, malicious same-user
@@ -182,3 +182,83 @@ elevated Windows default ownership is inappropriate for owner-scoped fixture fil
 This creates only absent fixture files with secure ownership, validates existing ones,
 and changes no existing permissions or production acceptance. The final assertion
 still requires UnsupportedSchema; no assertion was weakened to accept InvalidLocation.
+
+
+## Authority, schema and dispatcher correction (SR-01/SR-02/FUNC-03/UXP-02/03)
+
+Storage preparation validates every existing ancestor before creating files or directories.
+macOS requires root/current-user ownership, no group/other write authority, and no ACL
+allow entries on ancestors. Root-owned sticky directories (including `/private/tmp`)
+are permitted because untrusted users cannot rename another owner's children there.
+Deny-only ancestor ACLs are permitted; leaf directories/files retain strict current-user
+ownership, private mode bits and no extended ACL entries. Regular files must have one link.
+The native helper compiles with `xcrun clang` against the installed macOS SDK and is copied
+with the persistence assembly; builds require Xcode command-line tools and target the
+build host architecture. It uses SDK `struct stat`/ACL declarations, not managed offsets.
+
+Windows ancestors require current-user or trusted system ownership (SYSTEM,
+Administrators, TrustedInstaller), a non-null DACL, and no untrusted applicable allow
+entries granting deletion of children, deletion, attribute writes, or security/ownership
+changes. Create-child rights alone cannot replace a validated existing directory; new
+components receive protected current-user ACLs and are checked immediately. Leaf owner
+criteria remain unchanged. These checks conservatively reject some safe ACL configurations;
+permissions are never repaired. Owner/admin/root and malicious arbitrary same-user
+processes remain outside the isolation guarantee.
+
+The session holds directory/database native identity handles through disposal and binds
+the actual controller lock handle. Windows handles deny delete sharing; macOS compares
+held device/inode identities against paths. Identity and permissions are checked across
+acquisition and before/after inventory operations. SQLite uses one retained connection,
+serialized by the session gate, rather than reopening a path for each read/write. A detected
+rename/replacement fails closed with InvalidLocation. Dispose releases the original
+connection and handles; it never opens the replacement database for recovery.
+
+Initialization builds an independent in-memory database using the committed EF migrations
+at the applied prefix and compares SQLite's stored DDL for tables, columns, keys, FK
+constraints/actions, indexes, triggers, views, history and migration-lock structure.
+Exact comparison intentionally refuses even benign manual SQL rewrites. Only SQLite's
+reserved internal objects are excluded (their constraints are represented in table DDL).
+Validation runs before migration and again after migration; unexpected objects and removed
+uniqueness/FKs are refused without repair. Physical checks and `PRAGMA foreign_key_check`
+are separate: any reference violation fails with CorruptDatabase at open, after migration,
+and when verifying backups. A failed backup is not returned as a completed recovery point;
+preserve its candidate file for investigation.
+
+The supported prefixes remain explicit: empty database and committed InitialFleet.
+No second migration or fabricated v0 was introduced. Populated version-to-version upgrade
+and recovery acceptance remains unestablished until a real required schema change exists.
+Existing interrupted-migration/backup tests exercise empty-to-initial migration, not that
+missing acceptance case.
+
+Open, read, write and disposal execute on background tasks; the per-session gate serializes
+I/O. Public calls return tasks before SQLite's synchronous busy waits. Lock contention has
+a bounded SQLite timeout and produces a sanitized StorageUnavailable with retry/recovery
+guidance. Constraint violations remain InvalidRegistration; cancellation is preserved.
+Nothing automatically replays failed writes. Dispose waits for in-flight operations.
+
+Local correction evidence: SDK 10.0.404, macOS arm64, normal verifier passes 38 tests,
+zero skips/failures/warnings; formatting and syntax policy remain enforced. Added regressions
+cover no-change unsafe ancestry refusal, real user/sticky-temp paths, held directory/file/
+lock replacement, missing tables/indexes, altered columns/FKs, unexpected triggers, orphan
+rows, backup refusal, held writer call-return responsiveness, sanitized atomic denial,
+cancellation and explicit retry. Existing valid reopen, actual migration and failed
+migration backup tests pass. Independent reviewer security/UX repro sources were executed
+against old and corrected implementations in fresh disposable fixtures. Their old security
+harness labels any thrown exception HARNESS_ERROR: corrected expected refusals require
+interpretation alongside the asserting repository regressions; that label is not an
+acceptance pass. Windows/macOS hosted execution of these new tests and fresh independent
+QA are required; local macOS is not Windows evidence.
+
+Coverage >=90% line / >=85% branch / >=80% mutation, real full-disk/interrupted backup/
+migration chaos, populated upgrade/recovery, and independent exact-head QA remain merge
+blockers. The separate safety worker owns its tooling/workflow/test artifact integration.
+No merge approval is asserted. Preserve original rejected files, sidecars and completed
+backups; recover only into a separate secure local directory after review with a compatible
+application. Old head is retained locally as `backup/pr6-9122a15`.
+
+Native API references: [Apple stat/fstat/lstat](https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/stat.2.html),
+[Apple sticky-directory semantics](https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/chmod.2.html),
+installed macOS `acl_get_entry(3)`/`sys/acl.h`,
+[Windows directory handles](https://learn.microsoft.com/en-us/windows/win32/fileio/obtaining-a-handle-to-a-directory),
+[FILE_ID_INFO](https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_id_info),
+and [CreateFile sharing](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew).

@@ -47,9 +47,9 @@ public sealed class StorageLocation
         // Reject links in every existing ancestor, including redirected application-data roots.
         for (DirectoryInfo? item = new DirectoryInfo(path); item != null; item = item.Parent)
         {
-            if (item.Exists && (item.Attributes & FileAttributes.ReparsePoint) != 0)
+            if (item.Exists)
             {
-                throw Invalid();
+                CheckAncestor(item.FullName);
             }
         }
 
@@ -64,7 +64,16 @@ public sealed class StorageLocation
                 security.AddAccessRule(new FileSystemAccessRule(user, FileSystemRights.FullControl,
                     InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
                     PropagationFlags.None, AccessControlType.Allow));
-                new DirectoryInfo(path).Create(security);
+                Stack<string> missing = new Stack<string>();
+                for (DirectoryInfo? item = new DirectoryInfo(path); item != null && !item.Exists; item = item.Parent)
+                {
+                    missing.Push(item.FullName);
+                }
+                foreach (string component in missing)
+                {
+                    new DirectoryInfo(component).Create(security);
+                    CheckScope(component, true);
+                }
             }
         }
         else
@@ -125,37 +134,9 @@ public sealed class StorageLocation
                 throw Invalid();
             }
 
-            // macOS mode bits do not describe extended ACL grants. Fail closed on any ACL.
-            nint acl = GetAcl(path, 0x100);
-            if (acl == 0)
+            if (MacScope(path, 0) != 1)
             {
-                // Darwin reports ENOENT when an existing inode has no extended ACL.
-                if (Marshal.GetLastPInvokeError() != 2)
-                {
-                    throw Invalid();
-                }
-            }
-            else
-            {
-                int entryResult = GetAclEntry(acl, 0, out nint _);
-                int freeResult = FreeAcl(acl);
-                if (entryResult == 0 || freeResult != 0)
-                {
-                    throw Invalid();
-                }
-            }
-
-            nint buffer = Marshal.AllocHGlobal(512);
-            try
-            {
-                if (Stat(path, buffer) != 0 || unchecked((uint)Marshal.ReadInt32(buffer, 16)) != GetEffectiveUser())
-                {
-                    throw Invalid();
-                }
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(buffer);
+                throw Invalid();
             }
 
         }
@@ -201,15 +182,56 @@ public sealed class StorageLocation
         }
     }
 
-    [DllImport("libc", EntryPoint = "acl_get_file", SetLastError = true, BestFitMapping = false, ThrowOnUnmappableChar = true)]
-    private static extern nint GetAcl([MarshalAs(UnmanagedType.LPUTF8Str)] string path, int type);
-    [DllImport("libc", EntryPoint = "acl_get_entry")]
-    private static extern int GetAclEntry(nint acl, int entryId, out nint entry);
-    [DllImport("libc", EntryPoint = "acl_free")]
-    private static extern int FreeAcl(nint acl);
+    internal static void CheckAncestor(string path)
+    {
+        if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+        {
+            throw Invalid();
+        }
+        if (OperatingSystem.IsMacOS())
+        {
+            if (MacScope(path, 1) != 1)
+            {
+                throw Invalid();
+            }
+            return;
+        }
+        if (!OperatingSystem.IsWindows())
+        {
+            throw Invalid();
+        }
+        DirectorySecurity security = new DirectoryInfo(path).GetAccessControl();
+        SecurityIdentifier user = WindowsIdentity.GetCurrent().User ?? throw Invalid();
+        string? owner = security.GetOwner(typeof(SecurityIdentifier))?.Value;
+        // TrustedInstaller owns system ancestors; this does not broaden leaf ownership.
+        if (owner != user.Value && owner != "S-1-5-18" && owner != "S-1-5-32-544" &&
+            owner != "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464")
+        {
+            throw Invalid();
+        }
+        RawSecurityDescriptor descriptor = new RawSecurityDescriptor(security.GetSecurityDescriptorBinaryForm(), 0);
+        if (descriptor.DiscretionaryAcl is null)
+        {
+            throw Invalid();
+        }
+        FileSystemRights dangerous = FileSystemRights.WriteAttributes | FileSystemRights.WriteExtendedAttributes | FileSystemRights.Delete |
+            FileSystemRights.DeleteSubdirectoriesAndFiles | FileSystemRights.ChangePermissions | FileSystemRights.TakeOwnership;
+        foreach (FileSystemAccessRule rule in security.GetAccessRules(true, true, typeof(SecurityIdentifier)))
+        {
+            if (rule.AccessControlType == AccessControlType.Allow &&
+                (rule.PropagationFlags & PropagationFlags.InheritOnly) == 0 &&
+                (rule.FileSystemRights & dangerous) != 0 && rule.IdentityReference.Value != user.Value &&
+                rule.IdentityReference.Value != "S-1-5-18" && rule.IdentityReference.Value != "S-1-5-32-544" &&
+                rule.IdentityReference.Value != "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464")
+            {
+                throw Invalid();
+            }
+        }
+    }
 
-    private static FleetStorageException Invalid() => new(StorageFailure.InvalidLocation,
+    [DllImport("chunkmaestro_storage", EntryPoint = "cm_scope", BestFitMapping = false, ThrowOnUnmappableChar = true)]
+    private static extern int MacScope([MarshalAs(UnmanagedType.LPUTF8Str)] string path, int ancestor);
+
+    internal static FleetStorageException Invalid() => new(StorageFailure.InvalidLocation,
         "Storage must be an owner-scoped, local directory without symbolic links or shared access.");
-    [DllImport("libc", EntryPoint = "stat", BestFitMapping = false, ThrowOnUnmappableChar = true)] private static extern int Stat([MarshalAs(UnmanagedType.LPUTF8Str)] string path, IntPtr buffer);
-    [DllImport("libc", EntryPoint = "geteuid")] private static extern uint GetEffectiveUser();
 }

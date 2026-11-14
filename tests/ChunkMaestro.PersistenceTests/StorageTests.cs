@@ -369,6 +369,162 @@ public sealed class StorageTests : IDisposable
         }, fresh.AsCached());
         Assert.Equal(Observation.Unknown, Observation.Unknown.AsCached());
     }
+    [Theory]
+    [InlineData("DROP TABLE Endpoints")]
+    [InlineData("DROP INDEX IX_Hosts_FleetId_Address")]
+    [InlineData("ALTER TABLE Hosts ADD COLUMN Unexpected TEXT")]
+    [InlineData("CREATE TRIGGER Unexpected AFTER INSERT ON Fleets BEGIN DELETE FROM Hosts; END")]
+    [InlineData("PRAGMA writable_schema=ON; UPDATE sqlite_master SET sql=replace(sql, 'REFERENCES \"Fleets\"', 'REFERENCES \"Hosts\"') WHERE name='Hosts'; PRAGMA writable_schema=OFF")]
+    public async Task ModifiedSchemaIsRefusedWithoutRepairAndLockIsReleased(string sql)
+    {
+        await using (LocalFleetStore store = await LocalFleetStore.OpenAsync(Location))
+        {
+        }
+        await using (SqliteConnection connection = await ConnectionAsync())
+        {
+            await ExecuteAsync(connection, sql);
+        }
+        byte[] before = await File.ReadAllBytesAsync(Path.Combine(directory, "fleet.db"));
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            FleetStorageException error = await Assert.ThrowsAsync<FleetStorageException>(() => LocalFleetStore.OpenAsync(Location));
+            Assert.Contains(error.Failure, new[]
+            {
+                StorageFailure.UnsupportedSchema,
+                StorageFailure.CorruptDatabase
+            });
+            Assert.DoesNotContain(directory, error.ToString());
+            Assert.Equal(before, await File.ReadAllBytesAsync(Path.Combine(directory, "fleet.db")));
+        }
+    }
+
+    [Fact]
+    public async Task LogicalForeignKeyCorruptionIsRefusedAndBackupIsNotCertified()
+    {
+        await using (LocalFleetStore store = await LocalFleetStore.OpenAsync(Location))
+        {
+        }
+        await using (SqliteConnection connection = await ConnectionAsync())
+        {
+            await ExecuteAsync(connection, "PRAGMA foreign_keys=OFF; INSERT INTO Hosts VALUES ('orphan','missing','name','mc.example',0)");
+            Assert.Equal("ok", await ScalarAsync(connection, "PRAGMA integrity_check"));
+            FleetStorageException backup = await Assert.ThrowsAsync<FleetStorageException>(() => LocalFleetStore.CreateBackupAsync(connection, directory, default));
+            Assert.Equal(StorageFailure.CorruptDatabase, backup.Failure);
+        }
+        byte[] before = await File.ReadAllBytesAsync(Path.Combine(directory, "fleet.db"));
+        FleetStorageException failure = await Assert.ThrowsAsync<FleetStorageException>(() => LocalFleetStore.OpenAsync(Location));
+        Assert.Equal(StorageFailure.CorruptDatabase, failure.Failure);
+        Assert.DoesNotContain(directory, failure.ToString());
+        Assert.Equal(before, await File.ReadAllBytesAsync(Path.Combine(directory, "fleet.db")));
+    }
+
+    [Fact]
+    public async Task HeldWriterReturnsTaskPromptlyAndFailureIsSanitizedAtomicAndRecoverable()
+    {
+        await using LocalFleetStore store = await LocalFleetStore.OpenAsync(Location);
+        await using SqliteConnection writer = await ConnectionAsync();
+        await ExecuteAsync(writer, "BEGIN IMMEDIATE");
+        FleetId id = new FleetId(Guid.NewGuid());
+        Stopwatch clock = Stopwatch.StartNew();
+        Task operation = store.RegisterFleetAsync(id, "denied");
+        TimeSpan callerTime = clock.Elapsed;
+        Assert.True(callerTime < TimeSpan.FromSeconds(1), $"Caller blocked for {callerTime}");
+        FleetStorageException failure = await Assert.ThrowsAsync<FleetStorageException>(() => operation);
+        Assert.Equal(StorageFailure.StorageUnavailable, failure.Failure);
+        Assert.DoesNotContain(directory, failure.ToString());
+        Assert.DoesNotContain("SQLite Error", failure.ToString());
+        await ExecuteAsync(writer, "ROLLBACK");
+        Assert.Empty((await store.ReadAsync()).Fleets);
+        using CancellationTokenSource canceled = new CancellationTokenSource();
+        canceled.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => store.RegisterFleetAsync(id, "canceled", canceled.Token));
+        Assert.Empty((await store.ReadAsync()).Fleets);
+        await store.RegisterFleetAsync(id, "reviewed retry");
+        Assert.Equal(id, Assert.Single((await store.ReadAsync()).Fleets).Id);
+    }
+
+    [Fact]
+    public async Task DirectoryReplacementCannotRedirectOriginalSession()
+    {
+        await using LocalFleetStore original = await LocalFleetStore.OpenAsync(Location);
+        await original.RegisterFleetAsync(new FleetId(Guid.NewGuid()), "original");
+        string moved = directory + "-moved";
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Throws<IOException>(() => Directory.Move(directory, moved));
+            Assert.Equal("original", Assert.Single((await original.ReadAsync()).Fleets).Name);
+        }
+        else
+        {
+            Directory.Move(directory, moved);
+            try
+            {
+                await using LocalFleetStore replacement = await LocalFleetStore.OpenAsync(Location);
+                await replacement.RegisterFleetAsync(new FleetId(Guid.NewGuid()), "replacement");
+                Assert.Equal(StorageFailure.InvalidLocation, (await Assert.ThrowsAsync<FleetStorageException>(() => original.ReadAsync())).Failure);
+                Assert.Equal(StorageFailure.InvalidLocation, (await Assert.ThrowsAsync<FleetStorageException>(() => original.RegisterFleetAsync(new FleetId(Guid.NewGuid()), "must not commit"))).Failure);
+                Assert.Equal("replacement", Assert.Single((await replacement.ReadAsync()).Fleets).Name);
+            }
+            finally
+            {
+                await original.DisposeAsync();
+                Directory.Delete(moved, true);
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData("fleet.db")]
+    [InlineData("controller.lock")]
+    public async Task FileReplacementWhileHeldIsRefused(string filename)
+    {
+        await using LocalFleetStore store = await LocalFleetStore.OpenAsync(Location);
+        string path = Path.Combine(directory, filename);
+        string moved = path + "-moved";
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Throws<IOException>(() => File.Move(path, moved));
+            Assert.Empty((await store.ReadAsync()).Fleets);
+        }
+        else
+        {
+            File.Move(path, moved);
+            using (StorageLocation.CreateOrOpen(path))
+            {
+            }
+            Assert.Equal(StorageFailure.InvalidLocation, (await Assert.ThrowsAsync<FleetStorageException>(() => store.ReadAsync())).Failure);
+            Assert.Equal(StorageFailure.InvalidLocation, (await Assert.ThrowsAsync<FleetStorageException>(() => store.RegisterFleetAsync(new FleetId(Guid.NewGuid()), "denied"))).Failure);
+            Assert.Equal(0, new FileInfo(path).Length);
+        }
+    }
+
+    [Fact]
+    public async Task OpenReturnsBeforeSynchronousMigrationWorkCompletes()
+    {
+        using ManualResetEventSlim entered = new ManualResetEventSlim();
+        using ManualResetEventSlim release = new ManualResetEventSlim();
+        Stopwatch clock = Stopwatch.StartNew();
+        Task<LocalFleetStore> opening = LocalFleetStore.OpenCoreAsync(Location, async (db, token) =>
+        {
+            entered.Set();
+            Assert.True(release.Wait(TimeSpan.FromSeconds(10), token));
+            await db.Database.MigrateAsync(token);
+        });
+        TimeSpan callerTime = clock.Elapsed;
+        try
+        {
+            Assert.True(callerTime < TimeSpan.FromSeconds(1), $"Caller blocked for {callerTime}");
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+            Assert.False(opening.IsCompleted);
+        }
+        finally
+        {
+            release.Set();
+        }
+        await using LocalFleetStore store = await opening;
+        Assert.Empty((await store.ReadAsync()).Fleets);
+    }
+
     public void Dispose()
     {
         // Only this fixture's generated temporary files; production code never deletes data.
