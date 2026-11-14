@@ -62,6 +62,8 @@ def restore(update=False):
 
 def build():
     dotnet('build', SOLUTION, '--no-restore', '-c', 'Release')
+    dotnet('run', '--project', ROOT / 'tooling/build/StyleCheck/StyleCheck.csproj',
+           '--no-build', '--no-restore', '-c', 'Release', '--', ROOT)
 
 
 def test(allow_absent=False):

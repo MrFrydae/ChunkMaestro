@@ -18,6 +18,8 @@ def main():
         tooling = root / 'tooling/build'
         tooling.mkdir(parents=True)
         shutil.copyfile(ROOT / 'tooling/build/build.py', tooling / 'build.py')
+        shutil.copytree(ROOT / 'tooling/build/StyleCheck', tooling / 'StyleCheck',
+                        ignore=shutil.ignore_patterns('bin', 'obj'))
         tests = root / 'tests/Release Only'
         tests.mkdir(parents=True)
         # Byte writes preserve repository LF on Windows too; text mode translates to CRLF.
