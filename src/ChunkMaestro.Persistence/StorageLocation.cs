@@ -182,6 +182,35 @@ public sealed class StorageLocation
         }
     }
 
+    // SQLite's Windows VFS uses the token's default owner for newly created files.
+    // Elevated tokens may default to Administrators. Create absent WAL/SHM files
+    // with our explicit owner before SQLite uses them; never repair existing files.
+    internal static void PrepareSqliteSidecars(string databasePath)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        string[] suffixes = ["-wal", "-shm"];
+        foreach (string suffix in suffixes)
+        {
+            string path = databasePath + suffix;
+            if (File.Exists(path))
+            {
+                CheckScope(path);
+            }
+        }
+        foreach (string suffix in suffixes)
+        {
+            string path = databasePath + suffix;
+            if (!File.Exists(path))
+            {
+                using FileStream created = CreateOrOpen(path);
+            }
+        }
+    }
+
     internal static void CheckAncestor(string path)
     {
         if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
