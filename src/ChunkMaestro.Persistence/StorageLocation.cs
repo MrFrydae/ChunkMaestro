@@ -99,6 +99,13 @@ public sealed class StorageLocation
                 throw Invalid();
             }
 
+            // A null DACL grants everyone access despite having no enumerable allow rules.
+            RawSecurityDescriptor descriptor = new RawSecurityDescriptor(security.GetSecurityDescriptorBinaryForm(), 0);
+            if (descriptor.DiscretionaryAcl is null)
+            {
+                throw Invalid();
+            }
+
             foreach (FileSystemAccessRule rule in security.GetAccessRules(true, true, typeof(SecurityIdentifier)))
             {
                 if (rule.AccessControlType == AccessControlType.Allow &&

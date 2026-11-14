@@ -40,6 +40,12 @@ public sealed class PlatformSecurityTests : IDisposable
             string before = info.GetAccessControl().GetSecurityDescriptorSddlForm(AccessControlSections.All);
             Invalid(location);
             Assert.Equal(before, info.GetAccessControl().GetSecurityDescriptorSddlForm(AccessControlSections.All));
+            SecurityIdentifier user = WindowsIdentity.GetCurrent().User!;
+            DirectorySecurity nullAcl = new DirectorySecurity();
+            nullAcl.SetSecurityDescriptorSddlForm("O:" + user.Value + "D:NO_ACCESS_CONTROL");
+            info.SetAccessControl(nullAcl);
+            Invalid(location);
+            Assert.Null(new RawSecurityDescriptor(info.GetAccessControl().GetSecurityDescriptorBinaryForm(), 0).DiscretionaryAcl);
         }
         else
         {
