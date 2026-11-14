@@ -4,12 +4,13 @@ Issue #2 implements a bounded subset of Q25, Q45, Q81, Q114–148,
 Q164, Q189 and Q191. It is not Phase 1 acceptance or a release.
 The engineering baseline (PR5) and requirements baseline (PR7) are merged.
 This draft remains stacked on PR6, `feat/3-local-fleet-storage`, currently
-`9122a1595c9571df5af05578770c62f9bbffc473`; storage independent QA is pending.
+`1bf9bd28594bfd079aff74233fbf9d73a57c5a7e`; storage independent QA is pending.
 The desktop diff adds its projects and documentation to that storage base.
 
 ## Run and local authority
 
-Use .NET SDK 10.0.404 pinned by global.json. On this Mac:
+Use .NET SDK 10.0.404 pinned by global.json. macOS also needs Xcode command-line
+tools to compile the storage identity shim against the host SDK. On this Mac:
 
 ```sh
 export CHUNKMAESTRO_DOTNET=/Users/derek/.local/share/chunkmaestro/dotnet/dotnet
@@ -88,21 +89,22 @@ python3 -m unittest discover -s tooling/specification -p 'test_*.py' -v
 
 Forced locked restore, Release build, syntax-aware explicit-type/multiline-brace
 checks and generated-inclusive formatting pass with zero build warnings/errors.
-The desktop stack executes 7 Avalonia headless tests plus 25 real storage and
-platform-security tests on macOS: 32 passed, zero failed/skipped. The headless
+The desktop stack executes 7 Avalonia headless tests plus 41 real storage and
+platform-security tests on macOS: 48 passed, zero failed/skipped. The headless
 inventory is a deterministic application-contract fake; SQLite runs separately.
 These results do not establish complete desktop-to-storage composition or native
 interaction. The requirements integrity checker and 14 regressions also pass.
 
-The storage dependency creates Windows directories with an explicit owner and
-confined inheritable ACL, rejects unsafe existing directories without repair,
-and preserves Unix permission/ownership checks. Its exact earlier head
-`30d6edb487641a78e5d338726cc332f4c3f0fb2e` passed 25 tests on hosted Windows
-and macOS, and one unsupported-platform contract test on Linux, with zero skips
-(run 43615973451). Linux desktop storage remains unsupported; Linux CI does not
-claim the Windows/macOS persistence suite executed. The subsequent rebase onto
-merged requirements changes no storage implementation; hosted checks for this
-new stack and independent storage/desktop QA remain required.
+The storage dependency now validates ancestor authority, holds native directory/
+file identities and a SQLite connection, checks committed schema structure and
+foreign-key integrity, sanitizes operational failures and runs serialized storage
+I/O on background tasks. Windows precreates absent WAL/SHM files with explicit
+ownership while refusing unsafe existing sidecars without repair. Actual Windows
+confirmation of the latest correction remains pending. Linux desktop storage is
+unsupported; its CI suite tests that refusal, not Windows/macOS persistence.
+Current-head hosted checks, coverage/mutation/chaos acceptance and independent
+storage/desktop QA remain required. See fleet-storage.md for the original FAILs,
+correction evidence and precise unexecuted scopes.
 
 The storage base owns central dependencies, probe and lock integration. The
 solution adds Desktop, Presentation and AvaloniaHeadlessTests. No storage source,
