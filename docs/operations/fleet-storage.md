@@ -155,7 +155,7 @@ schema rejection, corruption preservation, interrupted migration and consistent 
 uncheckpointed WAL backup, abandoned EF lock refusal, Unicode paths and provenance.
 New security cases cover secure creation/reopening, unsafe existing directory/file
 refusal, linked ancestor and dangling entry, and macOS extended ACL rejection.
-Windows additionally tests foreign Administrators ownership in a disposable fixture;
+Windows additionally rejects null DACLs and tests foreign Administrators ownership in a disposable fixture;
 that negative test requires the elevated hosted Windows runner and fails if its fixture
 cannot be established. Windows execution must be established from this PR's CI, never
 inferred from macOS. Prior 19/20-test claims are superseded by these scoped results.
@@ -172,3 +172,13 @@ existing sidecars remain subject to the same strict owner/permission validation.
 ACL/owner exception is introduced for recovery. Preserve a rejected directory and its
 sidecars/backup for reviewed recovery using the compatible app. Independent QA remains
 lead-owned; neither green tests nor this document authorize merge.
+
+Windows hosted run 43615601283 exercised the creation fix: 24/25 cases passed,
+including new ACL/owner/link regressions. The remaining case expected UnsupportedSchema
+but got InvalidLocation after the test opened its backup read-only. The fixture now
+precreates the backup's WAL/SHM files through StorageLocation.CreateOrOpen before
+that direct read-only SQLite inspection. Such connections can leave sidecars behind;
+elevated Windows default ownership is inappropriate for owner-scoped fixture files.
+This creates only absent fixture files with secure ownership, validates existing ones,
+and changes no existing permissions or production acceptance. The final assertion
+still requires UnsupportedSchema; no assertion was weakened to accept InvalidLocation.
