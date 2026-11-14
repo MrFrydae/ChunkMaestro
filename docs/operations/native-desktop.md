@@ -2,9 +2,10 @@
 
 Issue #2 implements a bounded subset of Q25, Q45, Q81, Q114–148,
 Q164, Q189 and Q191. It is not Phase 1 acceptance or a release.
-Dependencies: unmerged/unapproved PR5 baseline through 53b592a and PR6
-storage through b2b421a. This stacked PR targets `feat/3-local-fleet-storage`;
-it temporarily also contains baseline changes until dependencies integrate.
+The engineering baseline (PR5) and requirements baseline (PR7) are merged.
+This draft remains stacked on PR6, `feat/3-local-fleet-storage`, currently
+`9122a1595c9571df5af05578770c62f9bbffc473`; storage independent QA is pending.
+The desktop diff adds its projects and documentation to that storage base.
 
 ## Run and local authority
 
@@ -17,9 +18,9 @@ python3 tooling/build/build.py build
 python3 tooling/build/build.py run
 ```
 
-The full clean build currently has dependency analyzer failures listed below.
-Do not treat a successful incremental build using diagnostic binaries as a clean
-policy build. No suppression or policy change is committed by this shell.
+Normal Release compilation, style and formatting checks run without analyzer
+suppressions. Use a forced locked restore after dependency integration to expose
+stale lockfiles that incremental assets could hide.
 
 The native Avalonia 12.1.6 window invokes IFleetInventory directly. It opens no
 HTTP listener, makes no host commands/probes and has no browser frontend.
@@ -74,52 +75,51 @@ multi-window or installers. System fonts are used. No animation is introduced.
 These selected v1.0 requirements remain open; do not advertise full accessibility,
 colorblind support or complete Q114–148 fulfillment.
 
-## Implementation evidence (2026-11-13, macOS 27.2.1 arm64)
+## Validation and integration evidence (2026-11-14)
 
-Implementation role only; no self approval, independent QA or merge. One agent,
-no delegates, no host/VM changes, paid services or production credentials.
+Local macOS arm64 validation uses SDK 10.0.404 and the normal repository policy:
 
-- `sync`, `update-locks`, locked `restore`: successful through repository tooling.
-- `format` (full solution, verify-no-changes): successful.
-- Normal Release build and full repository `verify`: **PASS**, zero warnings/errors, without analyzer suppressions or `BuildProjectReferences=false`. Storage dependency analyzer compatibility was corrected before this result.
-- `python3 tooling/build/build.py test`: headless xUnit v3 suite and storage
-  xUnit 2 suite: **7 passed / 0 failed / 0 skipped** desktop; **20 passed /
-  0 failed / 0 skipped** storage. Build-tool Python unit tests: **8 passed**. No skipped tests
-  count as evidence. Root discovery includes both Release suites.
-- Headless scenarios: consent/empty, registration hierarchy with TCP vs UDP,
-  cached reload failure and mutation gating/recovery, sanitized initialization
-  failure/retry, invalid port before service invocation, labels/focus, exact
-  light/dark surface/accent tokens, close-during-open lock-session disposal.
-  The headless inventory is a deterministic application-contract fake; the
-  separate storage tests exercise real SQLite. This does not prove installers,
-  host enrollment, authorization enforcement or screen readers.
-- Native executable launch remained running without terminal error. Mac CUA
-  could not address the unbundled executable (`Invalid app`); it was stopped.
-  **Native interaction not verified.** No browser/preview tool was used.
-- No Windows run, installer/signing/notarization, screen-reader, visual/native
-  interaction, performance, coverage or mutation acceptance is claimed.
+```sh
+"$CHUNKMAESTRO_DOTNET" restore ChunkMaestro.slnx --locked-mode --force
+python3 tooling/build/build.py verify
+python3 tooling/specification/check.py
+python3 -m unittest discover -s tooling/specification -p 'test_*.py' -v
+```
 
-Integration changes: solution now discovers four storage projects plus Desktop,
-Presentation and AvaloniaHeadlessTests. One central version added:
-SQLitePCLRaw.bundle_e_sqlite3 3.0.5, matching the storage dependency's existing
-lock (the baseline only had a transitive 2.1.13). No existing central version
-changed. Tool-generated lock updates align storage tests with baseline Test SDK
-18.12.0 and VS runner 4.0.1, keeping xunit 2.9.3. Three new project locks and
-Validation's central dependency classification update are included. Existing
-Domain/Application/Persistence lock contents did not change.
+Forced locked restore, Release build, syntax-aware explicit-type/multiline-brace
+checks and generated-inclusive formatting pass with zero build warnings/errors.
+The desktop stack executes 7 Avalonia headless tests plus 25 real storage and
+platform-security tests on macOS: 32 passed, zero failed/skipped. The headless
+inventory is a deterministic application-contract fake; SQLite runs separately.
+These results do not establish complete desktop-to-storage composition or native
+interaction. The requirements integrity checker and 14 regressions also pass.
 
-## Later owner formatting policy
+The storage dependency creates Windows directories with an explicit owner and
+confined inheritable ACL, rejects unsafe existing directories without repair,
+and preserves Unix permission/ownership checks. Its exact earlier head
+`30d6edb487641a78e5d338726cc332f4c3f0fb2e` passed 25 tests on hosted Windows
+and macOS, and one unsupported-platform contract test on Linux, with zero skips
+(run 43615973451). Linux desktop storage remains unsupported; Linux CI does not
+claim the Windows/macOS persistence suite executed. The subsequent rebase onto
+merged requirements changes no storage implementation; hosted checks for this
+new stack and independent storage/desktop QA remain required.
 
-All checked-in C# brace-delimited constructs have been expanded to multiline Allman form, including properties, empty blocks, lambdas and initializers. String interpolation is preserved. Formatter verification and the engineering baseline's Roslyn brace checker passed. The separate storage suite passed all 19 tests after formatting. The subsequent dependency integration fixes below resolve the clean-build analyzer errors. Independent QA and real native interaction remain required.
+The storage base owns central dependencies, probe and lock integration. The
+solution adds Desktop, Presentation and AvaloniaHeadlessTests. No storage source,
+shared build policy or lock contents are changed by the desktop layer. A prior
+NU1004 failure was reproduced by forced locked restore and corrected in the
+shared dependency integration. Cold locked restore is required after restacks.
+Signed restacks retain backup refs and use exact force-with-lease checks.
 
-## Current dependency integration evidence
+Headless cases cover consent/empty state, registration hierarchy with TCP vs UDP,
+cached reload failure and mutation gating/recovery, sanitized initialization
+failure/retry, invalid ports before service invocation, labels/focus, light/dark
+tokens and close-during-open session disposal. These tests do not prove installed
+native behavior, host enrollment, authorization, screen readers or performance.
+An earlier unbundled executable remained running, but native automation could
+not address it (`Invalid app`); it was stopped. Native interaction is unverified.
 
-Full `build.py verify` now passes normal locked restore, Release build (zero warnings/errors), formatting, 7 Avalonia headless tests and 20 SQLite tests, with zero failures/skips. The new storage case verifies a Unicode directory name is preserved through native path/ownership checks. Native string marshalling is explicitly UTF-8 with best-fit conversion disabled; database numeric conversions use invariant culture; migration index arrays are cached without schema changes; endpoint health remains unknown per registered endpoint; test method names satisfy the normal analyzer policy. Initializer punctuation layout was also normalized after multiline expansion. No analyzer suppression, installer/native interaction or independent approval is claimed by this validation.
-
-The desktop stack now carries the finalized engineering tooling from PR5 head `86b9b6d`: the same read-only brace check, secret scan, QA evidence gate and artifact-producing cross-platform CI. Its normal `verify` passes locked restore, Release compilation, brace/format checks, 7 headless and 20 SQLite tests. All 14 build/QA regression tests pass. PR5's reviewed head is unchanged by this stack integration. Hosted execution and independent native-product QA remain pending.
-
-The stack incorporates the subsequent PR5 generated-source enforcement and scanner ignore/redaction fixes. Normal locked restore, Release build, owned generated-source formatting and all 27 .NET tests still pass locally; no independent approval is inferred.
-
-The desktop branch was restacked on storage head `76c0be2` after the base advanced. Storage source is unchanged relative to that base, and its updated operations documentation is preserved. The application tree and current tooling remain intact. Normal `verify` passed after restacking: locked restore, zero-warning Release build, style/format, 7 headless and 20 SQLite tests. The previous feature history is retained in a local backup ref; only the draft feature branch is rewritten with an exact lease.
-
-Hosted CI exposed NU1004 in the build-probe lock after the shared tooling copy: this stack centrally declares SQLitePCLRaw.bundle_e_sqlite3, so the probe lock requires the matching CentralTransitive classification. Local incremental assets had hidden the stale lock. The mismatch was reproduced with `dotnet restore ChunkMaestro.slnx --locked-mode --force`; after deliberate lock regeneration, that forced locked restore and normal full verification passed with all 27 .NET tests. No dependency version or runtime behavior was changed by this correction. Hosted confirmation remains required.
+No desktop Windows runtime interaction, installer/signing/notarization,
+screen-reader, native visual, performance, coverage or mutation acceptance is
+claimed. No live host/VM, enrollment, restart, production data, paid service,
+release, independent approval or milestone completion is implied by local checks.
