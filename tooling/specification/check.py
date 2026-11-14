@@ -62,7 +62,8 @@ def validate(root, write=False):
         require(r['status'] == 'not-implemented' and r['evidence'] == [], f'{qid}: bootstrap cannot claim implementation or product evidence')
     desired = render(data, root)
     if write and not errors:
-        (root / MATRIX).write_text(desired)
+        with (root / MATRIX).open('w', encoding='utf-8', newline='\n') as stream:
+            stream.write(desired)
     require((root / MATRIX).is_file() and (root / MATRIX).read_text() == desired, 'matrix rendering stale; use --render')
     files = []
     for item in OWNED:
