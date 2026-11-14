@@ -33,6 +33,10 @@ jobs:
           python-version: '3.13'
       - name: Build tooling regression checks
         run: python -m unittest discover -s tooling/build -p "test_*.py" -v
+      - name: Requirements traceability and integrity regressions
+        run: |
+          python tooling/specification/check.py
+          python -m unittest discover -s tooling/specification -p "test_*.py" -v
       - name: Release-only failing-suite regression
         run: python tooling/build/verify_release_discovery.py
       - name: Locked restore, Release build, format, tests when present
