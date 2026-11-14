@@ -1,0 +1,16 @@
+# Requirements traceability baseline
+
+Source of truth: [205 answers](requirements-source.md). Source overrides the [directive](orchestration-directive.md). Baseline: signed source-only `ab631d4`. This is an implementation contract, not product evidence. All 205 implementation statuses are **not-implemented** and every product evidence list is empty. Document/checker validation does not implement a product requirement, including governance requirements.
+
+[Machine-readable rows](requirements-data.json) contain source line numbers, answer digests, unique acceptance IDs, components, milestones, scope and evidence. This table is generated deterministically by `python3 tooling/specification/check.py --render`; edit the JSON acceptance/mapping fields then regenerate. Never edit the source to fit the matrix.
+
+Scope is independent of status: required = selected delivery; constraint = invariant/exclusion within a selected feature; conditional = selected capability requiring detected integration/authority; inventory = recorded fact requiring revalidation; unresolved = decision-dependent; excluded = expressly outside current delivery. Mixed questions retain all limits in their acceptance case. There is no claim of universal platform support. [Capability matrix](capability-matrix.md) refines platform gates; [decisions](open-decisions.md) isolate blocked slices; [architecture](../architecture/README.md) and [threat model](../security/threat-model.md) define proposed boundaries.
+
+Later owner overlay: [explicit C# types everywhere](../architecture/README.md#later-owner-policy-explicit-c-types), including production/tests/checked-in generated code. This supplements the fixed 205-ID baseline; it does not invent Q206 or claim lead-owned analyzer enforcement is complete.
+
+M0 specification/governance; M1 trusted native vertical slice; M2 fleet/desired state/telemetry; M3 staging/deployment; M4 durable schedules/backups; M5 Minecraft depth; M6 providers/extensions; M7 polish/packages/release. These are delivery checkpoints, not dates; all selected work targets v1.0. `post-v1` and `none` apply only to explicit exclusions. A milestone is the row's final acceptance checkpoint; earlier foundations can ship independently. M3 risky mutations depend on the M4 verified-recovery subset, and M1 restart needs the durable operation/countdown subset before it can pass. No milestone may waive safety due to sequencing.
+
+Acceptance cases below are planned, **not executed**. Each semicolon clause is part of the pass criterion. Implementers must expand multi-operation rows into parameterized positive/negative cases and attach commands, fixtures, environment, sanitized results and independent review to each row. [Verification rules](../qa/specification-verification.md) define evidence requirements and automated integrity checks.
+
+| ID / source line | Component | Checkpoint | Scope | Planned acceptance case | Implementation | Product evidence |
+| --- | --- | --- | --- | --- | --- | --- |
