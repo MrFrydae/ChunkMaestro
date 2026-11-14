@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Dependency/build-policy probe only. This is not a product or a test suite. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsTestProject>false</IsTestProject>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" PrivateAssets="all" />
+    <PackageReference Include="Avalonia.Desktop" PrivateAssets="all" />
+    <PackageReference Include="Avalonia.Themes.Fluent" PrivateAssets="all" />
+    <PackageReference Include="Avalonia.Headless.XUnit" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
+    <PackageReference Include="xunit.v3" PrivateAssets="all" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" PrivateAssets="all" />
+  </ItemGroup>
+  <Target Name="ValidatePolicy" BeforeTargets="CoreCompile">
+    <Error Condition="'$(Nullable)' != 'enable'" Text="Nullable policy missing." />
+    <Error Condition="'$(Deterministic)' != 'true'" Text="Determinism policy missing." />
+    <Error Condition="'$(TreatWarningsAsErrors)' != 'true'" Text="Warning policy missing." />
+    <Error Condition="'$(ManagePackageVersionsCentrally)' != 'true'" Text="Central package policy missing." />
+  </Target>
+</Project>

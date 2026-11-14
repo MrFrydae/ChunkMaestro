@@ -1,0 +1,82 @@
+# Development baseline
+
+Implements the engineering baseline for Q145, Q154–155 and Q177–194, issue #4. This branch owns build/configuration and contributor tooling. It does not implement or certify product behavior.
+
+## Prerequisites and SDK
+
+Use native Windows/macOS development and a separate disposable Debian 13 VM for systemd tests. No Docker or browser app is needed. Install Python 3.9+ and **.NET SDK 10.0.404**. `global.json` selects that exact SDK, disables roll-forward and excludes previews. A system .NET 11 SDK cannot satisfy it. SDK selection and project target framework are separate controls ([Microsoft documentation](https://learn.microsoft.com/en-us/dotnet/core/tools/global-json)); owned managed projects target `net10.0` (OS-specific net10.0 TFMs permitted).
+
+This implementation installed a private official macOS arm64 SDK at `/Users/derek/.local/share/chunkmaestro/dotnet`. For this machine:
+
+```sh
+export PATH="/Users/derek/.local/share/chunkmaestro/dotnet:$PATH"
+export DOTNET_ROOT="/Users/derek/.local/share/chunkmaestro/dotnet"
+dotnet --info
+```
+
+Alternatively set `CHUNKMAESTRO_DOTNET` to the absolute `dotnet` executable for the root Python commands. This does not change the SDK pin. On Windows use `python` in place of `python3` below. No global install or permissions change is required.
+
+Install provenance: fresh official [10.0 release metadata](https://builds.dotnet.microsoft.com/dotnet/release-metadata/10.0/releases.json) identified SDK 10.0.404 / runtime 10.0.15. The downloaded [osx-arm64 archive](https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.404/dotnet-sdk-10.0.404-osx-arm64.tar.gz) was independently SHA-512 hashed and compared with that metadata before extraction:
+
+```text
+1c9a13f625d0c08f08ef5a53597bababe3d2473527e98db2199210940c69dd5fc599a39a4d7c30ebf297ca2334a81b2f64b9bf05ff99585de9af4a5d85215e96
+```
+
+Other platforms must select their own official RID/archive and matching metadata hash. Do not reuse this arm64 hash for another archive. Review security patches and update the SDK pin intentionally.
+
+## Root commands
+
+Run from the repository root:
+
+```sh
+python3 tooling/build/build.py sync
+python3 tooling/build/build.py restore
+python3 tooling/build/build.py build
+python3 tooling/build/build.py format
+python3 tooling/build/build.py test
+python3 tooling/build/build.py verify
+python3 tooling/build/build.py run
+# Or explicitly select an existing native executable:
+python3 tooling/build/build.py run --project src/ChunkMaestro.Agent/ChunkMaestro.Agent.csproj
+python3 -m unittest discover -s tooling/build -p 'test_*.py' -v
+```
+
+`sync` writes the sorted `.slnx` from `src/**/*.csproj`, `tests/**/*.csproj`, and `tooling/build/**/*.csproj`, excluding `bin`/`obj`. Commit the regenerated solution when integrating another slice. All other commands reject stale solution membership. The lead integrates projects from isolated workers; this branch does not write their projects.
+
+`restore` requires every project's committed lockfile and uses `--locked-mode`. `build` builds Release with no restore; run restore first. `format` verifies formatting without modifying files or restoring. `test` selects evaluated `IsTestProject=true` projects, runs Release with no build/restore, requires fresh TRX output and rejects zero executed tests. Build first. A skipped-only suite is rejected. It does not certify how meaningful a nonempty suite is.
+
+`verify` runs locked restore, Release build, format and discovered tests. During the source bootstrap it explicitly prints **NOT RUN** for absent product test projects; it still validates the dependency/build probe. Explicit `test` exits nonzero when no test projects exist. `run` defaults to the desktop project and fails honestly until that native executable exists. It never starts a mock UI. The probe under `tooling/build/Validation` compiles real dependency types and asserts inherited build policy; it is not a product or test suite and is not packaged.
+
+## Dependency integration
+
+NuGet sources are cleared and mapped exclusively to HTTPS nuget.org. No private feeds/credentials are needed. `Directory.Packages.props` centralizes versions and disables project `VersionOverride`. [NuGet locked restore](https://learn.microsoft.com/en-us/nuget/consume-packages/package-references-in-project-files#locking-dependencies) checks the committed dependency graph and package content hashes. Commit `packages.lock.json` beside **every** project, including libraries. To add/update packages intentionally:
+
+```sh
+python3 tooling/build/build.py sync
+python3 tooling/build/build.py update-locks
+python3 tooling/build/build.py verify
+```
+
+`update-locks` is local maintenance only; CI never regenerates locks. Review lock diffs, advisories, upstream provenance and licenses before committing. Existing locks must resolve on all three CI platforms. Projects with runtime identifiers or OS-conditional references must include the required target graphs in their committed locks and validate them across the matrix; never bypass locked restore for a platform.
+
+Verified NuGet defaults (exact versions, restored in the build probe): Avalonia/Desktop/Fluent/Headless.XUnit **12.1.6**, EF Core SQLite/Design **10.0.15**, xUnit v3 **3.2.2**, VS adapter **4.0.1**, Microsoft.NET.Test.Sdk **18.12.0**. Avalonia Headless.XUnit 12.1.6 references xunit.v3.extensibility.core 3.2.2; use xUnit v3 and `OutputType=Exe` for new compatible suites. xUnit v2 **2.9.3** is available centrally for isolated non-Avalonia suites that require it; do not combine both frameworks in one test project. Keep runner/SDK/EF Design references `PrivateAssets=all`. The baseline does not force UI packages into product libraries: only explicit references consume central versions.
+
+Nullable references, C# 14, deterministic builds, recommended .NET 10 analyzers, code-style enforcement and warnings-as-errors apply to owned projects. CI enables deterministic source paths. Use documented narrow suppressions if an analyzer is inapplicable; do not globally disable warnings. SDK includes `dotnet format`, so the local tool manifest intentionally has no additional tools. Java bridge toolchain/Gradle ownership belongs to its later slice.
+
+## CI and independent QA evidence
+
+`CI / managed (ubuntu-24.04)`, `CI / managed (windows-2025)`, and `CI / managed (macos-15)` build the actual solution available at each head, check formatting, and run tests when present. The lead must inspect the emitted GitHub check context names before making them required. They do not yet prove native desktop packaging or Linux agent behavior when those projects are absent. No installer, artifact upload, release or deployment is configured.
+
+Actions pins were verified with `git ls-remote` against upstream tags: checkout v5.0.0 `08c6903cd8c0fde910a37f88322edcfb5dd907a8`, setup-dotnet v5.0.0 `d4c94342e560b34958eacfc5d055d21461ed1c5d`, setup-python v6.0.0 `e797f83bcb11b83ae66e0230d6156d7c80228e7c`. Jobs use disposable hosted runners, read-only contents permission, no persisted checkout token and no secrets. They use `pull_request`, never `pull_request_target`. Update pins through reviewed PRs. Required status-check policy remains lead-owned.
+
+`python3 tooling/build/qa_evidence.py FILE HEAD_SHA [--high-risk]` checks a reviewer-supplied JSON report. Contract: top-level `head` (exact 40-character commit SHA), `implementers` (nonempty list of agent identities), and `reviews` (list). Each review contains `role`, `reviewer`, `verdict`, `commands`, `environment`, `evidence`, `limitations`, `findings`; the last five fields must contain actual evidence or an explicit description of none/not-run. Roles are `functional`, `security-reliability`, `ux-accessibility-performance`. Functional and security are required; high risk adds UX. Reviewers must be unique, differ from implementers, and report PASS before this contract accepts the report.
+
+This checker does not create verdicts, authenticate identities, retrieve reviews, or enforce GitHub approvals. Reports must be supplied by independently assigned reviewers, attached to PR feedback or lead-managed artifacts, and verified by the lead for provenance and exact head. It is deliberately not a green “QA approval” job in author-controlled CI. No approving evidence is included in this branch. An authenticated reporting/status mechanism remains a lead-owned follow-up.
+
+## Evidence, gaps and rollback
+
+Local implementation validation: macOS 27.2 arm64, SDK 10.0.404, runtime 10.0.15. Locked restore, Release build (zero warnings/errors) and format verification passed against the build probe. Python tooling regression checks exercise failure cases. There were no product test projects, so **no .NET product tests ran**. Real Windows/macOS native interaction, installers, Debian/systemd, coverage and mutation tests remain unexecuted. Matrix results must be read on the PR; local macOS success does not assert Windows/Linux success.
+
+Dependency auditing runs during restore for all packages and warnings fail builds. This baseline does not claim completed SBOM/license approval, dedicated SAST, comprehensive secret scanning, mutation/coverage enforcement or native CI acceptance. Those need concrete implementation and evidence as product slices arrive. Never put secrets in files/logs/PRs. Public stable release is blocked pending license, signing and full QA decisions.
+
+Rollback is a normal reviewed revert of these build/configuration files. It changes no database, host, permissions or production deployment. Preserve signed commits and do not force-push protected main. Lockfile and solution integration must be rerun after any revert that changes project membership or dependency versions.
