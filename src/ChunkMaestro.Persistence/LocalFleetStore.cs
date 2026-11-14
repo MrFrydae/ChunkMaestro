@@ -75,6 +75,7 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
                 DefaultTimeout = 3
             }.ToString();
             session = new SqliteConnection(connectionString);
+            StorageLocation.PrepareSqliteSidecars(databasePath);
             await session.OpenAsync(cancellationToken);
             identity.Verify();
             DbContextOptions<FleetDbContext> options = new DbContextOptionsBuilder<FleetDbContext>().UseSqlite(session).Options;
@@ -145,6 +146,7 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
                 }
             }
             await db.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL", cancellationToken);
+            StorageLocation.PrepareSqliteSidecars(databasePath);
             identity.Verify();
             await db.DisposeAsync();
             LocalFleetStore result = new LocalFleetStore(controller, options, identity, session);
@@ -198,6 +200,7 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
             Pooling = false
         }
 .ToString());
+        StorageLocation.PrepareSqliteSidecars(candidate);
         await backup.OpenAsync(token);
         connection.BackupDatabase(backup);
         await VerifyIntegrityAsync(backup, token);

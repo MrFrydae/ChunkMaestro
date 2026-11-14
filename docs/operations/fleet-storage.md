@@ -262,3 +262,22 @@ installed macOS `acl_get_entry(3)`/`sys/acl.h`,
 [Windows directory handles](https://learn.microsoft.com/en-us/windows/win32/fileio/obtaining-a-handle-to-a-directory),
 [FILE_ID_INFO](https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_id_info),
 and [CreateFile sharing](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew).
+
+### Windows SQLite sidecar creation
+
+Run 43618443442 passed macOS/Linux but failed 17 of 38 Windows cases at the
+owner-SID check after SQLite activity. The retained connection exposes live
+WAL/SHM files to the session's ongoing confinement checks. Windows default file
+security derives from the creating token; an elevated token can default to an
+administrator owner. Before opening SQLite and after enabling WAL, the store now
+precreates absent WAL/SHM files using its explicit owner and protected ACL.
+Backup connections use the same preparation. Existing files are validated and
+never truncated, re-owned or granted broader access by this step.
+
+The normal verifier passes all 41 cases on local macOS with zero skips and zero
+build warnings/errors. New cases check live sidecar confinement across writes,
+reads and reopen, and unsafe WAL/SHM refusal without changing bytes/permissions
+or creating the main database. Actual Windows confirmation remains pending;
+these results do not establish the outstanding safety or independent QA gates.
+References: [Windows default file security](https://learn.microsoft.com/en-us/windows/win32/fileio/file-security-and-access-rights)
+and [SQLite WAL lifecycle](https://www.sqlite.org/wal.html).

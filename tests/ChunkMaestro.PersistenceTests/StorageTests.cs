@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using ChunkMaestro.Application;
 using ChunkMaestro.Domain;
 using ChunkMaestro.Persistence;
@@ -496,6 +498,66 @@ public sealed class StorageTests : IDisposable
             Assert.Equal(StorageFailure.InvalidLocation, (await Assert.ThrowsAsync<FleetStorageException>(() => store.RegisterFleetAsync(new FleetId(Guid.NewGuid()), "denied"))).Failure);
             Assert.Equal(0, new FileInfo(path).Length);
         }
+    }
+
+    [Fact]
+    public async Task LiveSqliteSidecarsRemainConfinedAcrossReadsWritesAndReopen()
+    {
+        FleetId fleet = new FleetId(Guid.NewGuid());
+        string[] suffixes = ["-wal", "-shm"];
+        await using (LocalFleetStore store = await LocalFleetStore.OpenAsync(Location))
+        {
+            await store.RegisterFleetAsync(fleet, "Sidecar ownership");
+            Assert.Equal(fleet, Assert.Single((await store.ReadAsync()).Fleets).Id);
+            foreach (string suffix in suffixes)
+            {
+                string path = Path.Combine(directory, "fleet.db" + suffix);
+                Assert.True(File.Exists(path));
+                StorageLocation.CheckScope(path);
+            }
+        }
+        await using LocalFleetStore reopened = await LocalFleetStore.OpenAsync(Location);
+        Assert.Equal(fleet, Assert.Single((await reopened.ReadAsync()).Fleets).Id);
+        foreach (string path in Directory.EnumerateFiles(directory))
+        {
+            StorageLocation.CheckScope(path);
+        }
+    }
+
+    [Theory]
+    [InlineData("-wal")]
+    [InlineData("-shm")]
+    public async Task UnsafeExistingSidecarIsRejectedWithoutRepair(string suffix)
+    {
+        Location.Prepare();
+        string path = Path.Combine(directory, "fleet.db" + suffix);
+        using (StorageLocation.CreateOrOpen(path))
+        {
+        }
+        await File.WriteAllTextAsync(path, "preserve-sidecar");
+        string before;
+        if (OperatingSystem.IsWindows())
+        {
+            FileInfo file = new FileInfo(path);
+            FileSecurity security = file.GetAccessControl();
+            security.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.WorldSid, null),
+                FileSystemRights.Read, AccessControlType.Allow));
+            file.SetAccessControl(security);
+            before = file.GetAccessControl().GetSecurityDescriptorSddlForm(AccessControlSections.All);
+        }
+        else
+        {
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.OtherRead);
+            before = File.GetUnixFileMode(path).ToString();
+        }
+        FleetStorageException failure = await Assert.ThrowsAsync<FleetStorageException>(() => LocalFleetStore.OpenAsync(Location));
+        Assert.Equal(StorageFailure.InvalidLocation, failure.Failure);
+        Assert.Equal("preserve-sidecar", await File.ReadAllTextAsync(path));
+        string after = OperatingSystem.IsWindows()
+            ? new FileInfo(path).GetAccessControl().GetSecurityDescriptorSddlForm(AccessControlSections.All)
+            : File.GetUnixFileMode(path).ToString();
+        Assert.Equal(before, after);
+        Assert.False(File.Exists(Path.Combine(directory, "fleet.db")));
     }
 
     [Fact]
