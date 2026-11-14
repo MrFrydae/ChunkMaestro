@@ -91,9 +91,13 @@ def test(allow_absent=False):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=['sync', 'restore', 'update-locks', 'build',
-                                          'format', 'test', 'verify', 'run'])
+                                          'format', 'test', 'verify', 'run', 'secret-scan'])
     parser.add_argument('--project', help='Explicit native executable project path for run')
     args = parser.parse_args()
+    if args.command == 'secret-scan':
+        from scan_secrets import main as scan
+        scan()
+        return
     if args.command == 'sync':
         sync()
         return

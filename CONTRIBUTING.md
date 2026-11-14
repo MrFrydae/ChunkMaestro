@@ -9,3 +9,5 @@ Run `python3 tooling/build/build.py verify` (Windows: `python`). Commit updated 
 Two independent QA-role verdicts including security/reliability are required for regular code PRs; high-risk changes require all three roles. Implementers cannot review their own work. Agents sharing an account do not represent distinct GitHub approvals. The lead configures protected-branch checks and merges; no release is authorized by this workflow.
 
 Use explicit C# types throughout; `var` is prohibited, including in tests and generated files. IDE0008 is an error in `.editorconfig`; see [AGENTS.md](AGENTS.md).
+
+Before pushing, run `python3 tooling/build/build.py secret-scan` with Gitleaks 8.30.1 installed. Independent exact-head QA must be lead-attested and pass the CI evidence gate before merge; see development documentation.

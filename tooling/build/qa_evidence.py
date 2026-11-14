@@ -9,6 +9,8 @@ import re
 
 
 def validate(report, head, high_risk=False):
+    if not isinstance(report, dict):
+        raise ValueError('QA evidence must be an object.')
     if not re.fullmatch(r'[0-9a-f]{40}', head) or report.get('head') != head:
         raise ValueError('Evidence must match the exact 40-character reviewed head SHA.')
     implementers = report.get('implementers')
@@ -18,8 +20,18 @@ def validate(report, head, high_risk=False):
     if high_risk:
         required.add('ux-accessibility-performance')
     seen_roles, seen_reviewers = set(), {x.strip().casefold() for x in implementers}
-    for review in report.get('reviews', []):
-        role, reviewer = review.get('role'), review.get('reviewer', '').strip().casefold()
+    reviews = report.get('reviews')
+    if not isinstance(reviews, list):
+        raise ValueError('Reviews must be a list of independently supplied verdicts.')
+    for review in reviews:
+        if not isinstance(review, dict):
+            raise ValueError('Each review must be an object.')
+        role, identity = review.get('role'), review.get('reviewer')
+        if not isinstance(role, str) or not isinstance(identity, str):
+            raise ValueError('Review role and identity must be strings.')
+        reviewer = identity.strip().casefold()
+        if role not in {'functional', 'security-reliability', 'ux-accessibility-performance'}:
+            raise ValueError('Unknown QA role.')
         if not reviewer or reviewer in seen_reviewers or role in seen_roles:
             raise ValueError('Review roles and reviewers must be independent and unique.')
         seen_reviewers.add(reviewer)
@@ -27,6 +39,8 @@ def validate(report, head, high_risk=False):
         if review.get('verdict') != 'PASS':
             raise ValueError('Unresolved non-PASS verdict.')
         for field in ('commands', 'environment', 'evidence', 'limitations', 'findings'):
+            if field == 'findings' and isinstance(review.get(field), list):
+                continue
             if not review.get(field):
                 raise ValueError(f'Review must include {field}; explicitly state none if applicable.')
     if not required.issubset(seen_roles):
