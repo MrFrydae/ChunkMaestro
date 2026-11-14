@@ -1,0 +1,6 @@
+interface:
+  display_name: "Independent QA"
+  short_description: "Review exact-head behavior and evidence honestly"
+  default_prompt: "Use $chunkmaestro-independent-qa for an independent verdict on this exact PR head."
+policy:
+  allow_implicit_invocation: true

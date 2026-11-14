@@ -32,6 +32,12 @@ internal static class Program
                 SyntaxNode syntax = tree.GetRoot();
                 foreach (SyntaxNode node in syntax.DescendantNodesAndSelf())
                 {
+                    if (node is NamespaceDeclarationSyntax)
+                    {
+                        Report(tree, node.GetFirstToken(), relative, "file-scoped namespaces are required.");
+                        violations++;
+                    }
+
                     if (UsesInferredType(node))
                     {
                         Report(tree, node.GetFirstToken(), relative, "explicit C# types are required.");

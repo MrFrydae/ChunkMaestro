@@ -1,0 +1,6 @@
+interface:
+  display_name: "Signed PR Shipping"
+  short_description: "Prepare signed commits and reviewable stacked PRs"
+  default_prompt: "Use $chunkmaestro-ship-pr to prepare the authorized signed commit and pull request."
+policy:
+  allow_implicit_invocation: true

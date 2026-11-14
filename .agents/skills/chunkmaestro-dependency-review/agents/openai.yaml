@@ -1,0 +1,6 @@
+interface:
+  display_name: "Dependency Review"
+  short_description: "Assess actual dependency usage and platform risk"
+  default_prompt: "Use $chunkmaestro-dependency-review to assess this dependency update against real project usage."
+policy:
+  allow_implicit_invocation: true
