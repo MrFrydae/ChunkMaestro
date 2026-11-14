@@ -1,0 +1,10 @@
+**/bin/
+**/obj/
+**/TestResults/
+.artifacts/
+.DS_Store
+*.user
+*.pfx
+*.p12
+*.key
+.env
