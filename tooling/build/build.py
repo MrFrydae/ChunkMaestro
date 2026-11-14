@@ -65,7 +65,7 @@ def build():
 
 
 def test(allow_absent=False):
-    tests = [p for p in projects() if dotnet('msbuild', p, '-getProperty:IsTestProject',
+    tests = [p for p in projects() if dotnet('msbuild', p, '-property:Configuration=Release', '-getProperty:IsTestProject',
                                            capture=True).lower() == 'true']
     if not tests:
         message = 'NOT RUN: no .NET test projects exist. No product test evidence.'

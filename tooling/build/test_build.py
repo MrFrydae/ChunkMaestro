@@ -27,6 +27,14 @@ class BuildCommands(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, 'Solution differs'):
                     build.sync(check=True)
 
+    def test_discovery_uses_same_release_configuration_as_execution(self):
+        project = Path('ReleaseOnlyTests.csproj')
+        with patch.object(build, 'projects', return_value=[project]), \
+                patch.object(build, 'dotnet', return_value='false') as dotnet:
+            build.test(allow_absent=True)
+            dotnet.assert_called_once_with('msbuild', project, '-property:Configuration=Release',
+                                           '-getProperty:IsTestProject', capture=True)
+
     def test_no_tests_is_error_for_explicit_test_command(self):
         with patch.object(build, 'projects', return_value=[]):
             with self.assertRaisesRegex(RuntimeError, 'no .NET test projects'):

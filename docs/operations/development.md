@@ -80,3 +80,9 @@ Local implementation validation: macOS 27.2 arm64, SDK 10.0.404, runtime 10.0.15
 Dependency auditing runs during restore for all packages and warnings fail builds. This baseline does not claim completed SBOM/license approval, dedicated SAST, comprehensive secret scanning, mutation/coverage enforcement or native CI acceptance. Those need concrete implementation and evidence as product slices arrive. Never put secrets in files/logs/PRs. Public stable release is blocked pending license, signing and full QA decisions.
 
 Rollback is a normal reviewed revert of these build/configuration files. It changes no database, host, permissions or production deployment. Preserve signed commits and do not force-push protected main. Lockfile and solution integration must be rerun after any revert that changes project membership or dependency versions.
+
+## Explicit C# types — owner decision
+
+`var` is prohibited in production, test and checked-in generated C#. `.editorconfig` configures all three var preferences false with IDE0008 as an error; the existing build style enforcement makes violations fail builds. `AGENTS.md` carries the policy into future agent tasks. A temporary built-in-type `var` fixture was compiled and failed with IDE0008, then removed.
+
+Functional QA found test discovery evaluated Debug while execution used Release. Discovery now explicitly evaluates Release. The regression asserts the matching MSBuild configuration; independent re-review remains required. Missing QA evidence publication and secret scanning reported by review are still merge blockers, not passing checks.
