@@ -82,6 +82,11 @@ def canonical(path):
     raise ValueError('Unexpected source path: ' + path)
 
 
+def mutation_key(file, mutant):
+    return json.dumps([canonical(file), mutant['location'], mutant['mutatorName'],
+                       mutant.get('replacement')], sort_keys=True)
+
+
 def runtime_cases(folder):
     reports = list((folder / 'coverage').glob('*.trx'))
     if len(reports) != 1:
@@ -199,7 +204,7 @@ def gate(folders, output):
                 report = json.loads(reports[0].read_text(encoding='utf-8'))
                 for file, data in report['files'].items():
                     for mutant in data['mutants']:
-                        key = json.dumps([file.replace('\\', '/'), mutant['location'], mutant['mutatorName'], mutant.get('replacement')], sort_keys=True)
+                        key = mutation_key(file, mutant)
                         mutants[module].setdefault(key, set()).add(mutant['status'])
         if {m['platform'] for m in manifests} != {'Windows', 'Darwin'} or len(manifests) != 2:
             failures.append('Exactly one Windows and one macOS execution required')

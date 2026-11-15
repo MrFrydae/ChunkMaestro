@@ -268,3 +268,27 @@ partial candidate/sidecar's scope while the actual worker is paused. No existing
 file is re-owned and no production ACL/path rejection is weakened. Windows
 confirmation remains required. Drive-letter parser tests use synthetic inventories
 only and are not Windows runtime evidence.
+
+## Managed behavioral regression integration
+
+The signed worker delivery 8fe1521 adds 33 registration, cancellation, disposal,
+corruption and permission-denial cases. Integrated with the endpoint migration
+and journal fix, normal local verification passes 101 tests, zero skips. Windows
+managed CI passed all 68 tests at the preceding b6b3a39 head; it does not certify
+the newly added cases. The worker's before/after measurements are on its stated
+74f139e-based source, not the later integrated schema/driver.
+
+The aggregate mutation key now normalizes absolute checkout paths just like line
+coverage, so one source mutation is unioned across Windows/macOS. Previously the
+absolute paths could incorrectly count the same mutation twice. A regression
+checks cross-platform identity and distinct replacements. This fixes the union
+calculation without changing thresholds or survivor treatment.
+
+The worker's 162 Ignored mutants all report Stryker's automatic "Removed by block
+already covered filter" reason. They remain uncredited, not waived. With the
+worker's 747 applicable strict denominator, those skipped executions alone limit
+the possible score to 585/747 (78.31%) even if every other mutation is killed.
+Further work must investigate actual execution of those mutations; neither a
+score redefinition nor relabeling Ignored as Killed is acceptance evidence. The
+33 added tests killed 38 additional mutants, but actual combined qualification
+and independent QA remain incomplete.

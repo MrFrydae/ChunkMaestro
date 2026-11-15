@@ -7,10 +7,23 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from qualify import ROOT, canonical, coverage, gate, native_evidence, runtime_cases
+from qualify import ROOT, canonical, coverage, gate, mutation_key, native_evidence, runtime_cases
 
 
 class GateTests(unittest.TestCase):
+    def test_same_source_mutant_unions_across_platform_checkout_paths(self):
+        mutant = {'location': {'start': {'line': 10, 'column': 4}, 'end': {'line': 10, 'column': 5}},
+                  'mutatorName': 'Boolean mutation', 'replacement': 'false'}
+        windows = mutation_key(r'D:\agent\src\ChunkMaestro.Persistence\StorageLocation.cs', mutant)
+        macos = mutation_key('/Users/runner/work/src/ChunkMaestro.Persistence/StorageLocation.cs', mutant)
+        self.assertEqual(windows, macos)
+        statuses = {}
+        statuses.setdefault(windows, set()).add('NoCoverage')
+        statuses.setdefault(macos, set()).add('Killed')
+        self.assertEqual(list(statuses.values()), [{'NoCoverage', 'Killed'}])
+        different = dict(mutant, replacement='true')
+        self.assertNotEqual(windows, mutation_key('/repo/src/ChunkMaestro.Persistence/StorageLocation.cs', different))
+
     def test_runtime_requires_actual_passed_upgrade_and_backup_cases(self):
         names = (
             'BackupPublicationTests.KillAfterProductionStepLeavesOnlyUnpublishedCandidateAndRecoverableOriginal',
