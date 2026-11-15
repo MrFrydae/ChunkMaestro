@@ -97,14 +97,14 @@ StorageSafetyAcceptanceTests adds five normal Windows/macOS cases:
   committed WAL bytes unchanged, source ID/payload preserved, incomplete candidate
   distinct from previously verified completed copy and completed data intact.
 
-The last case tests the SQLite backup engine used by production. It does NOT
-claim interruption of LocalFleetStore.CreateBackupAsync's one-shot publication.
-That API has no incremental progress boundary. Required core hook/change: use an
+That historical standalone case tested the SQLite backup engine, and did not
+prove interruption of the then-one-shot production publication. The original
+required correction was: use an
 internal incremental backup driver, expose a test observer after a successful
 native step, keep candidates under an unmistakable partial name, verify then
 atomically publish the completed name. Pause the actual driver in a child and
 kill before publication; assert incomplete files cannot be mistaken for completed
-recovery points. Core ownership is respected; no such production change is made.
+recovery points. That correction is now integrated as described below; historical reports are unchanged.
 
 volume.py creates ONLY a new unique private 64 MiB HFS+ disk image on macOS, or
 new fixed 64 MiB VHD on Windows via diskpart. It never selects a physical disk.
@@ -190,3 +190,26 @@ These Windows changes require hosted confirmation. No production permission or
 path policy was relaxed. Safety collection and gate checkout now select the PR
 head explicitly so artifact heads describe the actual reviewed commit rather than
 a synthetic GitHub merge commit.
+
+## Integrated production backup publication
+
+The signed backup-worker delivery caa52cb is integrated with the Windows fixture
+corrections. `LocalFleetStore.CreateBackupAsync` now uses the production
+`IncrementalBackupDriver`: actual native steps copy 32 pages, cancellation and
+step/finish errors stop publication, and the destination remains under an explicit
+`.backup-*.partial` name. Integrity/FK validation, close and flush precede atomic
+publication of a completed name. Failures are sanitized; existing databases and
+completed backups are preserved. Abrupt power-loss/directory-sync durability is
+not established by an atomic rename claim.
+
+Seven new tests cover real step interruption, cancellation, caller responsiveness,
+native refusal without retry, destination failures and WAL-consistent public
+recovery of 4,096 rows. The crash case identifies and kills the actual test worker
+after a successful production step with pages remaining. It checks that no new
+completed name appeared and that the original DB/WAL/prior completed bytes survive;
+SQLite shared-memory read marks legitimately change, so only its preservation and
+size are asserted. The full-volume fixture now expects the production sanitized
+StorageUnavailable category while retaining real volume exhaustion and recovery
+assertions. Fresh Windows execution, combined coverage/mutation and independent
+QA are still required; the worker's targeted coverage is diagnostic, below the
+required thresholds. This section does not declare aggregate safety acceptance.

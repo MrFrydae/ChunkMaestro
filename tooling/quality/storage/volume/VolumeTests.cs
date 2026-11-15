@@ -1,3 +1,4 @@
+using ChunkMaestro.Application;
 using ChunkMaestro.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -60,9 +61,11 @@ public sealed class VolumeTests
         }
         try
         {
-            Exception? failure = await Record.ExceptionAsync(() => LocalFleetStore.CreateBackupAsync(source, directory, default));
-            Assert.NotNull(failure);
-            Assert.True(failure is IOException || failure is SqliteException sql && sql.SqliteErrorCode == 13, failure.ToString());
+            FleetStorageException failure = await Assert.ThrowsAsync<FleetStorageException>(() =>
+                LocalFleetStore.CreateBackupAsync(source, directory, default));
+            Assert.Equal(StorageFailure.StorageUnavailable, failure.Failure);
+            Assert.DoesNotContain(directory, failure.Message);
+            Assert.DoesNotContain(Directory.GetFiles(directory, "before-migration-*.db"), path => path != completed);
             DbContextOptions<FleetDbContext> options = new DbContextOptionsBuilder<FleetDbContext>().UseSqlite(migration).Options;
             await using FleetDbContext context = new FleetDbContext(options);
             SqliteException migrationFailure = await Assert.ThrowsAsync<SqliteException>(() => context.Database.MigrateAsync());
