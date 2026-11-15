@@ -1,0 +1,13 @@
+{
+  "stryker-config": {
+    "project": "Lib/Lib.csproj",
+    "test-projects": [
+      "Tests/Tests.csproj"
+    ],
+    "reporters": [
+      "json"
+    ],
+    "configuration": "Release",
+    "concurrency": 1
+  }
+}
