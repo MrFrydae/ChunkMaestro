@@ -1,8 +1,8 @@
 # Private Stryker block execution experiment (issue 3, Q190)
 
 Q190 and directive §13.1 remain **90% line / 85% branch / 80% mutation**.
-This implementation collects supplemental evidence; it does not change or pass
-`qualify.py`, CI, mutation exclusions, manifests, dependency versions or QA gates.
+This implementation collects supplemental evidence in CI. Collection never passes
+qualification, changes mutation exclusions or dependency versions, or grants QA credit.
 Independent final Functional, Security/Reliability and UX/Performance roles are
 still required for storage qualification. This is implementation evidence only.
 
@@ -203,3 +203,95 @@ allowlist; replay.py's inherited environment is not itself a credential boundary
 MutationTests excludes both volume resources and standalone replay fixture sources
 from default compilation, then links only the actual persistence suite. The four
 fixture-shape tests are mechanism proof and must not inflate the product baseline.
+
+
+## Hosted adapter and portable artifact contract (issue 3)
+
+`replay_ci.py` runs serially after the existing official coverage and three-module
+collection in each Windows/macOS measurement job. Both jobs explicitly check out
+`pull_request.head.sha` (dispatch uses `github.sha`); the replay binding independently
+records that actual clean Git head. There are no privileged event handlers, added
+permissions, secrets, action-pin changes or automatic retries. Full-volume and
+macOS native measurements still execute with `always()` and retain their outputs.
+
+Private execution requires repository `MrFrydae/ChunkMaestro`, actor and event
+sender numeric ID **38875853**, and either a same-repository PR authored by that
+owner with the checked-out head SHA or an owner dispatch matching `GITHUB_SHA`.
+Forks, other authors/actors, stale heads, unsupported events/platforms and dirty
+trees fail **UNRESOLVED**, never a skipped proof. This is execution trust, not an
+independent QA verdict. The workflow's ordinary read-only PR sandbox remains.
+
+Before private build/restore/tool execution, the adapter replaces the inherited
+environment with `ENV_KEYS`, an explicit list of machine paths, locale, Windows
+runtime/architecture keys and the selected SDK location. It forces telemetry
+opt-out, no reusable MSBuild nodes and IPv6 disablement. It excludes GitHub/auth,
+cloud, SSH, private-feed variables, process startup hooks and arbitrary SDK/NuGet
+options. Only allowlisted key **names** are recorded; credential values are never
+inspected or printed. Hosted ephemeral HOME/profile directories must contain no
+private feeds or credentials. This adapter does not authorize execution against a
+credential-bearing workstation or live data. Local JSON/HTML remain unopened.
+
+The existing builder downloads the hash-pinned upstream archive into a unique
+job-owned system temporary directory, checks the original factory and sole patch,
+builds from unchanged upstream locks and verifies the entire source delta.
+The adapter additionally refuses any generated reporterJS other than SHA256
+`751fb010242b0b44e32d84fe7fe0b9ff1da182823b94f59f5c52b001fcfc163b`.
+Advisory warnings remain in the build log; the reviewed conditional-use rationale
+is `/tmp/pr6-private-tool-advisory-review.md`. No advisory is suppressed or claimed
+fixed. The official DLL comes from the ordinary restored tool package and version
+in `.config/dotnet-tools.json`; no separately installed tool replaces it.
+
+The uploaded **existing platform folder** now contains:
+
+- Existing `manifest.json`, coverage, Domain/Application/Persistence official
+  mutation reports, volume and native evidence, without relocation.
+- `replay/`: byte-for-byte runner `result.json`, `binding.json`, commands, original
+  official/private-patched output trees and report copies, both catalogues, ledger,
+  baselines/restoration and every runner log.
+- `replay-private/`: entire byte-preserved upstream build tree (including bin/obj),
+  archive, sole patch, provenance and build logs. This preserves all referenced
+  private build outputs; dependency advisories remain visible in those logs.
+- `replay-collection.json`: adapter status, trusted context/head, SDK, OS/architecture,
+  elapsed seconds, noncredential environment key names, original temporary root
+  and SHA256 maps of **all** relocated files, including bin/obj. Failed partial
+  builds/runs are copied too. Original temporary data is retained on failure.
+
+The lead must validate adapter status **and** raw runner status/binding, preserved
+inputs/restoration, exact current head/source/runner/config/SDK/private provenance,
+all referenced hashes and logs, report completeness, ledger identity and the
+existing official/native/volume evidence. Relocation never edits any raw JSON or
+log. An absolute path below `original_temporary_root/replay` resolves portably as
+`<platform>/replay/<suffix>`; similarly for `replay-private`. Absolute command/cwd,
+checkout and compiler paths are execution provenance, not portable gate paths.
+Validators must reject traversal/unknown roots and check `relocated` hashes before
+using those mappings. Do not require original temporary paths to exist after
+upload. Do not grant aggregation credit from this wrapper alone or relabel raw
+Ignored rows. Aggregate parser/gate integration remains lead-owned.
+
+Official collection now distinguishes complete evidence from score acceptance.
+Each fresh uniquely located report must contain nonempty terminal, source-bound
+mutants; Pending/unknown/Timeout, missing/ambiguous reports, source mismatch and
+all nonzero codes except actual **2** are unresolved. Code 2 additionally requires
+a computed official Stryker score below its unchanged 80% break threshold; code 0
+must agree with that score. Ignored and CompileError retain upstream meaning for
+this exit-code check only; this adds no gate exclusion or score credit. All-ignored
+or otherwise unscored reports are unresolved. Complete code-2 reports retain the
+actual exit code and `collected-threshold-fail` record. `COLLECTED` alone returns
+collection success; the unchanged 90/85/80 aggregate acceptance remains separate.
+
+GitHub documents a [six-hour hosted-job execution limit](https://docs.github.com/en/actions/reference/limits).
+The job is bounded at 350 minutes; official collection at 135 minutes (each
+mutation command 2400 seconds), and private replay at 140 minutes (each mutation
+command 3600 seconds; upstream build 600 seconds). These are finite collection
+budgets, not measured completion promises. Commands record wall time and timeout;
+exhaustion fails unresolved with available partial artifacts, never a hidden
+retry or successful substitute. Remaining job time accommodates volume/native
+work and uploads; an overall job cancellation can still prevent complete upload.
+
+Local adapter validation on macOS arm64 used disposable parser/path/subprocess
+fixtures, including an actual host temporary path with spaces, source mismatch,
+threshold-code mismatch, environment stripping and byte-preserving failure
+artifacts. Windows path execution and complete hosted private/product mutation
+runs have **not** been performed by this implementation task. Historical macOS
+mutation outputs are diagnostic only. Full current-head Windows/macOS execution,
+root aggregate integration and independent product QA remain required.

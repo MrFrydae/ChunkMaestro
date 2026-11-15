@@ -11,7 +11,7 @@ jobs:
       matrix:
         os: [windows-2025, macos-15]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    timeout-minutes: 350
     env:
       DOTNET_CLI_TELEMETRY_OPTOUT: '1'
       DOTNET_NOLOGO: '1'
@@ -28,7 +28,13 @@ jobs:
           python-version: '3.13'
       - name: Evidence contract regressions
         run: python -m unittest discover -s tooling/quality/storage -p 'test_*.py' -v
-      - run: python tooling/quality/storage/qualify.py run .artifacts/storage/${{ matrix.os }}
+      - name: Official coverage and mutation collection
+        timeout-minutes: 135
+        run: python tooling/quality/storage/qualify.py run .artifacts/storage/${{ matrix.os }}
+      - name: Trusted private Persistence replay collection
+        if: always()
+        timeout-minutes: 140
+        run: python tooling/quality/storage/replay_ci.py .artifacts/storage/${{ matrix.os }}
       - if: always()
         run: python tooling/quality/storage/volume.py .artifacts/storage/${{ matrix.os }}/volume
       - if: always() && runner.os == 'macOS'
@@ -37,6 +43,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: storage-${{ matrix.os }}
+          include-hidden-files: true
           path: .artifacts/storage/${{ matrix.os }}/
           if-no-files-found: error
   gate:

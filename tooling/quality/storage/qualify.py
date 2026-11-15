@@ -22,24 +22,31 @@ def source_hashes():
 
 
 def run(output):
+    # Collection is separate from lead-owned aggregate qualification.
+    import time
+    import replay
+    from replay_ci import child_environment, complete_report, isolated_environment
+
+    output = output.resolve()
     output.mkdir(parents=True, exist_ok=False)
     dotnet = os.environ.get('CHUNKMAESTRO_DOTNET', 'dotnet')
-    env = dict(os.environ)
-    # Stryker launches dotnet/MSBuild itself.
+    env = child_environment(os.environ)
     if Path(dotnet).is_absolute():
         env['PATH'] = str(Path(dotnet).parent) + os.pathsep + env.get('PATH', '')
         env['DOTNET_ROOT'] = str(Path(dotnet).parent)
     records = []
 
-    def command(args, cwd=ROOT):
-        with (output / ('command-%02d.log' % len(records))).open('w', encoding='utf-8') as log:
-            code = subprocess.run(args, cwd=cwd, env=env, stdout=log, stderr=subprocess.STDOUT).returncode
-        records.append({'args': args, 'exit_code': code})
-        return code
+    def command(args, cwd=ROOT, timeout=600):
+        with isolated_environment(env):
+            record = replay.command(args, cwd, output, 'command-%02d' % len(records), env, timeout)
+        records.append(record)
+        return record
 
     manifest = {'schema_version': 1, 'head': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
                 'platform': platform.system(), 'sources': source_hashes(), 'commands': records,
+                'status': 'UNRESOLVED', 'runtime_tests_passed': False,
                 'clean': not subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=normal'], cwd=ROOT, text=True).strip()}
+    started = time.monotonic()
     try:
         if platform.system() not in ('Windows', 'Darwin'):
             raise RuntimeError('Linux is an unsupported-controller contract, not storage safety evidence')
@@ -49,14 +56,9 @@ def run(output):
                      [dotnet, 'test', 'tests/ChunkMaestro.PersistenceTests/ChunkMaestro.PersistenceTests.csproj', '-c', 'Release', '--no-restore',
                       '--collect', 'XPlat Code Coverage', '--settings', 'tooling/quality/storage/coverage.runsettings',
                       '--logger', 'trx', '--results-directory', str(output / 'coverage')]):
-            if command(args):
-                raise RuntimeError('Restore/build/runtime test failed; see command log')
-        trx = list((output / 'coverage').glob('*.trx'))
-        if len(trx) != 1:
-            raise RuntimeError('Expected exactly one runtime TRX')
-        counters = ET.parse(trx[0]).find('.//{*}Counters')
-        if counters is None or int(counters.attrib['total']) <= 0 or counters.attrib['total'] != counters.attrib['passed']:
-            raise RuntimeError('Runtime cases missing, failing or skipped')
+            replay.require(command(args))
+        runtime_cases(output)
+        manifest['runtime_tests_passed'] = True
         for module in MODULES:
             config = {'stryker-config': {'project': 'ChunkMaestro.' + module + '.csproj', 'configuration': 'Release',
                       'test-projects': ['MutationTests.csproj'],
@@ -65,14 +67,17 @@ def run(output):
                       'concurrency': 2}}
             config_path = output / (module + '.json')
             config_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
-            command([dotnet, 'stryker', '--config-file', str(config_path), '--output', str(output / ('mutation-' + module))], ROOT / 'tooling/quality/storage')
-        manifest['runtime_tests_passed'] = True
-    except (RuntimeError, OSError) as error:
+            directory = output / ('mutation-' + module)
+            record = command([dotnet, 'stryker', '--config-file', str(config_path), '--output', str(directory)],
+                             ROOT / 'tooling/quality/storage', timeout=2400)
+            record['collection'] = complete_report(directory, record, module=module)
+        manifest['status'] = 'COLLECTED'
+    except (RuntimeError, ValueError, KeyError, OSError, ET.ParseError) as error:
         manifest['error'] = str(error)
-        manifest['runtime_tests_passed'] = False
     finally:
+        manifest['seconds'] = time.monotonic() - started
         (output / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
-    return 0 if manifest.get('runtime_tests_passed') and all(c['exit_code'] == 0 for c in records) else 1
+    return 0 if manifest['status'] == 'COLLECTED' else 1
 
 
 def canonical(path):
