@@ -119,6 +119,13 @@ This is real filesystem exhaustion, separate from max_page_count injection.
 macOS detached fixtures are removed; Windows retains its bounded fixture path for
 inspection rather than recursively deleting a potentially mounted directory.
 A failed detach fails evidence and retains its exact owned fixture for recovery.
+On macOS, cleanup reads the disk-image inventory without logging unrelated host
+paths and matches the exact generated image, device and sole fixture mount. A
+normal detach returning resource-busy (16) permits one forced detach only after
+rechecking that same identity. Changed/ambiguous attachments, other errors and
+uncertain final state fail evidence and preserve the fixture. A real disposable
+image probe with an open file reproduced the busy return and verified this
+bounded cleanup; synthetic refusal cases cover changed and unrelated identities.
 Requires hdiutil/Xcode CLI or an elevated Windows runner with diskpart/VHD support;
 unsupported setup fails, never skips. No Docker, live hosts or user data is used.
 
