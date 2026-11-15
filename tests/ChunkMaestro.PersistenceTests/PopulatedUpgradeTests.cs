@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 using System.Data.Common;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO.Pipes;
 using System.Text.Json;
 using Xunit;
 using Xunit.Abstractions;
@@ -127,6 +128,9 @@ public sealed class PopulatedUpgradeTests(ITestOutputHelper output) : IDisposabl
         {
             backup = await LocalFleetStore.CreateBackupAsync(connection, root, default);
         }
+        string pipeName = "cm-upgrade-" + Guid.NewGuid().ToString("N");
+        using NamedPipeServerStream signal = new NamedPipeServerStream(pipeName, PipeDirection.In, 1,
+            PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
         ProcessStartInfo start = new ProcessStartInfo(Environment.GetEnvironmentVariable("CHUNKMAESTRO_DOTNET") ?? "dotnet")
         {
             RedirectStandardOutput = true,
@@ -137,27 +141,36 @@ public sealed class PopulatedUpgradeTests(ITestOutputHelper output) : IDisposabl
         start.ArgumentList.Add(typeof(PopulatedUpgradeTests).Assembly.Location);
         start.ArgumentList.Add("--TestCaseFilter:FullyQualifiedName~KillAfterNewMigrationDropsPopulatedEndpointsRollsBackAndRecoversSeparately");
         start.Environment["CHUNKMAESTRO_ENDPOINT_UPGRADE_CHILD"] = root;
+        start.Environment["CHUNKMAESTRO_ENDPOINT_UPGRADE_PIPE"] = pipeName;
         using Process child = Process.Start(start) ?? throw new InvalidOperationException("Child did not start");
         Task<string> stdout = child.StandardOutput.ReadToEndAsync();
         Task<string> stderr = child.StandardError.ReadToEndAsync();
+        Process? migrationProcess = null;
         try
         {
             using CancellationTokenSource deadline = new CancellationTokenSource(TimeSpan.FromSeconds(45));
-            while (!File.Exists(Path.Combine(root, "drop-executed")) && !child.HasExited)
-            {
-                await Task.Delay(20, deadline.Token);
-            }
+            await signal.WaitForConnectionAsync(deadline.Token);
+            byte[] identity = new byte[4];
+            await signal.ReadExactlyAsync(identity, deadline.Token);
+            migrationProcess = Process.GetProcessById(BitConverter.ToInt32(identity));
             Assert.False(child.HasExited);
             Assert.True(File.Exists(Path.Combine(root, "drop-executed")));
-            output.WriteLine(await File.ReadAllTextAsync(Path.Combine(root, "drop-executed")));
-            string marker = await File.ReadAllTextAsync(Path.Combine(root, "drop-executed"));
-            using Process migrationProcess = Process.GetProcessById(int.Parse(marker.Split('\n')[1], CultureInfo.InvariantCulture));
+            output.WriteLine(await File.ReadAllTextAsync(Path.Combine(root, "drop-executed"), deadline.Token));
             migrationProcess.Kill(true);
             await migrationProcess.WaitForExitAsync(deadline.Token);
             await child.WaitForExitAsync(deadline.Token);
         }
         finally
         {
+            if (migrationProcess is not null)
+            {
+                if (!migrationProcess.HasExited)
+                {
+                    migrationProcess.Kill(true);
+                    await migrationProcess.WaitForExitAsync();
+                }
+                migrationProcess.Dispose();
+            }
             if (!child.HasExited)
             {
                 child.Kill(true);
@@ -204,10 +217,18 @@ public sealed class PopulatedUpgradeTests(ITestOutputHelper output) : IDisposabl
                 Assert.Equal(4L, await probe.ExecuteScalarAsync(cancellationToken));
                 probe.CommandText = "SELECT COUNT(*) FROM sqlite_schema WHERE name='Endpoints'";
                 Assert.Equal(0L, await probe.ExecuteScalarAsync(cancellationToken));
-                using (StorageLocation.CreateOrOpen(Path.Combine(directory, "drop-executed")))
+                string pending = Path.Combine(directory, "drop-executed.partial");
+                using (StorageLocation.CreateOrOpen(pending))
                 {
                 }
-                await File.WriteAllTextAsync(Path.Combine(directory, "drop-executed"), "DROP executed inside transaction; original table absent; four copied endpoints present\n" + Environment.ProcessId.ToString(CultureInfo.InvariantCulture), cancellationToken);
+                await File.WriteAllTextAsync(pending, "DROP executed inside transaction; original table absent; four copied endpoints present", cancellationToken);
+                File.Move(pending, Path.Combine(directory, "drop-executed"), false);
+                using NamedPipeClientStream signal = new NamedPipeClientStream(".",
+                    Environment.GetEnvironmentVariable("CHUNKMAESTRO_ENDPOINT_UPGRADE_PIPE")!, PipeDirection.Out,
+                    PipeOptions.Asynchronous);
+                await signal.ConnectAsync(15000, cancellationToken);
+                await signal.WriteAsync(BitConverter.GetBytes(Environment.ProcessId), cancellationToken);
+                await signal.FlushAsync(cancellationToken);
                 await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
             }
             return result;

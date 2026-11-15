@@ -322,3 +322,18 @@ backup/migration refusal, recovery and verified detach succeeded via the normal
 Z: drive root. Evidence is storage-windows-2025 artifact14144011617 from run
 43669845281. The measurement job failed earlier on the six ACL assertions, so
 this individual fixture pass is not overall qualification or current-head proof.
+
+## Migration interruption handshake correction
+
+Windows measurement at 35a0aaf passed 100 tests and failed the populated migration
+crash fixture: the parent observed the marker's existence before its PID line was
+written, causing IndexOutOfRange and premature fixture cleanup with a live worker.
+The child now writes a private pending marker and atomically publishes it only
+when complete, then sends its actual worker PID through a named-pipe handshake
+after the executed transactional DROP and data assertions. The parent reads the
+complete fixed-size PID message, kills and waits for that worker, and also kills/
+waits it in failure cleanup before disposing fixture files. It no longer parses
+partially written marker content or relies on launcher exit as worker completion.
+The real Windows 64 MiB full-volume case passed again at 35a0aaf; the measurement
+failure was the interruption fixture, not a mutation-score result. Updated
+Windows handshake execution remains pending.
