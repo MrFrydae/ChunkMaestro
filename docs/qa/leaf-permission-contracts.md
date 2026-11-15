@@ -115,6 +115,13 @@ lead-owned and unresolved. No GitHub checks/reviews were queried or changed.
 
 Rollback: revert this signed test/documentation commit; no product data changed.
 
+Lead integration note: Windows permission snapshots now compare owner/group,
+DACL protection and every access-control entry. Windows may recompute its
+auto-inheritance bookkeeping when an original DACL is restored; that flag alone
+does not change the effective access policy. Raw worker artifacts and their
+hashes remain historical. The integrated assertion does not weaken production
+ACL checks or claim Windows execution; fresh hosted evidence is still required.
+
 Artifact integrity (SHA256):
 
 - Raw private JSON: `084cb5cf87fd9ce69be92c5f902937f4cefa94bce018df3ec9d70c4500e67804`.

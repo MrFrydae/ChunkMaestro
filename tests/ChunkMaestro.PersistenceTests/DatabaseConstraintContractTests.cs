@@ -111,6 +111,8 @@ public sealed class DatabaseConstraintContractTests : IDisposable
             await using LocalFleetStore opened = await LocalFleetStore.OpenAsync(StorageLocation.ForTests(directory));
         });
         Assert.Equal(StorageFailure.CorruptDatabase, refusal.Failure);
+        Assert.False(string.IsNullOrWhiteSpace(refusal.Message));
+        Assert.DoesNotContain(refusal.Message, char.IsControl);
         Assert.DoesNotContain(directory, refusal.Message);
         Assert.Equal(databaseHash, SHA256.HashData(File.ReadAllBytes(Path.Combine(directory, "fleet.db"))));
         Assert.Equal(backups, Directory.GetFiles(directory, "before-migration-*.db").Order().ToArray());

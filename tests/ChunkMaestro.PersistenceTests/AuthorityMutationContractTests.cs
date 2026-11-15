@@ -4,6 +4,7 @@ using ChunkMaestro.Persistence;
 using System.Diagnostics;
 using System.Security.AccessControl;
 using System.Security.Principal;
+using System.Text;
 using Xunit;
 
 namespace ChunkMaestro.PersistenceTests;
@@ -321,7 +322,13 @@ public sealed class AuthorityMutationContractTests : IDisposable
         if (OperatingSystem.IsWindows())
         {
             FileSystemSecurity security = directory ? new DirectoryInfo(path).GetAccessControl() : new FileInfo(path).GetAccessControl();
-            return security.GetSecurityDescriptorBinaryForm();
+            RawSecurityDescriptor descriptor = new RawSecurityDescriptor(security.GetSecurityDescriptorBinaryForm(), 0);
+            Assert.NotNull(descriptor.DiscretionaryAcl);
+            byte[] acl = new byte[descriptor.DiscretionaryAcl.BinaryLength];
+            descriptor.DiscretionaryAcl.GetBinaryForm(acl, 0);
+            // Windows can recompute auto-inheritance bookkeeping on restoration.
+            // Compare ownership, protection and every actual access-control entry.
+            return Encoding.UTF8.GetBytes($"{descriptor.Owner}|{descriptor.Group}|{descriptor.ControlFlags & ControlFlags.DiscretionaryAclProtected}|{Convert.ToHexString(acl)}");
         }
         return BitConverter.GetBytes((int) File.GetUnixFileMode(path));
     }
