@@ -292,3 +292,15 @@ Further work must investigate actual execution of those mutations; neither a
 score redefinition nor relabeling Ignored as Killed is acceptance evidence. The
 33 added tests killed 38 additional mutants, but actual combined qualification
 and independent QA remain incomplete.
+
+## Windows live-permission fixture restoration
+
+Hosted Windows managed validation at 250ec1b executed 101 tests: 95 passed and
+six live-permission expansion cases failed at the subsequent recovery read.
+Production correctly kept rejecting the expanded ACL. The fixture had attempted
+to persist an unmodified FileSecurity snapshot; that snapshot does not mark its
+DACL as changed. The test now captures descriptor bytes, explicitly loads the
+access section into a fresh FileSecurity object, persists it, and compares the
+resulting access SDDL with the captured original before testing recovery. This
+only restores the test's own altered fixture; no production ACL repair or relaxed
+permission validation is introduced. Hosted Windows confirmation remains required.

@@ -224,11 +224,14 @@ public sealed class PlatformSecurityTests : IDisposable
     {
         await using LocalFleetStore store = await LocalFleetStore.OpenAsync(StorageLocation.ForTests(root));
         string path = Path.Combine(root, "fleet.db");
-        FileSecurity? original = null;
+        byte[]? original = null;
+        string? originalAccess = null;
         if (OperatingSystem.IsWindows())
         {
             FileInfo info = new FileInfo(path);
-            original = info.GetAccessControl();
+            FileSecurity captured = info.GetAccessControl();
+            original = captured.GetSecurityDescriptorBinaryForm();
+            originalAccess = captured.GetSecurityDescriptorSddlForm(AccessControlSections.Access);
             FileSecurity expanded = info.GetAccessControl();
             FileSystemRights unsafeRights = unsafeMode switch
             {
@@ -259,7 +262,13 @@ public sealed class PlatformSecurityTests : IDisposable
         {
             if (OperatingSystem.IsWindows())
             {
-                new FileInfo(path).SetAccessControl(original!);
+                // A read snapshot has no modified sections, so persisting it can be a no-op.
+                // Explicitly load the captured DACL to mark the access section for restoration.
+                FileSecurity restored = new FileSecurity();
+                restored.SetSecurityDescriptorBinaryForm(original!, AccessControlSections.Access);
+                FileInfo info = new FileInfo(path);
+                info.SetAccessControl(restored);
+                Assert.Equal(originalAccess, info.GetAccessControl().GetSecurityDescriptorSddlForm(AccessControlSections.Access));
             }
             else
             {
