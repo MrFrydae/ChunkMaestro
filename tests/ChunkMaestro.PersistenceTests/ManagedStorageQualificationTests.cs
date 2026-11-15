@@ -338,10 +338,15 @@ public sealed class ManagedStorageQualificationTests : IDisposable
         Assert.Empty(Directory.GetFiles(directory, "before-migration-*.db"));
     }
 
-    private static async Task DeniedAsync(Func<Task> action)
+    private async Task DeniedAsync(Func<Task> action)
     {
         FleetStorageException failure = await Assert.ThrowsAsync<FleetStorageException>(action);
         Assert.Equal(StorageFailure.InvalidRegistration, failure.Failure);
+        Assert.False(string.IsNullOrWhiteSpace(failure.Message));
+        Assert.DoesNotContain(failure.Message, char.IsControl);
+        Assert.DoesNotContain(directory, failure.ToString());
+        Assert.DoesNotContain("secret", failure.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("password", failure.ToString(), StringComparison.OrdinalIgnoreCase);
         Assert.Null(failure.InnerException);
         Assert.Null(failure.BackupPath);
         Assert.DoesNotContain("SQLite", failure.Message);

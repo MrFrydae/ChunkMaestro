@@ -145,8 +145,23 @@ public sealed class StorageTests : IDisposable
 
         await InvalidAsync(() => store.RegisterInstanceAsync(new(Guid.NewGuid()), h, "One", "../one.service", [new(EndpointEdition.Java, "localhost", 10)]));
     }
-    private static async Task InvalidAsync(Func<Task> action) =>
-        Assert.Equal(StorageFailure.InvalidRegistration, (await Assert.ThrowsAsync<FleetStorageException>(action)).Failure);
+    private async Task InvalidAsync(Func<Task> action)
+    {
+        FleetStorageException failure = await Assert.ThrowsAsync<FleetStorageException>(action);
+        Assert.Equal(StorageFailure.InvalidRegistration, failure.Failure);
+        AssertSafeGuidance(failure);
+        Assert.Null(failure.BackupPath);
+    }
+
+    private void AssertSafeGuidance(FleetStorageException failure)
+    {
+        Assert.False(string.IsNullOrWhiteSpace(failure.Message));
+        Assert.DoesNotContain(failure.Message, char.IsControl);
+        Assert.DoesNotContain(directory, failure.ToString());
+        Assert.DoesNotContain("SQLite Error", failure.ToString());
+        Assert.DoesNotContain("simulated interrupted migration", failure.ToString());
+        Assert.Null(failure.InnerException);
+    }
 
     [Theory]
     [InlineData("minecraft@survival.service")]
@@ -256,6 +271,7 @@ public sealed class StorageTests : IDisposable
             Assert.Equal("LOCKED", ready);
             FleetStorageException error = await Assert.ThrowsAsync<FleetStorageException>(() => LocalFleetStore.OpenAsync(Location));
             Assert.Equal(StorageFailure.ControllerInUse, error.Failure);
+            AssertSafeGuidance(error);
             process.Kill();
             await process.WaitForExitAsync();
             await using LocalFleetStore recovered = await LocalFleetStore.OpenAsync(Location);
@@ -288,6 +304,7 @@ public sealed class StorageTests : IDisposable
         byte[] before = await File.ReadAllBytesAsync(Path.Combine(directory, "fleet.db"));
         FleetStorageException error = await Assert.ThrowsAsync<FleetStorageException>(() => LocalFleetStore.OpenAsync(Location));
         Assert.Equal(StorageFailure.NewerSchema, error.Failure);
+        AssertSafeGuidance(error);
         Assert.Equal(before, await File.ReadAllBytesAsync(Path.Combine(directory, "fleet.db")));
     }
     [Fact]
@@ -303,7 +320,10 @@ public sealed class StorageTests : IDisposable
             await ExecuteAsync(connection, "PRAGMA user_version=999");
         }
 
-        Assert.Equal(StorageFailure.NewerSchema, (await Assert.ThrowsAsync<FleetStorageException>(() => LocalFleetStore.OpenAsync(Location))).Failure);
+        FleetStorageException failure = await Assert.ThrowsAsync<FleetStorageException>(() => LocalFleetStore.OpenAsync(Location));
+        Assert.Equal(StorageFailure.NewerSchema, failure.Failure);
+        AssertSafeGuidance(failure);
+        Assert.Null(failure.BackupPath);
     }
     [Fact]
     public async Task CorruptedDatabaseHasSafeDiagnosticAndIsPreserved()
@@ -318,6 +338,7 @@ public sealed class StorageTests : IDisposable
         await File.WriteAllBytesAsync(Path.Combine(directory, "fleet.db"), invalid);
         FleetStorageException error = await Assert.ThrowsAsync<FleetStorageException>(() => LocalFleetStore.OpenAsync(Location));
         Assert.Equal(StorageFailure.CorruptDatabase, error.Failure);
+        AssertSafeGuidance(error);
         Assert.DoesNotContain(directory, error.Message);
         Assert.Equal(invalid, await File.ReadAllBytesAsync(Path.Combine(directory, "fleet.db")));
     }
@@ -343,6 +364,7 @@ public sealed class StorageTests : IDisposable
                 throw new IOException("simulated interrupted migration");
             }));
         Assert.Equal(StorageFailure.MigrationFailed, failure.Failure);
+        AssertSafeGuidance(failure);
         Assert.NotNull(failure.BackupPath);
         Assert.True(File.Exists(failure.BackupPath));
         // A read-only SQLite connection can leave WAL/SHM files behind. Create fixture
@@ -412,6 +434,10 @@ public sealed class StorageTests : IDisposable
 
         FleetStorageException failure = await Assert.ThrowsAsync<FleetStorageException>(() => LocalFleetStore.OpenAsync(Location));
         Assert.Equal(StorageFailure.MigrationFailed, failure.Failure);
+        AssertSafeGuidance(failure);
+        Assert.Null(failure.BackupPath);
+        await using SqliteConnection preserved = await ConnectionAsync();
+        Assert.Equal(1L, await ScalarAsync(preserved, "SELECT COUNT(*) FROM __EFMigrationsLock"));
     }
     [Fact]
     public async Task SymlinkDatabaseIsRejectedWithoutModifyingTarget()
@@ -483,10 +509,12 @@ public sealed class StorageTests : IDisposable
             Assert.Equal("ok", await ScalarAsync(connection, "PRAGMA integrity_check"));
             FleetStorageException backup = await Assert.ThrowsAsync<FleetStorageException>(() => LocalFleetStore.CreateBackupAsync(connection, directory, default));
             Assert.Equal(StorageFailure.CorruptDatabase, backup.Failure);
+            AssertSafeGuidance(backup);
         }
         byte[] before = await File.ReadAllBytesAsync(Path.Combine(directory, "fleet.db"));
         FleetStorageException failure = await Assert.ThrowsAsync<FleetStorageException>(() => LocalFleetStore.OpenAsync(Location));
         Assert.Equal(StorageFailure.CorruptDatabase, failure.Failure);
+        AssertSafeGuidance(failure);
         Assert.DoesNotContain(directory, failure.ToString());
         Assert.Equal(before, await File.ReadAllBytesAsync(Path.Combine(directory, "fleet.db")));
     }
