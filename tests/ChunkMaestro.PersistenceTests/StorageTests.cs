@@ -273,7 +273,8 @@ public sealed class StorageTests : IDisposable
             Assert.Equal(StorageFailure.ControllerInUse, error.Failure);
             AssertSafeGuidance(error);
             process.Kill();
-            await process.WaitForExitAsync();
+            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(30));
+            await WaitForControllerReleaseAsync();
             await using LocalFleetStore recovered = await LocalFleetStore.OpenAsync(Location);
             Assert.Empty((await recovered.ReadAsync()).Hosts);
         }
@@ -282,12 +283,36 @@ public sealed class StorageTests : IDisposable
             if (!process.HasExited)
             {
                 process.Kill();
-                await process.WaitForExitAsync();
+                await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(30));
             }
 
         }
 
     }
+
+    private async Task WaitForControllerReleaseAsync()
+    {
+        // Observe the lock itself after process exit, before opening SQLite or
+        // retrying any operation that could modify the store. Never remove it.
+        Stopwatch deadline = Stopwatch.StartNew();
+        while (true)
+        {
+            try
+            {
+                using FileStream released = new FileStream(Path.Combine(directory, "controller.lock"),
+                    FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+                return;
+            }
+            catch (IOException error) when (OperatingSystem.IsWindows() &&
+                (error.HResult & 0xFFFF) is 32 or 33 && deadline.Elapsed < TimeSpan.FromSeconds(10))
+            {
+                // Only native sharing/lock violations are eligible. A permanent
+                // lock or any other failure escapes with its original diagnostic.
+                await Task.Delay(TimeSpan.FromMilliseconds(25));
+            }
+        }
+    }
+
     [Fact]
     public async Task NewerHistoryIsRejectedWithoutChangingDatabaseOrAttemptingDowngrade()
     {

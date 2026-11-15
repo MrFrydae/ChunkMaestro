@@ -42,3 +42,24 @@ safety acceptance and all three independent QA roles remain required. No
 threshold, exclusion, test expectation for authority denial, or review gate was
 relaxed. Recovery remains explicit: preserve rejected storage and reopen only
 after validating ownership and a compatible recovery copy.
+
+## Controller process handoff
+
+The subsequent
+[Windows managed job at `7603103`](https://github.com/MrFrydae/ChunkMaestro/actions/runs/43714588638/job/132813252061)
+executed 185 tests: 184 passed, one failed, zero skipped. All three original
+failures passed. The remaining failure was the public reopen immediately after
+killing and awaiting the competing controller process; it reported
+`ControllerInUse`. The sanitized exception does not establish which native
+sharing failure occurred or its duration, so delayed release is not claimed as
+a confirmed root cause.
+
+The process test now bounds exit waiting to 30 seconds, then observes exclusive
+access to the existing lock file before opening SQLite. It retries only native
+Windows sharing/lock violations (32/33), with a ten-second deadline. Missing files,
+other errors and persistent locks fail with the original native diagnostic.
+The probe uses `FileMode.Open`, never recreates or deletes the lock, and performs
+no database operation. The original assertion that a live second controller is
+refused remains. This is test synchronization and failure diagnosis; production
+locking and mutation retry behavior are unchanged. Windows CI must still prove
+the handoff succeeds within the bound.
