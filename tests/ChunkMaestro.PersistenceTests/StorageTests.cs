@@ -364,6 +364,10 @@ public sealed class StorageTests : IDisposable
         FleetStorageException error = await Assert.ThrowsAsync<FleetStorageException>(() => LocalFleetStore.OpenAsync(Location));
         Assert.Equal(StorageFailure.CorruptDatabase, error.Failure);
         AssertSafeGuidance(error);
+        // Corruption needs actionable recovery guidance, rather than only the
+        // generic initialization-unavailable diagnostic used for other failures.
+        Assert.Contains("sidecars", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("recovery", error.Message, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(directory, error.Message);
         Assert.Equal(invalid, await File.ReadAllBytesAsync(Path.Combine(directory, "fleet.db")));
     }
