@@ -225,13 +225,11 @@ public sealed class PlatformSecurityTests : IDisposable
         await using LocalFleetStore store = await LocalFleetStore.OpenAsync(StorageLocation.ForTests(root));
         string path = Path.Combine(root, "fleet.db");
         byte[]? original = null;
-        string? originalAccess = null;
         if (OperatingSystem.IsWindows())
         {
             FileInfo info = new FileInfo(path);
             FileSecurity captured = info.GetAccessControl();
             original = captured.GetSecurityDescriptorBinaryForm();
-            originalAccess = captured.GetSecurityDescriptorSddlForm(AccessControlSections.Access);
             FileSecurity expanded = info.GetAccessControl();
             FileSystemRights unsafeRights = unsafeMode switch
             {
@@ -268,7 +266,18 @@ public sealed class PlatformSecurityTests : IDisposable
                 restored.SetSecurityDescriptorBinaryForm(original!, AccessControlSections.Access);
                 FileInfo info = new FileInfo(path);
                 info.SetAccessControl(restored);
-                Assert.Equal(originalAccess, info.GetAccessControl().GetSecurityDescriptorSddlForm(AccessControlSections.Access));
+                RawSecurityDescriptor expected = new RawSecurityDescriptor(original!, 0);
+                RawSecurityDescriptor actual = new RawSecurityDescriptor(info.GetAccessControl().GetSecurityDescriptorBinaryForm(), 0);
+                Assert.Equal(expected.Owner, actual.Owner);
+                Assert.Equal(expected.ControlFlags & ControlFlags.DiscretionaryAclProtected,
+                    actual.ControlFlags & ControlFlags.DiscretionaryAclProtected);
+                Assert.NotNull(expected.DiscretionaryAcl);
+                Assert.NotNull(actual.DiscretionaryAcl);
+                byte[] expectedAccess = new byte[expected.DiscretionaryAcl.BinaryLength];
+                byte[] actualAccess = new byte[actual.DiscretionaryAcl.BinaryLength];
+                expected.DiscretionaryAcl.GetBinaryForm(expectedAccess, 0);
+                actual.DiscretionaryAcl.GetBinaryForm(actualAccess, 0);
+                Assert.Equal(expectedAccess, actualAccess);
             }
             else
             {

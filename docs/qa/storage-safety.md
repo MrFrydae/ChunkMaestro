@@ -304,3 +304,21 @@ access section into a fresh FileSecurity object, persists it, and compares the
 resulting access SDDL with the captured original before testing recovery. This
 only restores the test's own altered fixture; no production ACL repair or relaxed
 permission validation is introduced. Hosted Windows confirmation remains required.
+
+## Windows ACL metadata comparison and full-volume confirmation
+
+At 09c273c Windows did restore the original owner-only access entries, but the
+new exact-SDDL assertion failed in all six cases: expected `D:P(A;;FA;;;LA)` and
+actual `D:PAI(A;;FA;;;LA)`. The extra auto-inherited metadata flag is distinct
+from the ACL protection bit and access entries. The fixture now compares owner,
+DACL protection and exact DACL binary ACE content, rather than the complete SDDL
+header. It retains the production read/write recovery assertions. The change
+neither accepts additional principals/rights nor relaxes production validation.
+Local normal verification passes 101 tests, zero skips; Windows confirmation of
+this assertion correction remains required.
+
+The actual 09c273c Windows full-volume artifact is PASS: real 64 MiB VHD exhaustion,
+backup/migration refusal, recovery and verified detach succeeded via the normal
+Z: drive root. Evidence is storage-windows-2025 artifact14144011617 from run
+43669845281. The measurement job failed earlier on the six ACL assertions, so
+this individual fixture pass is not overall qualification or current-head proof.
