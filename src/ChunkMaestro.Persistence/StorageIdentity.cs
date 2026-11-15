@@ -25,7 +25,9 @@ internal sealed class StorageIdentity : IDisposable
 
     internal void BindFiles(FileStream controllerLock)
     {
-        controller = controllerLock.SafeFileHandle;
+        SafeFileHandle handle = controllerLock.SafeFileHandle;
+        ObjectDisposedException.ThrowIf(handle.IsClosed, controllerLock);
+        controller = handle;
         string directory = entries[0].Path;
         Capture(Path.Combine(directory, "fleet.db"));
         if (OperatingSystem.IsMacOS())
@@ -42,7 +44,9 @@ internal sealed class StorageIdentity : IDisposable
         SafeFileHandle handle;
         if (OperatingSystem.IsWindows())
         {
-            handle = CreateFile(path, 0, FileShare.ReadWrite, 0, FileMode.Open, 0x02000000, 0);
+            // FILE_READ_DATA / FILE_LIST_DIRECTORY participates in Windows sharing
+            // checks. A metadata-only handle does not enforce our delete denial.
+            handle = CreateFile(path, 1, FileShare.ReadWrite, 0, FileMode.Open, 0x02000000, 0);
         }
         else
         {
@@ -58,6 +62,7 @@ internal sealed class StorageIdentity : IDisposable
 
     internal void Verify()
     {
+        ObjectDisposedException.ThrowIf(controller?.IsClosed == true, this);
         if (OperatingSystem.IsMacOS() && controller != null &&
             MacMatches(controller, Path.Combine(entries[0].Path, "controller.lock")) != 1)
         {

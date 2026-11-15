@@ -26,15 +26,28 @@ public sealed class AuthorityMutationContractTests : IDisposable
     }
 
     [Fact]
-    public async Task RelativeLocationCannotCreateAStoreEvenWhenItsResolvedTargetIsOwned()
+    public async Task RelativeLocationCannotCreateAStore()
     {
-        string target = Path.Combine(root, "relative-target");
-        string relative = Path.GetRelativePath(Environment.CurrentDirectory, target);
+        // Temp and checkout can be on different Windows drives, where
+        // GetRelativePath returns an absolute path instead of a relative one.
+        string relative = Path.Combine(".", ".artifacts", "tests", Path.GetFileName(root));
+        string target = Path.GetFullPath(relative);
         Assert.False(Path.IsPathFullyQualified(relative));
-        FleetStorageException error = await Assert.ThrowsAsync<FleetStorageException>(() =>
-            LocalFleetStore.OpenAsync(StorageLocation.ForTests(relative)));
-        InvalidLocation(error, target);
         Assert.False(Directory.Exists(target));
+        try
+        {
+            FleetStorageException error = await Assert.ThrowsAsync<FleetStorageException>(() =>
+                LocalFleetStore.OpenAsync(StorageLocation.ForTests(relative)));
+            InvalidLocation(error, target);
+            Assert.False(Directory.Exists(target));
+        }
+        finally
+        {
+            if (Directory.Exists(target))
+            {
+                Directory.Delete(target, true);
+            }
+        }
     }
 
     [Fact]
@@ -133,6 +146,25 @@ public sealed class AuthorityMutationContractTests : IDisposable
         controller.Dispose();
         using StorageIdentity identity = new StorageIdentity(root);
         Assert.Throws<ObjectDisposedException>(() => identity.BindFiles(controller));
+        using FileStream retry = StorageLocation.CreateOrOpen(path);
+        identity.BindFiles(retry);
+        identity.Verify();
+    }
+
+    [Fact]
+    public void ClosingBoundControllerInvalidatesAuthorityUntilExplicitRebinding()
+    {
+        StorageLocation.ForTests(root).Prepare();
+        using (StorageLocation.CreateOrOpen(Path.Combine(root, "fleet.db")))
+        {
+        }
+        string path = Path.Combine(root, "controller.lock");
+        using FileStream controller = StorageLocation.CreateOrOpen(path);
+        using StorageIdentity identity = new StorageIdentity(root);
+        identity.BindFiles(controller);
+        identity.Verify();
+        controller.Dispose();
+        Assert.Throws<ObjectDisposedException>(identity.Verify);
         using FileStream retry = StorageLocation.CreateOrOpen(path);
         identity.BindFiles(retry);
         identity.Verify();
