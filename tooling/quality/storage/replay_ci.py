@@ -77,13 +77,26 @@ def complete_report(directory, record, root=ROOT, threshold=80, module=None):
     if module and any(not row['file'].startswith('src/ChunkMaestro.' + module + '/') for row in rows):
         raise ValueError('Mutation report targets a different module')
     statuses = [row['original']['status'] for row in rows]
-    if not statuses or any(s not in ('Killed', 'Survived', 'NoCoverage', 'CompileError', 'Ignored') for s in statuses):
+    if not statuses:
+        # The interface-only Application module has instrumented lines but no
+        # mutation candidates. Require its complete frozen source inventory;
+        # this is measured N/A, never an assumed 100% mutation score.
+        files = json.loads(reports[0].read_bytes())['files']
+        expected = {p.resolve() for p in (root / 'src/ChunkMaestro.Application').glob('*.cs')}
+        actual = {Path(name.replace('\\', '/')).resolve() if Path(name.replace('\\', '/')).is_absolute()
+                  else (root / name).resolve() for name in files}
+        if module != 'Application' or not expected or actual != expected or record['exit_code'] != 0:
+            raise ValueError('Empty mutation report lacks complete Application inventory')
+        return {'status': 'collected-no-applicable-mutants', 'report': str(reports[0]),
+                'sha256': replay.digest(reports[0].read_bytes())}
+    if any(s not in ('Killed', 'Survived', 'NoCoverage', 'CompileError', 'Ignored', 'Timeout') for s in statuses):
         raise ValueError('Empty or incomplete mutation report')
-    # Stryker excludes compile errors and ignored mutants from its own score.
+    # Match only Stryker's exit semantics here: it counts timeouts as detected.
+    # The qualification gate separately credits actual Killed outcomes only.
     scored = [s for s in statuses if s not in ('CompileError', 'Ignored')]
     if not scored:
         raise ValueError('No executable mutation score')
-    below = 100 * statuses.count('Killed') / len(scored) < threshold
+    below = 100 * sum(s in ('Killed', 'Timeout') for s in scored) / len(scored) < threshold
     if (record['exit_code'] == 2) != below:
         raise ValueError('Mutation threshold exit and report disagree')
     return {'status': 'collected-threshold-fail' if below else 'collected',

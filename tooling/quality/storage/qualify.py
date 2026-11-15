@@ -180,12 +180,15 @@ def coverage(folder):
 
 
 def gate(folders, output):
+    import replay_gate
     failures, manifests, all_lines, all_branches = [], [], {}, {}
     mutants = {m: {} for m in MODULES}
     try:
         for folder in folders:
             manifest = json.loads((folder / 'manifest.json').read_text(encoding='utf-8'))
             manifests.append(manifest)
+            if manifest.get('status') != 'COLLECTED':
+                failures.append(str(folder) + ': ordinary collection incomplete')
             if not manifest.get('runtime_tests_passed'):
                 failures.append(str(folder) + ': runtime tests did not pass')
             if not manifest.get('clean'):
@@ -209,14 +212,26 @@ def gate(folders, output):
                     continue
                 report = json.loads(reports[0].read_text(encoding='utf-8'))
                 for file, data in report['files'].items():
+                    relative = replay_gate.logical(file, 'src/ChunkMaestro.' + module + '/')
+                    if replay_gate.child(ROOT, relative).read_bytes() != data['source'].encode('utf-8'):
+                        raise ValueError('Ordinary mutation source differs from checkout')
                     for mutant in data['mutants']:
                         key = mutation_key(file, mutant)
                         mutants[module].setdefault(key, set()).add(mutant['status'])
+            supplemented = replay_gate.validate(folder, manifest, ROOT)
+            replay_keys = {mutation_key(row['file'], row['original']) for row in supplemented}
+            if replay_keys != set(mutants['Persistence']):
+                raise ValueError('Ordinary and replay Persistence catalogues differ')
+            for row in replay_gate.credited(supplemented):
+                # New compile errors/timeouts never shrink the original denominator
+                # and never become kill credit. Original compile errors stay excluded
+                # from this replay's contribution, even if its patch compiles them.
+                mutants['Persistence'][mutation_key(row['file'], row['original'])].add('Killed')
         if {m['platform'] for m in manifests} != {'Windows', 'Darwin'} or len(manifests) != 2:
             failures.append('Exactly one Windows and one macOS execution required')
         if len({m['head'] for m in manifests}) != 1 or any(m['head'] != subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip() for m in manifests):
             failures.append('Evidence must match the same exact checkout head')
-    except (ValueError, KeyError, OSError, ET.ParseError) as error:
+    except (ValueError, KeyError, TypeError, IndexError, OSError, ET.ParseError) as error:
         failures.append(str(error))
     metrics = {}
     for module in MODULES:

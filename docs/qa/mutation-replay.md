@@ -69,7 +69,7 @@ and collect a **fresh official report first**. Use the exact clean target head,
 actual test project and reviewed config under that workspace. The runner offers no
 historical-report import. The lead must serialize repository/native build outputs;
 the exclusive lock prevents other invocations of this runner, not arbitrary tools.
-The production run path has not been exercised against the product suite here.
+The production run path has since been exercised on the frozen head recorded below.
 
 ## Machine artifact contract (schema 1)
 
@@ -142,13 +142,25 @@ None received qualification credit. Synthetic Python tests exercise parser,
 refusal, duplicate accounting, missing test attribution and timeout contracts;
 they are explicitly **not runtime acceptance**.
 
-No product mutation execution was attempted. Historical research enumerates 773
+The initial pilot did not attempt product mutation execution. Historical research enumerates 773
 entries, including 162 filtered entries, but its embedded sources/head differ
 from parent `09c273c`; those positions/outcomes must not qualify this branch.
-A complete serial production run on each required OS/architecture is still
+A complete current-head production run on each required OS/architecture is still
 needed, including any unresolved entries and existing line/branch shortfalls.
 Cost is one private build, two full Stryker runs and two clean full-suite
 baselines per environment. Fixture seconds do not estimate product cost.
+
+Actual macOS arm64 product collection at frozen head
+`4f263fcc4ff607b329f13c53aa85ff387f1a31bb` completed in 26.2 minutes;
+coverage, baseline and restoration each passed 101 tests without skips.
+Official and private runs retained their threshold-failure exits. The fixed
+original denominator was 765 (791 entries minus 26 original compile errors).
+There were 407 attributed kills after supplementation: **53.20%**, below 80%.
+Persistence coverage was **84.29% line / 61.03% branch**, also below its gates.
+These measurements are historical implementation evidence, not qualification of
+a later head, Windows execution or an independent QA verdict. Original reports,
+commands and limitations remain at `/tmp/pr6-product-mutation-4f263fc-delivery.json`
+and `/private/tmp/pr6-product-mutation-4f263fc-7vfe08mi`.
 
 ## Lead integration prerequisites
 
@@ -266,16 +278,36 @@ checkout and compiler paths are execution provenance, not portable gate paths.
 Validators must reject traversal/unknown roots and check `relocated` hashes before
 using those mappings. Do not require original temporary paths to exist after
 upload. Do not grant aggregation credit from this wrapper alone or relabel raw
-Ignored rows. Aggregate parser/gate integration remains lead-owned.
+Ignored rows.
+
+`replay_gate.py`, called by the existing aggregate gate, verifies those relocated
+inventories, the pinned archive's original contents and sole source delta, built
+dependencies, SDK/runner/configuration/input bindings, real full-suite TRX and
+restored assembly hashes. It reconstructs both source-bound catalogues and the
+append-only ledger, requires identical unambiguous mutation identities, and binds
+actual Killed observations to test definitions from the preserved test sources.
+It reads artifacts without executing them. Compiler paths remain recorded host
+provenance; the Linux aggregator does not claim to reopen another runner's SDK.
+Collection trust comes from the owner-only workflow, not from hashes alone.
+
+Only validated supplemental Killed outcomes join the ordinary Windows/macOS
+union. Original compile-error eligibility is retained, while new compile errors,
+timeouts, missing cases, stale inputs and unresolved identities receive no credit.
+Supplemental reports must match the ordinary Persistence catalogue. Native C,
+full-volume, populated upgrade/interruption and the unchanged 90/85/80 checks
+still apply. Independent exact-head role verdicts remain a separate merge gate.
 
 Official collection now distinguishes complete evidence from score acceptance.
-Each fresh uniquely located report must contain nonempty terminal, source-bound
-mutants; Pending/unknown/Timeout, missing/ambiguous reports, source mismatch and
+Each fresh uniquely located report must contain terminal, source-bound
+mutants; Pending/unknown, missing/ambiguous reports, source mismatch and
 all nonzero codes except actual **2** are unresolved. Code 2 additionally requires
 a computed official Stryker score below its unchanged 80% break threshold; code 0
-must agree with that score. Ignored and CompileError retain upstream meaning for
-this exit-code check only; this adds no gate exclusion or score credit. All-ignored
-or otherwise unscored reports are unresolved. Complete code-2 reports retain the
+must agree with that score. Upstream counts Killed plus Timeout as detected and
+excludes Ignored/CompileError for this exit-code consistency check only; the
+aggregate still grants kill credit only to Killed. An empty Application report
+with its complete frozen interface-source inventory and exit 0 is measured N/A,
+never inferred 100%. Other empty, all-ignored or unscored reports are unresolved.
+Complete code-2 reports retain the
 actual exit code and `collected-threshold-fail` record. `COLLECTED` alone returns
 collection success; the unchanged 90/85/80 aggregate acceptance remains separate.
 
@@ -294,4 +326,4 @@ threshold-code mismatch, environment stripping and byte-preserving failure
 artifacts. Windows path execution and complete hosted private/product mutation
 runs have **not** been performed by this implementation task. Historical macOS
 mutation outputs are diagnostic only. Full current-head Windows/macOS execution,
-root aggregate integration and independent product QA remain required.
+aggregate qualification and independent product QA remain required.

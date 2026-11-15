@@ -80,7 +80,7 @@ class AdapterTests(unittest.TestCase):
                         {'exit_code': 2, 'timeout': True}):
                 with self.assertRaises(ValueError):
                     ci.complete_report(directory, bad, root)
-            for status in ('Pending', 'Timeout', 'Ignored'):
+            for status in ('Pending', 'Ignored'):
                 self.report(root, status)
                 with self.assertRaises(ValueError):
                     ci.complete_report(directory, record, root)
@@ -88,6 +88,7 @@ class AdapterTests(unittest.TestCase):
             self.assertEqual(ci.complete_report(directory, {'exit_code': 0, 'timeout': False}, root)['status'], 'collected')
             with self.assertRaises(ValueError):
                 ci.complete_report(directory, record, root)
+
             duplicate = directory / 'duplicate'
             duplicate.mkdir()
             (duplicate / 'mutation-report.json').write_bytes((directory / 'mutation-report.json').read_bytes())
@@ -97,6 +98,33 @@ class AdapterTests(unittest.TestCase):
             (directory / 'mutation-report.json').unlink()
             with self.assertRaises(ValueError):
                 ci.complete_report(directory, record, root)
+
+    def test_timeout_matches_upstream_exit_but_is_not_a_killed_observation(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder).resolve()
+            directory = self.report(root, 'Timeout')
+            self.assertEqual(ci.complete_report(directory, {'exit_code': 0, 'timeout': False}, root)['status'], 'collected')
+            self.assertEqual(json.loads((directory / 'mutation-report.json').read_bytes())['files'][str(root / 'src/ChunkMaestro.Persistence/Example.cs')]['mutants'][0]['status'], 'Timeout')
+            with self.assertRaises(ValueError):
+                ci.complete_report(directory, {'exit_code': 2, 'timeout': False}, root)
+
+    def test_empty_application_requires_full_source_inventory_and_successful_exit(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder).resolve()
+            source = root / 'src/ChunkMaestro.Application/IFleetInventory.cs'
+            source.parent.mkdir(parents=True)
+            source.write_bytes(b'interface I {}\n')
+            directory = root / 'report'
+            directory.mkdir()
+            report = directory / 'mutation-report.json'
+            report.write_text(json.dumps({'files': {str(source): {'source': source.read_text(), 'mutants': []}}}))
+            self.assertEqual(ci.complete_report(directory, {'exit_code': 0, 'timeout': False}, root, module='Application')['status'], 'collected-no-applicable-mutants')
+            for module, code in (('Persistence', 0), ('Application', 2)):
+                with self.assertRaises(ValueError):
+                    ci.complete_report(directory, {'exit_code': code, 'timeout': False}, root, module=module)
+            report.write_text('{"files": {}}')
+            with self.assertRaises(ValueError):
+                ci.complete_report(directory, {'exit_code': 0, 'timeout': False}, root, module='Application')
 
     def test_relocation_preserves_bytes_and_absolute_provenance(self):
         with tempfile.TemporaryDirectory() as folder:
