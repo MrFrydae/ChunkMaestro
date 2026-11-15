@@ -7,7 +7,7 @@
     <GenerateProgramFile>false</GenerateProgramFile>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Remove="volume/**/*.cs" />
+    <Compile Remove="volume/**/*.cs;replay/**/*.cs" />
     <ProjectReference Include="../../../src/ChunkMaestro.Domain/ChunkMaestro.Domain.csproj" />
     <ProjectReference Include="../../../src/ChunkMaestro.Application/ChunkMaestro.Application.csproj" />
     <ProjectReference Include="../../../src/ChunkMaestro.Persistence/ChunkMaestro.Persistence.csproj" />

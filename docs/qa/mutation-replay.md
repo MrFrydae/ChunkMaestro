@@ -188,3 +188,18 @@ pilot runner hash match the integrated replay.py bytes. The failed attempt is
 retained without credit. Production config now explicitly selects
 MutationTests.csproj; ordinary qualification uses the same explicit selection.
 These remain fixture/tool integration results, not product mutation execution.
+
+## Trusted collection boundary
+
+The focused advisory analysis permits bounded collection using this verified
+build and trusted synthetic tests, with local JSON/HTML reports left unopened and
+no cloud reporters, credentials, private feeds or live-host data. Advisory warnings
+remain recorded. Actual dynamic assembly loads remain unmeasured; shipped library
+identity alone is not a runtime-load claim. Review evidence is retained at
+/tmp/pr6-private-tool-advisory-review.md and .json.
+
+Production collectors must launch from an explicit noncredential environment
+allowlist; replay.py's inherited environment is not itself a credential boundary.
+MutationTests excludes both volume resources and standalone replay fixture sources
+from default compilation, then links only the actual persistence suite. The four
+fixture-shape tests are mechanism proof and must not inflate the product baseline.
