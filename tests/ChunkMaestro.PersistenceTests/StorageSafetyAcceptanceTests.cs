@@ -1,10 +1,10 @@
-using System.Data.Common;
-using System.Diagnostics;
 using ChunkMaestro.Domain;
 using ChunkMaestro.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using System.Data.Common;
+using System.Diagnostics;
 using Xunit;
 
 namespace ChunkMaestro.PersistenceTests;

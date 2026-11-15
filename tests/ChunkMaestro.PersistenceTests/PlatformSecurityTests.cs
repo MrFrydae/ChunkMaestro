@@ -1,8 +1,8 @@
+using ChunkMaestro.Application;
+using ChunkMaestro.Persistence;
 using System.Diagnostics;
 using System.Security.AccessControl;
 using System.Security.Principal;
-using ChunkMaestro.Application;
-using ChunkMaestro.Persistence;
 using Xunit;
 
 namespace ChunkMaestro.PersistenceTests;
@@ -152,9 +152,9 @@ public sealed class PlatformSecurityTests : IDisposable
         }
         else
         {
-            File.SetUnixFileMode(root, (UnixFileMode)511);
+            File.SetUnixFileMode(root, (UnixFileMode) 511);
             Invalid(StorageLocation.ForTests(Path.Combine(root, "missing", "Fleet")));
-            Assert.Equal((UnixFileMode)511, File.GetUnixFileMode(root));
+            Assert.Equal((UnixFileMode) 511, File.GetUnixFileMode(root));
         }
         Assert.Empty(Directory.EnumerateFileSystemEntries(root));
     }

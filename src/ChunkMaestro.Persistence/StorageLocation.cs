@@ -1,7 +1,7 @@
-using System.Runtime.InteropServices;
-using System.Security.Principal;
-using System.Security.AccessControl;
 using ChunkMaestro.Application;
+using System.Runtime.InteropServices;
+using System.Security.AccessControl;
+using System.Security.Principal;
 
 namespace ChunkMaestro.Persistence;
 
@@ -100,7 +100,7 @@ public sealed class StorageLocation
 
         if (OperatingSystem.IsWindows())
         {
-            FileSystemSecurity security = directory ? (FileSystemSecurity)new DirectoryInfo(path).GetAccessControl()
+            FileSystemSecurity security = directory ? (FileSystemSecurity) new DirectoryInfo(path).GetAccessControl()
                 : new FileInfo(path).GetAccessControl();
             SecurityIdentifier? user = WindowsIdentity.GetCurrent().User;
             if (user == null || !user.Equals(security.GetOwner(typeof(SecurityIdentifier))))

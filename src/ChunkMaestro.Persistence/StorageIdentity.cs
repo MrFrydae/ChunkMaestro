@@ -1,5 +1,5 @@
-using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
+using System.Runtime.InteropServices;
 
 namespace ChunkMaestro.Persistence;
 
@@ -46,7 +46,7 @@ internal sealed class StorageIdentity : IDisposable
         }
         else
         {
-            handle = new SafeFileHandle((nint)MacOpen(path), true);
+            handle = new SafeFileHandle((nint) MacOpen(path), true);
         }
         if (handle.IsInvalid)
         {

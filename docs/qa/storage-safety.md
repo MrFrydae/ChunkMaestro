@@ -160,3 +160,12 @@ documents instrumentation flags, dynamic-library profiling and JSON export.
 No green runtime suite, collector result or this document grants merge acceptance.
 All applicable thresholds, unresolved safety cases and fresh independent QA gates
 must actually pass at the final integrated head.
+
+## Lead integration checkpoint
+
+The qualification tooling is integrated with the production fixes through 7b18f1c
+and rebased onto the merged project skills/C# conventions. Checked-in generated
+namespaces are normalized without changing migration operations or model metadata.
+The measurements above remain historical implementation evidence at their stated
+heads; the new integrated head requires fresh Windows/macOS collection. The safety
+gate remains FAIL until the measured thresholds and real recovery cases pass.

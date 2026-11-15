@@ -61,7 +61,7 @@ python3 tooling/build/build.py verify
 
 Verified NuGet defaults (exact versions, restored in the build probe): Avalonia/Desktop/Fluent/Headless.XUnit **12.1.6**, EF Core SQLite/Design **10.0.15**, xUnit v3 **3.2.2**, VS adapter **4.0.1**, Microsoft.NET.Test.Sdk **18.12.0**. Avalonia Headless.XUnit 12.1.6 references xunit.v3.extensibility.core 3.2.2; use xUnit v3 and `OutputType=Exe` for new compatible suites. xUnit v2 **2.9.3** is available centrally for isolated non-Avalonia suites that require it; do not combine both frameworks in one test project. Keep runner/SDK/EF Design references `PrivateAssets=all`. The baseline does not force UI packages into product libraries: only explicit references consume central versions.
 
-Nullable references, C# 14, deterministic builds, recommended .NET 10 analyzers, code-style enforcement and warnings-as-errors apply to owned projects. CI enables deterministic source paths. Use documented narrow suppressions if an analyzer is inapplicable; do not globally disable warnings. SDK includes `dotnet format`, so the local tool manifest intentionally has no additional tools. Java bridge toolchain/Gradle ownership belongs to its later slice.
+Nullable references, C# 14, deterministic builds, recommended .NET 10 analyzers, code-style enforcement and warnings-as-errors apply to owned projects. CI enables deterministic source paths. Use documented narrow suppressions if an analyzer is inapplicable; do not globally disable warnings. SDK includes `dotnet format`. The local tool manifest now pins Stryker.NET for measured storage safety qualification; it does not replace normal verification. Java bridge toolchain/Gradle ownership belongs to its later slice.
 
 ## CI and independent QA evidence
 

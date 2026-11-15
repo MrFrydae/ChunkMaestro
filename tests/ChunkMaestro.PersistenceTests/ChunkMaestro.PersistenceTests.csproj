@@ -12,6 +12,7 @@
     <Compile Remove="UnsupportedPlatformTests.cs" />
   </ItemGroup>
   <ItemGroup Condition="!$([MSBuild]::IsOSPlatform('Windows')) And !$([MSBuild]::IsOSPlatform('OSX'))">
-    <Compile Remove="StorageTests.cs;PlatformSecurityTests.cs;StorageSafetyAcceptanceTests.cs" />
+    <Compile Remove="*Tests.cs" />
+    <Compile Include="UnsupportedPlatformTests.cs" />
   </ItemGroup>
 </Project>

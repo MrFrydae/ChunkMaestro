@@ -1,6 +1,3 @@
-using System.Diagnostics;
-using System.Security.AccessControl;
-using System.Security.Principal;
 using ChunkMaestro.Application;
 using ChunkMaestro.Domain;
 using ChunkMaestro.Persistence;
@@ -8,6 +5,9 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using System.Diagnostics;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using Xunit;
 
 namespace ChunkMaestro.PersistenceTests;

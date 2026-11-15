@@ -1,10 +1,10 @@
-using System.Globalization;
-using System.Net;
-using System.Text.RegularExpressions;
 using ChunkMaestro.Application;
 using ChunkMaestro.Domain;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using System.Globalization;
+using System.Net;
+using System.Text.RegularExpressions;
 
 namespace ChunkMaestro.Persistence;
 
@@ -81,7 +81,7 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
             DbContextOptions<FleetDbContext> options = new DbContextOptionsBuilder<FleetDbContext>().UseSqlite(session).Options;
             await using FleetDbContext db = new FleetDbContext(options);
             await db.Database.OpenConnectionAsync(cancellationToken);
-            SqliteConnection connection = (SqliteConnection)db.Database.GetDbConnection();
+            SqliteConnection connection = (SqliteConnection) db.Database.GetDbConnection();
             await VerifyIntegrityAsync(connection, cancellationToken);
             string[] known = db.Database.GetMigrations().ToArray();
             string[] applied = (await db.Database.GetAppliedMigrationsAsync(cancellationToken)).ToArray();
@@ -246,7 +246,7 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
                 hosts.Select(x => new Host(new(x.Id), new(x.FleetId), x.Name, x.Address, DateTimeOffset.FromUnixTimeMilliseconds(x.RegisteredAt), Observation.Unknown)).ToArray(),
                 instances.Select(x => new Instance(new(x.Id), new(x.HostId), x.Name, x.ServiceName, DateTimeOffset.FromUnixTimeMilliseconds(x.RegisteredAt),
                     Observation.Unknown, endpoints.Where(e => e.InstanceId == x.Id).OrderBy(e => e.Edition).ThenBy(e => e.Port)
-                        .Select(e => new Endpoint((EndpointEdition)e.Edition, e.Address, e.Port)).ToArray())).ToArray(), DateTimeOffset.UtcNow);
+                        .Select(e => new Endpoint((EndpointEdition) e.Edition, e.Address, e.Port)).ToArray())).ToArray(), DateTimeOffset.UtcNow);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -332,7 +332,7 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
             {
                 InstanceId = id.Value,
                 HostId = hostId.Value,
-                Edition = (int)e.Edition,
+                Edition = (int) e.Edition,
                 Address = Address(e.Address),
                 Port = e.Port
             };
