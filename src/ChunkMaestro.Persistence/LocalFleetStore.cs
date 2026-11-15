@@ -186,26 +186,9 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
 
     }
 
-    internal static async Task<string> CreateBackupAsync(SqliteConnection connection, string directory, CancellationToken token)
-    {
-        string candidate = Path.Combine(directory, $"before-migration-{Guid.NewGuid():N}.db");
-        using (StorageLocation.CreateOrOpen(candidate))
-        {
-
-        }
-
-        using SqliteConnection backup = new SqliteConnection(new SqliteConnectionStringBuilder
-        {
-            DataSource = candidate,
-            Pooling = false
-        }
-.ToString());
-        StorageLocation.PrepareSqliteSidecars(candidate);
-        await backup.OpenAsync(token);
-        connection.BackupDatabase(backup);
-        await VerifyIntegrityAsync(backup, token);
-        return candidate;
-    }
+    internal static Task<string> CreateBackupAsync(SqliteConnection connection, string directory, CancellationToken token,
+        Action<int>? afterStep = null)
+        => IncrementalBackupDriver.CreateAsync(connection, directory, VerifyIntegrityAsync, afterStep, token);
 
     private static async Task VerifyIntegrityAsync(SqliteConnection connection, CancellationToken token)
     {
