@@ -306,9 +306,14 @@ InitialFleet (ports 1–65535, editions0/1). Both committed versions are validat
 invalid existing rows are preserved with the pre-migration backup, not repaired.
 The complete leaf-table rebuild is transactional. Populated upgrade, compatible
 backup recovery and process-kill rollback have local macOS implementation proof.
+Startup also checks each endpoint's HostId against its instance's HostId after
+schema and FK validation. Independent valid foreign keys do not prove this pair
+is consistent. A mismatch is CorruptDatabase before a usable store or upgrade
+backup is returned; stored rows and existing backups are preserved for reviewed
+recovery. This validation does not rewrite committed migrations or repair rows.
 Backups now use the incremental production driver and publish a completed name
 only after verification, close and flush; crash candidates remain explicitly
 partial. No automatic downgrade, restore or disruptive replay is introduced.
 See [safety qualification](../qa/storage-safety.md) for current evidence and
-limitations. Normal local validation passes 68 tests; combined safety thresholds,
+limitations. Normal local validation passes 133 tests; combined safety thresholds,
 Windows/Intel qualification and independent exact-head QA remain incomplete.

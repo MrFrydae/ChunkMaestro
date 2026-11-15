@@ -1,7 +1,9 @@
+using ChunkMaestro.Application;
 using ChunkMaestro.Domain;
 using ChunkMaestro.Persistence;
 using Microsoft.Data.Sqlite;
 using System.Globalization;
+using System.Security.Cryptography;
 using Xunit;
 
 namespace ChunkMaestro.PersistenceTests;
@@ -68,6 +70,67 @@ public sealed class DatabaseConstraintContractTests : IDisposable
     public async Task InvalidPersistedProtocolOrPortIsRefused(string column, int value)
     {
         await AssertDeniedWritePreservesInventoryAsync($"UPDATE Endpoints SET {column}={value.ToString(CultureInfo.InvariantCulture)}", 275);
+    }
+
+    [Theory]
+    [InlineData("Endpoints")]
+    [InlineData("Instances")]
+    public async Task MismatchedEndpointHostIsRefusedWithoutRepairOrNewBackup(string changedTable)
+    {
+        FleetId fleet = new FleetId(Guid.NewGuid());
+        HostId host = new HostId(Guid.NewGuid());
+        InstanceId instance = new InstanceId(Guid.NewGuid());
+        Endpoint[] endpoints = [new(EndpointEdition.Java, "mc.example", 25565), new(EndpointEdition.Bedrock, "mc.example", 25565)];
+        await using (LocalFleetStore store = await LocalFleetStore.OpenAsync(StorageLocation.ForTests(directory)))
+        {
+            await store.RegisterFleetAsync(fleet, "Fleet");
+            await store.RegisterHostAsync(host, fleet, "Primary", "mc.example");
+            await store.RegisterHostAsync(new HostId(Guid.NewGuid()), fleet, "Other", "other.example");
+            await store.RegisterInstanceAsync(instance, host, "Server", "minecraft.service", endpoints);
+        }
+        string[] damagedRows;
+        await using (SqliteConnection connection = await ConnectAsync())
+        {
+            using SqliteCommand command = connection.CreateCommand();
+            // Both choices leave every individual FK valid. The pair is inconsistent.
+            command.CommandText = $"UPDATE {changedTable} SET HostId=(SELECT Id FROM Hosts WHERE Address='other.example')";
+            Assert.True(await command.ExecuteNonQueryAsync() > 0);
+            command.CommandText = "PRAGMA quick_check";
+            Assert.Equal("ok", await command.ExecuteScalarAsync());
+            command.CommandText = "PRAGMA foreign_key_check";
+            await using (SqliteDataReader references = await command.ExecuteReaderAsync())
+            {
+                Assert.False(await references.ReadAsync());
+            }
+            damagedRows = await ReadRowsAsync(connection);
+        }
+        byte[] databaseHash = SHA256.HashData(File.ReadAllBytes(Path.Combine(directory, "fleet.db")));
+        string[] backups = Directory.GetFiles(directory, "before-migration-*.db").Order().ToArray();
+        FleetStorageException refusal = await Assert.ThrowsAsync<FleetStorageException>(async () =>
+        {
+            await using LocalFleetStore opened = await LocalFleetStore.OpenAsync(StorageLocation.ForTests(directory));
+        });
+        Assert.Equal(StorageFailure.CorruptDatabase, refusal.Failure);
+        Assert.DoesNotContain(directory, refusal.Message);
+        Assert.Equal(databaseHash, SHA256.HashData(File.ReadAllBytes(Path.Combine(directory, "fleet.db"))));
+        Assert.Equal(backups, Directory.GetFiles(directory, "before-migration-*.db").Order().ToArray());
+        await using (SqliteConnection connection = await ConnectAsync())
+        {
+            Assert.Equal(damagedRows, await ReadRowsAsync(connection));
+            // Explicit fixture-only recovery proves refusal releases the controller.
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = $"UPDATE {changedTable} SET HostId=(SELECT Id FROM Hosts WHERE Address='mc.example')";
+            Assert.True(await command.ExecuteNonQueryAsync() > 0);
+        }
+        await using LocalFleetStore recovered = await LocalFleetStore.OpenAsync(StorageLocation.ForTests(directory));
+        Instance saved = Assert.Single((await recovered.ReadAsync()).Instances);
+        Assert.Equal(instance, saved.Id);
+        Assert.Equal(host, saved.HostId);
+        Assert.Equal(endpoints, saved.Endpoints);
+        FleetStorageException conflict = await Assert.ThrowsAsync<FleetStorageException>(() => recovered.RegisterInstanceAsync(
+            new InstanceId(Guid.NewGuid()), host, "Conflicting", "other.service", [endpoints[0]]));
+        Assert.Equal(StorageFailure.InvalidRegistration, conflict.Failure);
+        Assert.Single((await recovered.ReadAsync()).Instances);
     }
 
     [Theory]

@@ -27,11 +27,25 @@ internal static class SupportedSchema
         }
         using SqliteCommand command = actual.CreateCommand();
         command.CommandText = "PRAGMA foreign_key_check";
-        using System.Data.Common.DbDataReader reader = await command.ExecuteReaderAsync(token);
-        if (await reader.ReadAsync(token))
+        using (System.Data.Common.DbDataReader reader = await command.ExecuteReaderAsync(token))
         {
-            throw new FleetStorageException(StorageFailure.CorruptDatabase,
-                "Database contains invalid references. Preserve files for reviewed recovery.");
+            if (await reader.ReadAsync(token))
+            {
+                throw new FleetStorageException(StorageFailure.CorruptDatabase,
+                    "Database contains invalid references. Preserve files for reviewed recovery.");
+            }
+        }
+        if (migration != null)
+        {
+            // Both individual foreign keys can be valid while their host pair is
+            // inconsistent. Port ownership must use the instance's actual host.
+            command.CommandText = "SELECT 1 FROM Endpoints AS e JOIN Instances AS i ON e.InstanceId=i.Id " +
+                "WHERE e.HostId<>i.HostId LIMIT 1";
+            if (await command.ExecuteScalarAsync(token) is not null)
+            {
+                throw new FleetStorageException(StorageFailure.CorruptDatabase,
+                    "Database contains inconsistent endpoint ownership. Preserve files for reviewed recovery.");
+            }
         }
     }
 
