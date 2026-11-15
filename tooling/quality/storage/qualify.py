@@ -60,6 +60,7 @@ def run(output):
         runtime_cases(output)
         manifest['runtime_tests_passed'] = True
         for module in MODULES:
+            print('[storage] Measuring ' + module, flush=True)
             config = {'stryker-config': {'project': 'ChunkMaestro.' + module + '.csproj', 'configuration': 'Release',
                       'test-projects': ['MutationTests.csproj'],
                       'reporters': ['json', 'html'], 'thresholds': {'high': 90, 'low': 80, 'break': 80},
@@ -72,8 +73,9 @@ def run(output):
                              ROOT / 'tooling/quality/storage', timeout=2400)
             record['collection'] = complete_report(directory, record, module=module)
         manifest['status'] = 'COLLECTED'
-    except (RuntimeError, ValueError, KeyError, OSError, ET.ParseError) as error:
+    except (RuntimeError, ValueError, KeyError, OSError, ET.ParseError, subprocess.SubprocessError) as error:
         manifest['error'] = str(error)
+        print('[storage] UNRESOLVED: ' + str(error), flush=True)
     finally:
         manifest['seconds'] = time.monotonic() - started
         (output / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')

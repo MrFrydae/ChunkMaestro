@@ -4,6 +4,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: storage-safety-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   measure:
     strategy:
@@ -32,14 +35,14 @@ jobs:
         timeout-minutes: 135
         run: python tooling/quality/storage/qualify.py run .artifacts/storage/${{ matrix.os }}
       - name: Trusted private Persistence replay collection
-        if: always()
+        if: success()
         timeout-minutes: 140
         run: python tooling/quality/storage/replay_ci.py .artifacts/storage/${{ matrix.os }}
-      - if: always()
+      - if: ${{ !cancelled() }}
         run: python tooling/quality/storage/volume.py .artifacts/storage/${{ matrix.os }}/volume
-      - if: always() && runner.os == 'macOS'
+      - if: ${{ !cancelled() && runner.os == 'macOS' }}
         run: python tooling/quality/storage/native.py .artifacts/storage/${{ matrix.os }}/native
-      - if: always()
+      - if: ${{ !cancelled() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: storage-${{ matrix.os }}
@@ -47,7 +50,7 @@ jobs:
           path: .artifacts/storage/${{ matrix.os }}/
           if-no-files-found: error
   gate:
-    if: always()
+    if: ${{ !cancelled() }}
     needs: measure
     runs-on: ubuntu-24.04
     steps:
@@ -63,7 +66,7 @@ jobs:
           pattern: storage-*
           path: .artifacts/storage/evidence
       - run: python tooling/quality/storage/qualify.py gate .artifacts/storage/evidence/storage-windows-2025 .artifacts/storage/evidence/storage-macos-15 --output .artifacts/storage/gate.json
-      - if: always()
+      - if: ${{ !cancelled() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: storage-safety-gate

@@ -172,6 +172,7 @@ def collect(output):
             result['status'] = 'COLLECTED'
     except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
         result['error'] = str(error)
+        print('[storage] Replay UNRESOLVED: ' + str(error), flush=True)
     finally:
         if temporary:
             result['original_temporary_root'] = str(temporary)

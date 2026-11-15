@@ -224,7 +224,8 @@ collection in each Windows/macOS measurement job. Both jobs explicitly check out
 `pull_request.head.sha` (dispatch uses `github.sha`); the replay binding independently
 records that actual clean Git head. There are no privileged event handlers, added
 permissions, secrets, action-pin changes or automatic retries. Full-volume and
-macOS native measurements still execute with `always()` and retain their outputs.
+macOS native measurements still execute after collection failures and retain their
+outputs, but cancellation stops subsequent work.
 
 Private execution requires repository `MrFrydae/ChunkMaestro`, actor and event
 sender numeric ID **38875853**, and either a same-repository PR authored by that
@@ -319,6 +320,21 @@ budgets, not measured completion promises. Commands record wall time and timeout
 exhaustion fails unresolved with available partial artifacts, never a hidden
 retry or successful substitute. Remaining job time accommodates volume/native
 work and uploads; an overall job cancellation can still prevent complete upload.
+
+The command runner prints START/END records and a WAIT heartbeat every 30 seconds
+with elapsed time and log byte count. A heartbeat proves the runner is waiting;
+it does not claim that mutation execution is making useful progress. Failures and
+timeouts also print a bounded diagnostic log tail. Full logs remain unchanged.
+Timeout termination has bounded taskkill/exit waits; an unconfirmed exit remains
+an explicit unresolved timeout, never a mutation kill. Baseline commands have a
+separate maximum of 600 seconds, including restoration.
+
+Private replay requires successful ordinary collection (a complete threshold-fail
+report is still collection success). A failed/timed-out official command no longer
+launches another long replay. Volume/native/diagnostic upload and aggregation use
+`!cancelled()` so ordinary failure preserves evidence while cancellation stops
+work. Per-PR concurrency cancels superseded runs. These controls do not relax any
+score, omit a required acceptance result or turn cancellation into qualification.
 
 Local adapter validation on macOS arm64 used disposable parser/path/subprocess
 fixtures, including an actual host temporary path with spaces, source mismatch,

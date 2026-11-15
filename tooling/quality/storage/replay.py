@@ -71,26 +71,62 @@ def command(args, cwd, directory, label, env, timeout):
     log = directory / (label + '-' + uuid.uuid4().hex + '.log')
     started = time.monotonic()
     timed_out = False
+    termination_error = None
+    print(f'[storage] START {label}; deadline={timeout}s; log={log}', flush=True)
     with log.open('wb') as stream:
         proc = subprocess.Popen([str(a) for a in args], cwd=cwd, env=env, stdout=stream,
                                 stderr=subprocess.STDOUT, start_new_session=os.name != 'nt')
-        try:
-            code = proc.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            timed_out = True
+        def stop():
             if os.name == 'nt':
-                subprocess.run(['taskkill', '/PID', str(proc.pid), '/T', '/F'],
-                               stdout=stream, stderr=subprocess.STDOUT, check=False)
+                try:
+                    subprocess.run(['taskkill', '/PID', str(proc.pid), '/T', '/F'], timeout=15,
+                                   stdout=stream, stderr=subprocess.STDOUT, check=False)
+                except subprocess.TimeoutExpired:
+                    print(f'[storage] {label}: taskkill exceeded 15s', flush=True)
+                if proc.poll() is None:
+                    proc.kill()
             else:
-                os.killpg(proc.pid, signal.SIGKILL)
-            code = proc.wait()
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            # A broken termination must fail collection, never wait indefinitely.
+            return proc.wait(timeout=15)
+        try:
+            while True:
+                remaining = timeout - (time.monotonic() - started)
+                try:
+                    code = proc.wait(timeout=max(0, min(30, remaining)))
+                    break
+                except subprocess.TimeoutExpired:
+                    if time.monotonic() - started < timeout:
+                        print(f'[storage] WAIT {label}; elapsed={time.monotonic()-started:.0f}s; log_bytes={log.stat().st_size}', flush=True)
+                        continue
+                    timed_out = True
+                    try:
+                        code = stop()
+                    except subprocess.TimeoutExpired:
+                        code = None
+                        termination_error = 'Process exit unconfirmed after bounded termination'
+                    break
+        except KeyboardInterrupt:
+            stop()
+            raise
     result = {'args': [str(a) for a in args], 'cwd': str(cwd), 'exit_code': code,
               'timeout': timed_out, 'seconds': time.monotonic() - started,
               'log': str(log), 'log_sha256': digest(log.read_bytes())}
+    if termination_error:
+        result['termination_error'] = termination_error
     with (directory / 'commands.jsonl').open('a', encoding='utf-8') as stream:
         stream.write(json.dumps(result, sort_keys=True) + '\n')
         stream.flush()
         os.fsync(stream.fileno())
+    print(f'[storage] END {label}; exit={code}; timeout={timed_out}; elapsed={result["seconds"]:.1f}s', flush=True)
+    if timed_out or code not in (0, 2):
+        # Bounded diagnostic tail; full immutable command output remains retained.
+        with log.open('rb') as stream:
+            stream.seek(max(0, log.stat().st_size - 12000))
+            print(stream.read().decode('utf-8', errors='replace'), flush=True)
     return result
 
 
@@ -263,7 +299,7 @@ def run(output, root, dotnet, provenance_path, official, config, test_project, f
               'thresholds': {'line': 90, 'branch': 85, 'mutation': 80}}
     env = environment(dotnet)
     def execute(args, label):
-        record = command(args, root, output, label, env, timeout)
+        record = command(args, root, output, label, env, min(timeout, 600))
         require(record)
     def baseline(label):
         execute([dotnet, 'clean', test_project, '-c', 'Release'], label + '-clean')

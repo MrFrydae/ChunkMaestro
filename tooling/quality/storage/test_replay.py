@@ -5,6 +5,10 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+import contextlib
+import io
+import subprocess
+from unittest.mock import MagicMock
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -12,6 +16,40 @@ import replay
 
 
 class ReplayContracts(unittest.TestCase):
+    def test_running_command_emits_heartbeat_without_extending_deadline(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            proc = MagicMock()
+            proc.wait.side_effect = [subprocess.TimeoutExpired('fixture', 30), 0]
+            output = io.StringIO()
+            with patch.object(replay.subprocess, 'Popen', return_value=proc), \
+                    patch.object(replay.time, 'monotonic', side_effect=[0, 0, 30, 30, 30, 31]), \
+                    contextlib.redirect_stdout(output):
+                result = replay.command(['fixture'], root, root, 'heartbeat', {}, 60)
+            self.assertFalse(result['timeout'])
+            self.assertIn('WAIT heartbeat', output.getvalue())
+            self.assertIn('END heartbeat', output.getvalue())
+            self.assertEqual([call.kwargs['timeout'] for call in proc.wait.call_args_list], [30, 30])
+
+    def test_windows_failed_termination_never_enters_unbounded_wait(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            proc = MagicMock()
+            proc.wait.side_effect = subprocess.TimeoutExpired('fixture', 0)
+            proc.poll.return_value = None
+            with patch.object(replay.subprocess, 'Popen', return_value=proc), \
+                    patch.object(replay.subprocess, 'run', side_effect=subprocess.TimeoutExpired('taskkill', 15)) as kill, \
+                    patch.object(replay.os, 'name', 'nt'), contextlib.redirect_stdout(io.StringIO()):
+                result = replay.command(['fixture'], root, root, 'termination', {}, 0)
+            self.assertTrue(result['timeout'])
+            self.assertIsNone(result['exit_code'])
+            self.assertIn('termination_error', result)
+            self.assertEqual(kill.call_args.kwargs['timeout'], 15)
+            proc.kill.assert_called_once()
+            self.assertTrue(all('timeout' in call.kwargs for call in proc.wait.call_args_list))
+            with self.assertRaises(ValueError):
+                replay.require(result)
+
     def test_utf16_end_exclusive_crlf_and_astral(self):
         source = 'a😀\r\n{\r\n}\n'
         self.assertEqual(5, replay.offset(source, {'line': 2, 'column': 1}))
