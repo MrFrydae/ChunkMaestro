@@ -164,7 +164,8 @@ def collect(output):
                 code = replay.run(temporary / 'replay', ROOT, dotnet, provenance, official,
                                   ROOT / 'tooling/quality/storage/replay/persistence.json',
                                   ROOT / 'tooling/quality/storage/MutationTests.csproj',
-                                  timeout=3600, mutation_directory=ROOT / 'tooling/quality/storage')
+                                  timeout=5400 if platform.system() == 'Windows' else 3600,
+                                  mutation_directory=ROOT / 'tooling/quality/storage')
             finally:
                 replay.command = original_command
             if code:

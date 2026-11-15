@@ -65,12 +65,13 @@ def run(output):
                       'test-projects': ['MutationTests.csproj'],
                       'reporters': ['dots', 'json', 'html'], 'thresholds': {'high': 90, 'low': 80, 'break': 80},
                       'mutate': ['**/*.cs', '!**/Migrations/*.Designer.cs', '!**/Migrations/*ModelSnapshot.cs'],
-                      'concurrency': 2}}
+                      'concurrency': 4}}
             config_path = output / (module + '.json')
             config_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
             directory = output / ('mutation-' + module)
             record = command([dotnet, 'stryker', '--config-file', str(config_path), '--output', str(directory), '--log-to-file'],
-                             ROOT / 'tooling/quality/storage', timeout=2400)
+                             ROOT / 'tooling/quality/storage',
+                             timeout=5400 if platform.system() == 'Windows' and module == 'Persistence' else 2400)
             record['collection'] = complete_report(directory, record, module=module)
         manifest['status'] = 'COLLECTED'
     except (RuntimeError, ValueError, KeyError, OSError, ET.ParseError, subprocess.SubprocessError) as error:

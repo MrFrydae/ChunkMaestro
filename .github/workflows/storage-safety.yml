@@ -32,11 +32,11 @@ jobs:
       - name: Evidence contract regressions
         run: python -m unittest discover -s tooling/quality/storage -p 'test_*.py' -v
       - name: Official coverage and mutation collection
-        timeout-minutes: 135
+        timeout-minutes: 105
         run: python tooling/quality/storage/qualify.py run .artifacts/storage/${{ matrix.os }}
       - name: Trusted private Persistence replay collection
         if: success()
-        timeout-minutes: 140
+        timeout-minutes: 210
         run: python tooling/quality/storage/replay_ci.py .artifacts/storage/${{ matrix.os }}
       - if: ${{ !cancelled() }}
         run: python tooling/quality/storage/volume.py .artifacts/storage/${{ matrix.os }}/volume

@@ -313,9 +313,10 @@ actual exit code and `collected-threshold-fail` record. `COLLECTED` alone return
 collection success; the unchanged 90/85/80 aggregate acceptance remains separate.
 
 GitHub documents a [six-hour hosted-job execution limit](https://docs.github.com/en/actions/reference/limits).
-The job is bounded at 350 minutes; official collection at 135 minutes (each
-mutation command 2400 seconds), and private replay at 140 minutes (each mutation
-command 3600 seconds; upstream build 600 seconds). These are finite collection
+The job is bounded at 350 minutes; official collection at 105 minutes (Windows
+Persistence commands 5400 seconds, other official commands 2400 seconds), and
+private replay at 210 minutes (Windows mutation commands 5400 seconds, macOS
+mutation commands 3600 seconds; upstream build 600 seconds). These are finite collection
 budgets, not measured completion promises. Commands record wall time and timeout;
 exhaustion fails unresolved with available partial artifacts, never a hidden
 retry or successful substitute. Remaining job time accommodates volume/native
@@ -334,6 +335,13 @@ claiming that a runner heartbeat alone proves mutant completion. The Windows
 run at `9cda0e3` passed all 133 runtime tests and full-volume recovery but its
 Persistence mutation command hit the unchanged 2400-second deadline without a
 final report. No qualification or mutation kill credit was granted to that run.
+The next Windows diagnostic at `eba7f3c` retained actual Stryker test-session
+events: distinct mutants continued completing through the command deadline.
+It was not a single stalled testhost. Its incomplete run still receives no gate
+credit. The matched official/private configurations now use four mutation workers
+and the Windows budgets above; this changes execution capacity, not source,
+mutators, source exclusions, tests, denominator, kill rules or score thresholds.
+The larger finite budget is based on observed work, not an assumption of success.
 Timeout termination has bounded taskkill/exit waits; an unconfirmed exit remains
 an explicit unresolved timeout, never a mutation kill. Baseline commands have a
 separate maximum of 600 seconds, including restoration.
