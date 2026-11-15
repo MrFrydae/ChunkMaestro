@@ -337,3 +337,28 @@ partially written marker content or relies on launcher exit as worker completion
 The real Windows 64 MiB full-volume case passed again at 35a0aaf; the measurement
 failure was the interruption fixture, not a mutation-score result. Updated
 Windows handshake execution remains pending.
+
+## Actual product replay and model-test isolation
+
+Actual frozen 4f263fc macOS arm64 product collection completed in 26.2 minutes.
+Coverage, clean baseline and restoration each passed 101 tests, zero skips;
+tracked inputs and official report bytes remained unchanged. Persistence coverage
+was 617/732 lines and 166/272 branches. Official mutations were 309/765 credited
+under strict accounting. Real private execution added 98 attributed kills for
+407/765 (53.20%), still below 80%. Both mutation commands returned threshold
+failure. There are 165 surviving, 181 uncovered and 12 timeout outcomes retained.
+This is macOS-only measurement, not a Windows union or independent QA verdict.
+Full evidence: /tmp/pr6-product-mutation-4f263fc-delivery.json and .md.
+
+All 42 FleetDbContext mutations survived in that full run. The existing model/
+snapshot compatibility test reused EF's process-wide service-provider model cache.
+It now builds that test context with EnableServiceProviderCaching(false), using
+EF's [documented test-isolation option](https://learn.microsoft.com/en-us/dotnet/api/microsoft.entityframeworkcore.dbcontextoptionsbuilder.enableserviceprovidercaching?view=efcore-10.0).
+Production caching/performance is unchanged. A focused diagnostic run on identical
+production file bytes killed 27 previously surviving mutants; 15 remain surviving,
+without waivers. That diagnostic temporarily selected only FleetDbContext; its
+other-file exclusions are not applied to repository qualification or counted as
+a whole-module score. Evidence: /tmp/pr6-model-cache-diagnostic.json and
+/tmp/pr6-model-fresh-cache-focused. The compatibility test also now proves direct
+downgrade refusal from every committed version, not only the latest. Full combined
+platform measurement and fresh independent QA remain required after these changes.

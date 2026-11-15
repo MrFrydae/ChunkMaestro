@@ -223,11 +223,15 @@ public sealed class StorageTests : IDisposable
                 DataSource = Path.Combine(directory, "fleet.db"),
                 Pooling = false
             }
-.ToString()).Options;
+.ToString()).EnableServiceProviderCaching(false).Options;
         await using FleetDbContext db = new FleetDbContext(options);
+        // Build this compatibility check's runtime model afresh rather than reusing
+        // a model initialized by another test in the same process.
         Assert.False(db.Database.HasPendingModelChanges());
-        string current = db.Database.GetMigrations().Last();
-        Assert.Throws<NotSupportedException>(() => db.GetService<IMigrator>().GenerateScript(current, Migration.InitialDatabase));
+        foreach (string version in db.Database.GetMigrations())
+        {
+            Assert.Throws<NotSupportedException>(() => db.GetService<IMigrator>().GenerateScript(version, Migration.InitialDatabase));
+        }
         Assert.Empty((await store.ReadAsync()).Hosts);
     }
 
