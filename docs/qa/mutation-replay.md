@@ -281,6 +281,15 @@ using those mappings. Do not require original temporary paths to exist after
 upload. Do not grant aggregation credit from this wrapper alone or relabel raw
 Ignored rows.
 
+The private builder's dependency/output inventory and the runner's baseline
+binary inventories originally used the host's native relative separator. The
+validator accepts Windows separators in those specifically identified inventories
+by normalizing them in memory before safe relative-path validation. Absolute,
+drive-qualified, UNC, traversal and colliding normalized names remain rejected.
+Raw evidence bytes/hashes are not rewritten; uploaded artifact-member inventories
+still require their original POSIX names. Tests cover both valid Windows paths
+and the retained refusal boundaries.
+
 `replay_gate.py`, called by the existing aggregate gate, verifies those relocated
 inventories, the pinned archive's original contents and sole source delta, built
 dependencies, SDK/runner/configuration/input bindings, real full-suite TRX and

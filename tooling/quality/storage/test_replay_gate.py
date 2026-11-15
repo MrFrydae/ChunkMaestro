@@ -12,6 +12,24 @@ import replay_gate as gate
 
 
 class ReplayGateTests(unittest.TestCase):
+    def test_windows_host_inventories_are_portable_without_relaxing_artifact_paths(self):
+        original = {r'src\Tool\bin\Tool.dll': 'hash'}
+        normalized = gate.host_inventory(original)
+        self.assertEqual(normalized, {'src/Tool/bin/Tool.dll': 'hash'})
+        self.assertEqual(original, {r'src\Tool\bin\Tool.dll': 'hash'})
+        for bad in ({r'..\escape': 'hash'}, {r'C:\host\file': 'hash'},
+                    {r'\\server\share': 'hash'}, {'a/../b': 'hash'},
+                    {r'a\b': 'hash', 'a/b': 'hash'}, {}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                gate.host_inventory(bad)
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'nested').mkdir()
+            (root / 'nested/tool').write_bytes(b'payload')
+            gate.verify_files(root, gate.host_inventory({r'nested\tool': replay.digest(b'payload')}))
+            with self.assertRaises(ValueError):
+                gate.verify_files(root, {r'nested\tool': replay.digest(b'payload')})
+
     def test_credit_preserves_original_denominator_and_never_promotes_timeouts(self):
         rows = [{'original': {'status': original}, 'supplemental_status': supplemental}
                 for original, supplemental in (('Ignored', 'Killed'), ('Killed', 'Survived'),

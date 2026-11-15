@@ -44,6 +44,21 @@ def verify_files(folder, expected, exact=False):
         require(replay_ci.inventory(folder) == expected, 'artifact inventory differs')
 
 
+def host_inventory(expected):
+    """Normalize only producer-recorded host-relative paths, preserving raw JSON."""
+    require(isinstance(expected, dict) and expected, 'missing host file inventory')
+    normalized = {}
+    for name, digest in expected.items():
+        require(isinstance(name, str), 'invalid host file path')
+        relative = name.replace('\\', '/')
+        parts = PurePosixPath(relative)
+        require(not parts.is_absolute() and relative == parts.as_posix()
+                and all(p not in ('..', '.', '') and ':' not in p for p in parts.parts), 'host path escapes folder')
+        require(relative not in normalized, 'ambiguous host file inventory')
+        normalized[relative] = digest
+    return normalized
+
+
 def logical(name, marker):
     normalized = posixpath.normpath(name.replace('\\', '/'))
     # A host prefix may differ, but the repository-relative suffix must be unique.
@@ -121,7 +136,7 @@ def private_tool(folder, result, root):
             and built[GENERATED] == replay_ci.REPORTER_SHA, 'private build changed source or generated reporter')
     source = folder / ('stryker-net-' + replay.COMMIT)
     require(replay.hashes(source) == built, 'private built source inventory differs')
-    verify_files(source, provenance['dependencies_and_outputs'])
+    verify_files(source, host_inventory(provenance['dependencies_and_outputs']))
     require(not provenance['build']['timeout'] and provenance['build']['exit_code'] == 0
             and provenance['compiler_files'], 'private build failed or compiler provenance missing')
     return provenance
@@ -170,7 +185,7 @@ def validate(folder, manifest, root):
     cases = replay.test_cases(directory / 'baseline')
     require(cases == replay.test_cases(directory / 'restored') == replay.test_cases(folder / 'coverage')
             and json.loads(json.dumps(cases)) == result['baseline_cases'], 'baseline/restoration/runtime test identities differ')
-    before, after = (load(directory / (label + '-binaries.json')) for label in ('baseline', 'restored'))
+    before, after = (host_inventory(load(directory / (label + '-binaries.json'))) for label in ('baseline', 'restored'))
     for assembly in ('Domain', 'Application', 'Persistence', 'PersistenceTests'):
         selected = {k: v for k, v in before.items() if k.endswith('/ChunkMaestro.' + assembly + '.dll')}
         require(selected and all(after.get(k) == v for k, v in selected.items()), 'restored product/test assemblies differ')
@@ -195,7 +210,7 @@ def validate(folder, manifest, root):
         return child(folder, normalized[len(prefix):])
     require(replay.digest(relocated(provenance['build']['log']).read_bytes()) == provenance['build']['log_sha256'], 'private build log changed')
     require(replay.digest(relocated(provenance['binary']).read_bytes())
-            == provenance['dependencies_and_outputs']['src/Stryker.CLI/Stryker.CLI/bin/Release/Stryker.CLI.dll'], 'private binary changed')
+            == host_inventory(provenance['dependencies_and_outputs'])['src/Stryker.CLI/Stryker.CLI/bin/Release/Stryker.CLI.dll'], 'private binary changed')
     require(result['official_tool_files'].get('Stryker.CLI.dll') == result['official_binary_sha256'], 'official binary binding missing')
     commands = [json.loads(line) for line in (directory / 'commands.jsonl').read_text(encoding='utf-8').splitlines()]
     require(len(commands) == 9, 'missing or extra replay commands')
