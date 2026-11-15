@@ -39,7 +39,12 @@ partial class FleetDbContextModelSnapshot : ModelSnapshot
                 b.HasIndex("HostId", "Edition", "Port")
                     .IsUnique();
 
-                b.ToTable("Endpoints", (string) null);
+                b.ToTable("Endpoints", null, t =>
+                    {
+                        t.HasCheckConstraint("CK_Endpoints_Edition", "\"Edition\" IN (0, 1)");
+
+                        t.HasCheckConstraint("CK_Endpoints_Port", "\"Port\" BETWEEN 1 AND 65535");
+                    });
             });
 
         modelBuilder.Entity("ChunkMaestro.Persistence.FleetRow", b =>

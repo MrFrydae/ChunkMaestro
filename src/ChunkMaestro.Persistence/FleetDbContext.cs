@@ -132,7 +132,11 @@ internal sealed class FleetDbContext(DbContextOptions<FleetDbContext> options) :
         });
         modelBuilder.Entity<EndpointRow>(e =>
         {
-            e.ToTable("Endpoints");
+            e.ToTable("Endpoints", table =>
+            {
+                table.HasCheckConstraint("CK_Endpoints_Port", "\"Port\" BETWEEN 1 AND 65535");
+                table.HasCheckConstraint("CK_Endpoints_Edition", "\"Edition\" IN (0, 1)");
+            });
             e.HasKey(x => new
             {
                 x.InstanceId,
