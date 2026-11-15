@@ -235,6 +235,97 @@ public sealed class AuthorityMutationContractTests : IDisposable
         Assert.Equal(-1, retry.ReadByte());
     }
 
+    public static IEnumerable<object[]> LeafPermissions()
+    {
+        int[] permissions = OperatingSystem.IsWindows() ?
+        [
+            (int) FileSystemRights.ReadData,
+            (int) FileSystemRights.WriteData,
+            (int) FileSystemRights.AppendData,
+            (int) FileSystemRights.ExecuteFile,
+            (int) FileSystemRights.WriteExtendedAttributes,
+            (int) FileSystemRights.ChangePermissions
+        ] :
+        [
+            (int) UnixFileMode.GroupRead,
+            (int) UnixFileMode.GroupWrite,
+            (int) UnixFileMode.GroupExecute,
+            (int) UnixFileMode.OtherRead,
+            (int) UnixFileMode.OtherWrite,
+            (int) UnixFileMode.OtherExecute
+        ];
+        foreach (int permission in permissions)
+        {
+            foreach (bool directory in new[]
+            {
+                false,
+                true
+            })
+            {
+                yield return new object[]
+                {
+                    permission,
+                    directory
+                };
+            }
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(LeafPermissions))]
+    public async Task SharedLeafAccessIsRefusedWithoutRepairAndRestorationAllowsExplicitRetry(int permission, bool directory)
+    {
+        string leaf = Path.Combine(root, "Fleet");
+        StorageLocation location = StorageLocation.ForTests(leaf);
+        FleetId retained = new FleetId(Guid.NewGuid());
+        FleetId retry = new FleetId(Guid.NewGuid());
+        await using (LocalFleetStore initial = await LocalFleetStore.OpenAsync(location))
+        {
+            await initial.RegisterFleetAsync(retained, "retained");
+        }
+        string database = Path.Combine(leaf, "fleet.db");
+        string path = directory ? leaf : database;
+        byte[] content = File.ReadAllBytes(database);
+        string[] entries = Directory.GetFileSystemEntries(leaf).Order().ToArray();
+        byte[] originalPermissions = PermissionSnapshot(path, directory);
+        Action restore = ExpandPermission(path, directory, permission);
+        try
+        {
+            byte[] unsafePermissions = PermissionSnapshot(path, directory);
+            Assert.False(originalPermissions.SequenceEqual(unsafePermissions));
+            // This independent C# authority boundary must refuse before the native check can mask it.
+            InvalidLocation(Assert.Throws<FleetStorageException>(() => StorageLocation.CheckScope(path, directory)), path);
+            if (!directory)
+            {
+                InvalidLocation(Assert.Throws<FleetStorageException>(() => StorageLocation.CreateOrOpen(path)), path);
+            }
+            InvalidLocation(await Assert.ThrowsAsync<FleetStorageException>(() => LocalFleetStore.OpenAsync(location)), path);
+            Assert.Equal(content, File.ReadAllBytes(database));
+            Assert.Equal(entries, Directory.GetFileSystemEntries(leaf).Order().ToArray());
+            Assert.Equal(unsafePermissions, PermissionSnapshot(path, directory));
+        }
+        finally
+        {
+            restore();
+        }
+        Assert.Equal(originalPermissions, PermissionSnapshot(path, directory));
+        StorageLocation.CheckScope(path, directory);
+        await using LocalFleetStore reopened = await LocalFleetStore.OpenAsync(location);
+        Assert.Equal(retained, Assert.Single((await reopened.ReadAsync()).Fleets).Id);
+        await reopened.RegisterFleetAsync(retry, "explicit retry");
+        Assert.Equal(2, (await reopened.ReadAsync()).Fleets.Count);
+    }
+
+    private static byte[] PermissionSnapshot(string path, bool directory)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            FileSystemSecurity security = directory ? new DirectoryInfo(path).GetAccessControl() : new FileInfo(path).GetAccessControl();
+            return security.GetSecurityDescriptorBinaryForm();
+        }
+        return BitConverter.GetBytes((int) File.GetUnixFileMode(path));
+    }
+
     public static IEnumerable<object[]> AncestorMutations()
     {
         if (OperatingSystem.IsWindows())
