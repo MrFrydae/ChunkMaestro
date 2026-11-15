@@ -277,6 +277,48 @@ public sealed class BackupPublicationTests : IDisposable
         return Convert.ToHexString(SHA256.HashData(stream));
     }
 
+    [Fact]
+    public async Task CancellationAfterFinalNativeStepNeverPublishesCompletedName()
+    {
+        await using SqliteConnection source = await SeedAsync();
+        string[] before = OriginalHashes();
+        using CancellationTokenSource cancellation = new CancellationTokenSource();
+        bool completedCopy = false;
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => LocalFleetStore.CreateBackupAsync(source, directory, cancellation.Token, remaining =>
+        {
+            if (remaining == 0)
+            {
+                completedCopy = true;
+                cancellation.Cancel();
+            }
+        }));
+        Assert.True(completedCopy);
+        Assert.Equal(before, OriginalHashes());
+        Assert.Empty(Directory.GetFiles(directory, ".backup-*"));
+        Assert.Equal(Baseline, Assert.Single(Directory.GetFiles(directory, "before-migration-*.db")));
+        Assert.True(File.Exists(await LocalFleetStore.CreateBackupAsync(source, directory, default)));
+    }
+
+    [Fact]
+    public async Task LogicalCorruptionInCopiedDatabasePreventsPublicationAndPreservesRecoveryPoints()
+    {
+        await using SqliteConnection source = await SeedAsync();
+        using (SqliteCommand command = source.CreateCommand())
+        {
+            command.CommandText = "PRAGMA foreign_keys=OFF; INSERT INTO Hosts VALUES ('orphan','missing','private-name','private-address',0)";
+            await command.ExecuteNonQueryAsync();
+        }
+        string[] before = OriginalHashes();
+        FleetStorageException failure = await Assert.ThrowsAsync<FleetStorageException>(() => LocalFleetStore.CreateBackupAsync(source, directory, default));
+        Assert.Equal(StorageFailure.CorruptDatabase, failure.Failure);
+        Assert.DoesNotContain(directory, failure.ToString());
+        Assert.DoesNotContain("private-", failure.ToString());
+        Assert.Equal(before, OriginalHashes());
+        Assert.Empty(Directory.GetFiles(directory, ".backup-*"));
+        Assert.Equal(Baseline, Assert.Single(Directory.GetFiles(directory, "before-migration-*.db")));
+        Assert.Equal("preserved", File.ReadAllText(Baseline));
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(directory))

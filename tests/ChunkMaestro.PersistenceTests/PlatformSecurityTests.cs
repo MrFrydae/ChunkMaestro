@@ -176,6 +176,101 @@ public sealed class PlatformSecurityTests : IDisposable
         Assert.Equal(StorageFailure.InvalidLocation, Assert.Throws<FleetStorageException>(() => location.Prepare()).Failure);
     }
 
+    [Theory]
+    [InlineData("controller.lock")]
+    [InlineData("migration.lock")]
+    [InlineData("fleet.db")]
+    [InlineData("before-migration-preserved.db")]
+    public async Task PublicOpenRefusesUnsafeExistingEntryWithoutRepairOrCreatingInventory(string filename)
+    {
+        StorageLocation location = StorageLocation.ForTests(root);
+        location.Prepare();
+        string path = Path.Combine(root, filename);
+        byte[] preserved = [1, 2, 3, 4];
+        using (FileStream file = StorageLocation.CreateOrOpen(path))
+        {
+            file.Write(preserved);
+        }
+        if (OperatingSystem.IsWindows())
+        {
+            FileInfo info = new FileInfo(path);
+            FileSecurity security = info.GetAccessControl();
+            security.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.WorldSid, null),
+                FileSystemRights.Read, AccessControlType.Allow));
+            info.SetAccessControl(security);
+        }
+        else
+        {
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.OtherRead);
+        }
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            FleetStorageException failure = await Assert.ThrowsAsync<FleetStorageException>(() => LocalFleetStore.OpenAsync(location));
+            Assert.Equal(StorageFailure.InvalidLocation, failure.Failure);
+            Assert.DoesNotContain(root, failure.ToString());
+            Assert.Equal(preserved, File.ReadAllBytes(path));
+            Assert.Equal(path, Assert.Single(Directory.GetFileSystemEntries(root)));
+        }
+    }
+
+    [Theory]
+    [InlineData(UnixFileMode.GroupRead)]
+    [InlineData(UnixFileMode.GroupWrite)]
+    [InlineData(UnixFileMode.GroupExecute)]
+    [InlineData(UnixFileMode.OtherRead)]
+    [InlineData(UnixFileMode.OtherWrite)]
+    [InlineData(UnixFileMode.OtherExecute)]
+    public async Task LivePermissionExpansionRefusesReadAndWriteUntilExplicitlyResolved(UnixFileMode unsafeMode)
+    {
+        await using LocalFleetStore store = await LocalFleetStore.OpenAsync(StorageLocation.ForTests(root));
+        string path = Path.Combine(root, "fleet.db");
+        FileSecurity? original = null;
+        if (OperatingSystem.IsWindows())
+        {
+            FileInfo info = new FileInfo(path);
+            original = info.GetAccessControl();
+            FileSecurity expanded = info.GetAccessControl();
+            FileSystemRights unsafeRights = unsafeMode switch
+            {
+                UnixFileMode.GroupRead or UnixFileMode.OtherRead => FileSystemRights.Read,
+                UnixFileMode.GroupWrite or UnixFileMode.OtherWrite => FileSystemRights.Write,
+                _ => FileSystemRights.ExecuteFile
+            };
+            expanded.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.WorldSid, null),
+                unsafeRights, AccessControlType.Allow));
+            info.SetAccessControl(expanded);
+        }
+        else
+        {
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | unsafeMode);
+        }
+        try
+        {
+            FleetStorageException read = await Assert.ThrowsAsync<FleetStorageException>(() => store.ReadAsync());
+            FleetStorageException write = await Assert.ThrowsAsync<FleetStorageException>(() => store.RegisterFleetAsync(new(Guid.NewGuid()), "refused"));
+            Assert.Equal(StorageFailure.InvalidLocation, read.Failure);
+            Assert.Equal(StorageFailure.InvalidLocation, write.Failure);
+            if (!OperatingSystem.IsWindows())
+            {
+                Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite | unsafeMode, File.GetUnixFileMode(path));
+            }
+        }
+        finally
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                new FileInfo(path).SetAccessControl(original!);
+            }
+            else
+            {
+                File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            }
+        }
+        Assert.Empty((await store.ReadAsync()).Fleets);
+        await store.RegisterFleetAsync(new(Guid.NewGuid()), "explicit retry");
+        Assert.Equal("explicit retry", Assert.Single((await store.ReadAsync()).Fleets).Name);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(root))
