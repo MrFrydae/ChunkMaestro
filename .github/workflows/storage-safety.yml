@@ -26,6 +26,8 @@ jobs:
       - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c
         with:
           python-version: '3.13'
+      - name: Evidence contract regressions
+        run: python -m unittest discover -s tooling/quality/storage -p 'test_*.py' -v
       - run: python tooling/quality/storage/qualify.py run .artifacts/storage/${{ matrix.os }}
       - if: always()
         run: python tooling/quality/storage/volume.py .artifacts/storage/${{ matrix.os }}/volume

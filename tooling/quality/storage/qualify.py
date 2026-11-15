@@ -32,7 +32,7 @@ def run(output):
     records = []
 
     def command(args, cwd=ROOT):
-        with (output / ('command-%02d.log' % len(records))).open('w') as log:
+        with (output / ('command-%02d.log' % len(records))).open('w', encoding='utf-8') as log:
             code = subprocess.run(args, cwd=cwd, env=env, stdout=log, stderr=subprocess.STDOUT).returncode
         records.append({'args': args, 'exit_code': code})
         return code
@@ -63,14 +63,14 @@ def run(output):
                       'mutate': ['**/*.cs', '!**/Migrations/*.Designer.cs', '!**/Migrations/*ModelSnapshot.cs'],
                       'concurrency': 2}}
             config_path = output / (module + '.json')
-            config_path.write_text(json.dumps(config, indent=2))
+            config_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
             command([dotnet, 'stryker', '--config-file', str(config_path), '--output', str(output / ('mutation-' + module))], ROOT / 'tooling/quality/storage')
         manifest['runtime_tests_passed'] = True
     except (RuntimeError, OSError) as error:
         manifest['error'] = str(error)
         manifest['runtime_tests_passed'] = False
     finally:
-        (output / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
+        (output / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
     return 0 if manifest.get('runtime_tests_passed') and all(c['exit_code'] == 0 for c in records) else 1
 
 
@@ -80,6 +80,74 @@ def canonical(path):
     if marker in path:
         return path[path.index(marker):]
     raise ValueError('Unexpected source path: ' + path)
+
+
+def runtime_cases(folder):
+    reports = list((folder / 'coverage').glob('*.trx'))
+    if len(reports) != 1:
+        raise ValueError('Expected exactly one runtime TRX')
+    root = ET.parse(reports[0])
+    counters = root.find('.//{*}Counters')
+    results = root.findall('.//{*}UnitTestResult')
+    if (counters is None or not results or counters.get('total') != counters.get('passed')
+            or int(counters.get('total', '0')) != len(results)
+            or any(r.get('outcome') != 'Passed' for r in results)):
+        raise ValueError('Runtime tests missing, failing or skipped')
+    names = {r.get('testName', '') for r in results}
+    required = (
+        'BackupPublicationTests.KillAfterProductionStepLeavesOnlyUnpublishedCandidateAndRecoverableOriginal',
+        'BackupPublicationTests.PublishedBackupRestoresCommittedWalThroughPublicStore',
+        'PopulatedUpgradeTests.PopulatedInitialUpgradePreservesAllMetadataAndCompatibleBackup',
+        'PopulatedUpgradeTests.KillAfterNewMigrationDropsPopulatedEndpointsRollsBackAndRecoversSeparately')
+    if any(not any(name.endswith(case) for name in names) for case in required):
+        raise ValueError('Required populated upgrade/recovery or production backup interruption case missing')
+
+
+def native_evidence(folder, manifest):
+    native = json.loads((folder / 'native.json').read_text(encoding='utf-8'))
+    source = ROOT / 'src/ChunkMaestro.Persistence/Native/storage.c'
+    runner = ROOT / 'tooling/quality/storage/native.py'
+    resources = runner.with_suffix('')
+    hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
+              for p in sorted(resources.glob('*')) if p.is_file()}
+    if (native['schema_version'] != 2 or native['status'] != 'PASS' or not native['clean']
+            or native['head'] != manifest['head'] or native['platform'] != 'Darwin'
+            or native['source_sha256'] != manifest['sources']['src/ChunkMaestro.Persistence/Native/storage.c']
+            or native['runner_sha256'] != hashlib.sha256(runner.read_bytes()).hexdigest()
+            or native['resources'] != hashes):
+        raise ValueError('Native C evidence failed, dirty or mismatched')
+    if native['coverage_category'] != 'real-filesystem-only':
+        raise ValueError('Injected coverage cannot substitute for real filesystem coverage')
+    totals = json.loads((folder / 'coverage.json').read_text(encoding='utf-8'))['data'][0]['totals']
+    if native['metrics'] != totals:
+        raise ValueError('Native metrics differ from LLVM report')
+    for label, threshold in (('lines', 90), ('branches', 85)):
+        metric = totals[label]
+        if metric['count'] <= 0 or not 0 <= metric['covered'] <= metric['count'] or 100 * metric['covered'] / metric['count'] < threshold:
+            raise ValueError('Native real filesystem ' + label + ' below threshold')
+    if native['runtime']['failed'] != 0 or native['runtime']['passed'] <= 0:
+        raise ValueError('Native runtime cases missing or failing')
+    if not native['preservation']['source_unchanged'] or not native['preservation']['dylib_unchanged']:
+        raise ValueError('Native qualification changed source or production dylib')
+    catalogue = json.loads((resources / 'mutations.json').read_text(encoding='utf-8'))
+    mutants = native['mutation']['mutants']
+    if len(mutants) != len(catalogue) or {m['id'] for m in mutants} != {m[0] for m in catalogue}:
+        raise ValueError('Native mutation catalogue incomplete')
+    original = source.read_text(encoding='utf-8')
+    for mutant in mutants:
+        _, before, after = next(entry for entry in catalogue if entry[0] == mutant['id'])
+        expected = hashlib.sha256(original.replace(before, after).encode('utf-8')).hexdigest()
+        path = (folder / mutant['source']).resolve()
+        if not path.is_relative_to(folder.resolve()) or mutant['source_sha256'] != expected or hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+            raise ValueError('Native compiled mutation source mismatch')
+        if mutant['status'] not in ('Killed', 'Survived', 'Uncovered', 'CompileError'):
+            raise ValueError('Native mutation timeout or execution error')
+        if mutant['status'] == 'Killed':
+            cases = json.loads((folder / mutant['test_log']).read_text(encoding='utf-8'))['cases']
+            if not any(not case['passed'] for case in cases):
+                raise ValueError('Native mutation kill lacks failed assertion')
+    if not mutants or 100 * sum(m['status'] == 'Killed' for m in mutants) / len(mutants) < 80:
+        raise ValueError('Native mutation below 80%')
 
 
 def coverage(folder):
@@ -105,7 +173,7 @@ def gate(folders, output):
     mutants = {m: {} for m in MODULES}
     try:
         for folder in folders:
-            manifest = json.loads((folder / 'manifest.json').read_text())
+            manifest = json.loads((folder / 'manifest.json').read_text(encoding='utf-8'))
             manifests.append(manifest)
             if not manifest.get('runtime_tests_passed'):
                 failures.append(str(folder) + ': runtime tests did not pass')
@@ -113,27 +181,22 @@ def gate(folders, output):
                 failures.append(str(folder) + ': collection started from a dirty tree')
             if manifest['sources'] != source_hashes():
                 failures.append(str(folder) + ': source hashes differ from checkout')
+            runtime_cases(folder)
             lines, branches = coverage(folder)
             for target, incoming in ((all_lines, lines), (all_branches, branches)):
                 for key, hit in incoming.items():
                     target[key] = target.get(key, False) or hit
-            volume = json.loads((folder / 'volume' / 'volume.json').read_text())
+            volume = json.loads((folder / 'volume' / 'volume.json').read_text(encoding='utf-8'))
             if volume['status'] != 'PASS' or volume['head'] != manifest['head'] or volume['platform'] != manifest['platform']:
                 failures.append(str(folder) + ': full-volume evidence failed or mismatched')
             if manifest['platform'] == 'Darwin':
-                native = json.loads((folder / 'native' / 'native.json').read_text())
-                if native['status'] != 'PASS' or native['head'] != manifest['head'] or native['source_sha256'] != manifest['sources']['src/ChunkMaestro.Persistence/Native/storage.c']:
-                    failures.append('Native C coverage failed or mismatched')
-            lines, branches = coverage(folder)
-            for target, incoming in ((all_lines, lines), (all_branches, branches)):
-                for key, hit in incoming.items():
-                    target[key] = target.get(key, False) or hit
+                native_evidence(folder / 'native', manifest)
             for module in MODULES:
                 reports = list((folder / ('mutation-' + module)).rglob('mutation-report.json'))
                 if len(reports) != 1:
                     failures.append(str(folder) + ': missing/ambiguous mutation report for ' + module)
                     continue
-                report = json.loads(reports[0].read_text())
+                report = json.loads(reports[0].read_text(encoding='utf-8'))
                 for file, data in report['files'].items():
                     for mutant in data['mutants']:
                         key = json.dumps([file.replace('\\', '/'), mutant['location'], mutant['mutatorName'], mutant.get('replacement')], sort_keys=True)
@@ -144,8 +207,6 @@ def gate(folders, output):
             failures.append('Evidence must match the same exact checkout head')
     except (ValueError, KeyError, OSError, ET.ParseError) as error:
         failures.append(str(error))
-    failures.append('Native C mutation is outside Stryker.NET; no applicable native mutation qualification yet')
-    failures.append('Populated supported-version upgrade and production backup partial-publication interruption require integrated core migration/hooks; not yet qualified')
     metrics = {}
     for module in MODULES:
         prefix = 'src/ChunkMaestro.' + module + '/'
@@ -169,7 +230,7 @@ def gate(folders, output):
     result = {'schema_version': 1, 'status': 'FAIL' if failures else 'PASS', 'failures': failures, 'metrics': metrics,
               'note': 'Implementation measurement only; not an independent QA verdict. Full-volume and interruption evidence must also pass.'}
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(result, indent=2) + '\n')
+    output.write_text(json.dumps(result, indent=2) + '\n', encoding='utf-8')
     print(json.dumps(result, indent=2))
     return bool(failures)
 

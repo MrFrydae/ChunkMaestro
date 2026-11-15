@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import stat
 import sys
 import tempfile
 
@@ -30,6 +31,15 @@ def exercise(library):
         check('private-directory', scope(root), 1)
         check('private-file', scope(file), 1)
         check('private-ancestor', scope(root, 1), 1)
+        # Read existing system metadata only; never change host ownership or permissions.
+        sticky = Path('/private/tmp')
+        trusted = Path('/private/etc')
+        if (os.geteuid() == 0 or sticky.stat().st_uid != 0 or
+                not sticky.stat().st_mode & stat.S_ISVTX or trusted.stat().st_uid != 0):
+            raise RuntimeError('Read-only root-owned ancestor fixture prerequisites do not hold')
+        check('root-sticky-writable-ancestor', scope(sticky, 1), 1)
+        check('root-owned-nonsticky-ancestor', scope(trusted, 1), 1)
+        check('foreign-owner-leaf-refused', scope(trusted), 0)
         check('file-is-not-ancestor', scope(file, 1), 0)
         check('missing-leaf', scope(root / 'absent'), 0)
         check('missing-ancestor', scope(root / 'absent', 1), 0)

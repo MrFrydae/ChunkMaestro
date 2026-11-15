@@ -5,9 +5,9 @@ Q153, Q163–164, Q189–195 and directive §13 govern. Historical functional,
 security/reliability and UX/performance verdicts against 9122a15 remain FAIL.
 
 The qualification branch integrates production correction 06c91add (locally
-cherry-picked as 70e952f). It changes no production code itself. Only initial
-migration 20261114034833_InitialFleet exists. No supported predecessor, v0,
-cosmetic migration, or populated version-to-version upgrade is invented.
+cherry-picked as 70e952f). It changes no production code itself. At that historical worker baseline only InitialFleet existed. The current
+forward constraint migration and its populated-version evidence are described
+below; no predecessor or cosmetic version was invented.
 
 ## Commands and artifacts
 
@@ -77,7 +77,8 @@ about C. native.py compiles the exact unedited source into an instrumented copy
 of the ignored test-output dylib, executes real storage tests, merges raw profiles
 and exports LLVM coverage JSON. It restores the original dylib in finally.
 Native lines and branches have their own 90/85 gate; Stryker.NET cannot mutate C.
-The aggregate gate explicitly fails the unqualified native mutation requirement.
+The aggregate gate now validates exact-head compiled native mutation evidence
+against the checked-in catalogue, source hashes and failed-assertion records.
 No native exclusion or implicit waiver is granted.
 
 ## Actual failure cases and limits
@@ -129,9 +130,9 @@ final clean integrated-head run artifacts. Original concurrent diagnostic output
 is not qualification evidence. Windows has not been locally executed. The owner
 reported its corefix hosted run failing Windows; do not infer success here.
 
-The aggregate also explicitly fails pending populated supported-version upgrade
-and production backup-publication interruption. There is no legitimate populated
-older version fixture yet. When an independently justified real migration exists,
+At the original worker baseline populated upgrade and production publication
+interruption were missing. The justified migration and production driver below
+now supply cases that the gate requires in each platform TRX. For future versions,
 start from populated InitialFleet, validate backup, upgrade all IDs/data, interrupt
 inside that real migration, and restore the verified original separately. A
 synthetic second migration would not satisfy this requirement.
@@ -213,3 +214,35 @@ StorageUnavailable category while retaining real volume exhaustion and recovery
 assertions. Fresh Windows execution, combined coverage/mutation and independent
 QA are still required; the worker's targeted coverage is diagnostic, below the
 required thresholds. This section does not declare aggregate safety acceptance.
+
+## Integrated endpoint migration and native gate
+
+The forward EnforceEndpointInvariants migration enforces the existing application
+rules at SQLite: port 1–65535 and edition Java/Bedrock (0/1). It preserves the
+committed InitialFleet migration and uses one transactional leaf-table rebuild;
+future incoming foreign keys to Endpoints require revisiting that assumption.
+Six cases prove populated old-version upgrade and compatible backup recovery,
+invalid-row refusal without repair, and rollback after killing the actual worker
+following the executed transactional DROP TABLE. Existing startup/model tests
+now compare the full migration history and test downgrade refusal from the latest
+version. Combined normal macOS verification passes 68 tests, zero skips.
+
+Native qualification now keeps the production/test dylib untouched and compiles
+isolated helper copies. The worker's 39 real cases measured 47/56 branches and
+correctly failed. Three added read-only probes of existing root-owned /private/tmp
+and /private/etc exercise actual sticky/ownership decisions without privilege,
+ownership or permission changes. Local diagnostic measurement is 42 real cases,
+37/37 lines, 51/56 branches (91.07%), plus separately labeled 10 injected cases.
+Compiled mutation results are 24/28 killed (85.71%); four survivors remain in the
+denominator. No injected branch is counted toward real filesystem coverage.
+Fresh clean-head collection is required after integration; these diagnostics are
+not Windows/Intel or overall storage qualification.
+
+The gate now checks the actual real-filesystem LLVM report and compiled mutation
+catalogue/artifacts, source/runner/resource identity, preservation and clean head.
+It also requires passed production-backup crash/recovery and populated-upgrade
+crash/recovery cases in each platform's TRX. Missing/stale/injected substitute or
+incomplete evidence fails. Six parser regressions include synthetic contract
+fixtures only; those fixtures never supply runtime acceptance evidence. The
+managed coverage/mutation thresholds, same-head Windows/macOS collection,
+full-volume cases and all independent QA roles remain mandatory.

@@ -298,3 +298,17 @@ verify names/identities persist with unknown observation; negative and boundary
 cases verify rejection without inventory mutation. Local normal verification now
 passes 50 tests with zero skips/build warnings/errors. Current-head hosted checks
 and the outstanding safety/independent QA gates remain required.
+
+## Integrated safety correction checkpoint
+
+The current schema has a forward endpoint CHECK-constraint migration after
+InitialFleet (ports 1–65535, editions0/1). Both committed versions are validated;
+invalid existing rows are preserved with the pre-migration backup, not repaired.
+The complete leaf-table rebuild is transactional. Populated upgrade, compatible
+backup recovery and process-kill rollback have local macOS implementation proof.
+Backups now use the incremental production driver and publish a completed name
+only after verification, close and flush; crash candidates remain explicitly
+partial. No automatic downgrade, restore or disruptive replay is introduced.
+See [safety qualification](../qa/storage-safety.md) for current evidence and
+limitations. Normal local validation passes 68 tests; combined safety thresholds,
+Windows/Intel qualification and independent exact-head QA remain incomplete.

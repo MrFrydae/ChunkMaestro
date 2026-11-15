@@ -62,7 +62,9 @@ public sealed class StorageTests : IDisposable
         Assert.Empty(inventory.Hosts);
         Assert.Empty(inventory.Instances);
         await using SqliteConnection connection = await ConnectionAsync();
-        Assert.Equal(1L, await ScalarAsync(connection, "SELECT COUNT(*) FROM __EFMigrationsHistory"));
+        DbContextOptions<FleetDbContext> options = new DbContextOptionsBuilder<FleetDbContext>().UseSqlite(connection).Options;
+        await using FleetDbContext db = new FleetDbContext(options);
+        Assert.Equal(db.Database.GetMigrations().ToArray(), (await db.Database.GetAppliedMigrationsAsync()).ToArray());
     }
     [Fact]
     public async Task ManualInventoryReloadsWithUnknownHealthAndDistinctProtocols()
@@ -224,7 +226,7 @@ public sealed class StorageTests : IDisposable
 .ToString()).Options;
         await using FleetDbContext db = new FleetDbContext(options);
         Assert.False(db.Database.HasPendingModelChanges());
-        string current = Assert.Single(db.Database.GetMigrations());
+        string current = db.Database.GetMigrations().Last();
         Assert.Throws<NotSupportedException>(() => db.GetService<IMigrator>().GenerateScript(current, Migration.InitialDatabase));
         Assert.Empty((await store.ReadAsync()).Hosts);
     }
