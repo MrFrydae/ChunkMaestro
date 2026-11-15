@@ -36,6 +36,12 @@ internal static class IncrementalBackupDriver
             }.ToString()))
             {
                 await destination.OpenAsync(token);
+                // SQLite's elevated Windows default owner can be Administrators.
+                // Reserve this new candidate's journal with the explicit caller owner
+                // after opening, before the first native step starts a transaction.
+                using (FileStream journal = CreateCandidate(partial + "-journal"))
+                {
+                }
                 Copy(source, destination, afterStep, token);
                 token.ThrowIfCancellationRequested();
                 // A standalone recovery point must not depend on WAL sidecars.

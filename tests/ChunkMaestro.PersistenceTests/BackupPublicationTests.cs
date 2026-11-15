@@ -205,6 +205,10 @@ public sealed class BackupPublicationTests : IDisposable
             Assert.False(child.HasExited);
             Assert.Single(Directory.GetFiles(directory, ".backup-*.partial"));
             Assert.Equal(Baseline, Assert.Single(Directory.GetFiles(directory, "before-migration-*.db")));
+            foreach (string candidate in Directory.GetFiles(directory, ".backup-*"))
+            {
+                StorageLocation.CheckScope(candidate);
+            }
             worker.Kill(true);
             await worker.WaitForExitAsync(deadline.Token);
             await child.WaitForExitAsync(deadline.Token);

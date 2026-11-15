@@ -246,3 +246,25 @@ incomplete evidence fails. Six parser regressions include synthetic contract
 fixtures only; those fixtures never supply runtime acceptance evidence. The
 managed coverage/mutation thresholds, same-head Windows/macOS collection,
 full-volume cases and all independent QA roles remain mandatory.
+
+## Follow-up Windows owner/path failures
+
+Review at 74f139e correctly found that the previous volume-GUID correction still
+violated the production path contract: Prepare rejects the extended namespace
+as well as UNC paths. The fixture now enumerates occupied letters, chooses a free
+normal drive path and asks DiskPart to assign it to only the newly created VHD.
+An occupied-letter race fails assignment; no existing mapping is removed. The
+GUID from mountvol is diagnostic, not the path given to storage. See Microsoft's
+[assign contract](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/assign).
+Cleanup queries and dismounts the exact image in one PowerShell process using
+[Dismount-DiskImage](https://learn.microsoft.com/en-us/powershell/module/storage/dismount-diskimage?view=windowsserver2025-ps),
+then verifies attachment state; uncertainty still fails and retains the image.
+
+The production-step crash test also reached recovery but was refused by the
+Windows owner check on a leftover backup file. Elevated SQLite journal creation
+uses the default owner, so the driver now reserves its new rollback journal with
+explicit user ownership before the first native step. The crash test checks every
+partial candidate/sidecar's scope while the actual worker is paused. No existing
+file is re-owned and no production ACL/path rejection is weakened. Windows
+confirmation remains required. Drive-letter parser tests use synthetic inventories
+only and are not Windows runtime evidence.
