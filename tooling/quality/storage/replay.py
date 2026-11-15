@@ -100,6 +100,8 @@ def require(result):
 
 
 def build_private(output, dotnet, archive=None):
+    if sys.version_info < (3, 12):
+        raise ValueError('Private source extraction requires Python 3.12+ data-filter support')
     output = output.resolve()
     output.mkdir(parents=True, exist_ok=False)
     archive_path = output / 'official-source.tar.gz'
@@ -237,10 +239,14 @@ def supplement(original, patched):
         yield row
 
 
-def run(output, root, dotnet, provenance_path, official, config, test_project, fixture=False, timeout=600):
+def run(output, root, dotnet, provenance_path, official, config, test_project, fixture=False, timeout=600,
+        mutation_directory=None):
     root, output = root.resolve(), output.resolve()
     config, test_project = config.resolve(), test_project.resolve()
     provenance_path, official = provenance_path.resolve(), official.resolve()
+    mutation_directory = (mutation_directory or root).resolve()
+    if not mutation_directory.is_relative_to(root) or not mutation_directory.is_dir():
+        raise ValueError('Mutation discovery directory must be inside the frozen workspace')
     if not config.is_relative_to(root) or not test_project.is_relative_to(root):
         raise ValueError('Configuration and test project must be frozen workspace inputs')
     if output.is_relative_to(root):
@@ -253,6 +259,7 @@ def run(output, root, dotnet, provenance_path, official, config, test_project, f
     baseline_cases = None
     result = {'schema_version': 1, 'category': 'fixture-only' if fixture else 'production-experiment',
               'status': 'UNRESOLVED', 'platform': platform.platform(), 'architecture': platform.machine(),
+              'mutation_directory': mutation_directory.relative_to(root).as_posix(),
               'thresholds': {'line': 90, 'branch': 85, 'mutation': 80}}
     env = environment(dotnet)
     def execute(args, label):
@@ -319,7 +326,7 @@ def run(output, root, dotnet, provenance_path, official, config, test_project, f
             if config.read_bytes() != frozen:
                 raise ValueError('Configuration changed')
             mutation_command = command([dotnet, tool, '--config-file', config, '--output', output / label, '--log-to-file'],
-                                       root, output, label, env, timeout)
+                                       mutation_directory, output, label, env, timeout)
             # Pinned Stryker ExitCodes.BreakThresholdViolated is 2. Retain the
             # failed threshold while collecting its report; never turn it into PASS.
             if mutation_command['timeout'] or mutation_command['exit_code'] not in (0, 2):
@@ -387,12 +394,13 @@ def main():
         collect.add_argument('--' + name, type=Path, required=True)
     collect.add_argument('--fixture', action='store_true')
     collect.add_argument('--timeout', type=int, default=600)
+    collect.add_argument('--mutation-directory', type=Path)
     args = parser.parse_args()
     if args.mode == 'build-private':
         print(build_private(args.output, args.dotnet.resolve(), args.archive))
         return 0
     return run(args.output, args.root, args.dotnet.resolve(), args.provenance, args.official,
-               args.config, args.test_project, args.fixture, args.timeout)
+               args.config, args.test_project, args.fixture, args.timeout, args.mutation_directory)
 
 
 if __name__ == '__main__':

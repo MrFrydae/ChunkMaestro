@@ -59,6 +59,7 @@ def run(output):
             raise RuntimeError('Runtime cases missing, failing or skipped')
         for module in MODULES:
             config = {'stryker-config': {'project': 'ChunkMaestro.' + module + '.csproj', 'configuration': 'Release',
+                      'test-projects': ['MutationTests.csproj'],
                       'reporters': ['json', 'html'], 'thresholds': {'high': 90, 'low': 80, 'break': 80},
                       'mutate': ['**/*.cs', '!**/Migrations/*.Designer.cs', '!**/Migrations/*ModelSnapshot.cs'],
                       'concurrency': 2}}

@@ -149,3 +149,42 @@ A complete serial production run on each required OS/architecture is still
 needed, including any unresolved entries and existing line/branch shortfalls.
 Cost is one private build, two full Stryker runs and two clean full-suite
 baselines per environment. Fixture seconds do not estimate product cost.
+
+## Lead integration prerequisites
+
+The private source builder requires Python 3.12+ for tar's data-filter extraction;
+normal repository tooling retains its existing Python baseline. The production
+runner can bind a separate in-workspace `--mutation-directory`. For Persistence,
+use `tooling/quality/storage` with its MutationTests project, not the repository
+root containing standalone resource fixtures. This changes discovery location,
+not selected mutators or source exclusions. The recorded binding includes it.
+The tracked persistence.json matches the existing qualification settings.
+
+Example production invocation (long-running; serialize all native/build outputs):
+
+```sh
+python3 tooling/quality/storage/replay.py run \
+  --root . --output /tmp/new-storage-replay \
+  --provenance /tmp/new-private-build/provenance.json \
+  --official /Users/derek/.nuget/packages/dotnet-stryker/5.0.0/tools/net10.0/any/Stryker.CLI.dll \
+  --config tooling/quality/storage/replay/persistence.json \
+  --test-project tooling/quality/storage/MutationTests.csproj \
+  --mutation-directory tooling/quality/storage --timeout 7200
+```
+
+The worker's private-v2 build predates the final builder-hash field. Its fixture
+proof remains historical implementation evidence, but current production work
+must use a fresh private build with the integrated builder hash recorded. Upstream
+warnings and dependency provenance require review; fixture success does not
+silently approve their use or establish general product qualification.
+
+Lead replay check: the first alternate-directory fixture attempt was UNRESOLVED
+because its test-project paths still assumed the old directory. Correcting the
+external fixture's explicit project paths produced /tmp/pr6-replay-lead-pilot-v2:
+4/4 baseline and restoration, official 6 Killed / 4 Ignored, private 10 Killed with
+killedBy attribution, all inputs preserved. Fresh private build provenance is
+/tmp/pr6-replay-private-lead-v2/provenance.json. Its builder hash and the final
+pilot runner hash match the integrated replay.py bytes. The failed attempt is
+retained without credit. Production config now explicitly selects
+MutationTests.csproj; ordinary qualification uses the same explicit selection.
+These remain fixture/tool integration results, not product mutation execution.
