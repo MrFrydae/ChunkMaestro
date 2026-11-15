@@ -22,10 +22,14 @@ class ReplayContracts(unittest.TestCase):
             proc = MagicMock()
             waits = []
             raw = b'\x1b[31m.S.T\x1b[0m\r'
+            details = root / 'mutation' / 'logs' / 'log-fixture.txt'
+            detail_bytes = b'old detail\n' * 1000 + b'\x1b[32mTesting mutant 42\x1b[0m\r'
             def wait(timeout):
                 waits.append(timeout)
                 if len(waits) == 1:
                     next(root.glob('heartbeat-*.log')).write_bytes(raw)
+                    details.parent.mkdir(parents=True)
+                    details.write_bytes(detail_bytes)
                     raise subprocess.TimeoutExpired('fixture', 30)
                 return 0
             proc.wait.side_effect = wait
@@ -33,11 +37,15 @@ class ReplayContracts(unittest.TestCase):
             with patch.object(replay.subprocess, 'Popen', return_value=proc), \
                     patch.object(replay.time, 'monotonic', side_effect=[0, 0, 30, 30, 30, 31]), \
                     contextlib.redirect_stdout(output):
-                result = replay.command(['fixture'], root, root, 'heartbeat', {}, 60)
+                result = replay.command(['fixture', '--output', root / 'mutation'], root, root, 'heartbeat', {}, 60)
             self.assertFalse(result['timeout'])
             self.assertIn('WAIT heartbeat', output.getvalue())
             self.assertIn('END heartbeat', output.getvalue())
             self.assertIn('OUTPUT .S.T', output.getvalue())
+            self.assertIn('PROGRESS ', output.getvalue())
+            self.assertIn('Testing mutant 42', output.getvalue())
+            self.assertLess(len(output.getvalue()), 3000)
+            self.assertEqual(details.read_bytes(), detail_bytes)
             self.assertNotIn('\x1b', output.getvalue())
             self.assertEqual(next(root.glob('heartbeat-*.log')).read_bytes(), raw)
             self.assertEqual([call.kwargs['timeout'] for call in proc.wait.call_args_list], [30, 30])

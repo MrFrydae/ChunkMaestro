@@ -165,6 +165,7 @@ def collect(output):
                                   ROOT / 'tooling/quality/storage/replay/persistence.json',
                                   ROOT / 'tooling/quality/storage/MutationTests.csproj',
                                   timeout=5400 if platform.system() == 'Windows' else 3600,
+                                  private_timeout=7200 if platform.system() == 'Windows' else None,
                                   mutation_directory=ROOT / 'tooling/quality/storage')
             finally:
                 replay.command = original_command

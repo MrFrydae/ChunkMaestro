@@ -73,6 +73,10 @@ def command(args, cwd, directory, label, env, timeout):
     timed_out = False
     termination_error = None
     displayed_bytes = 0
+    displayed_details = {}
+    detail_directory = None
+    if '--output' in args:
+        detail_directory = Path(cwd) / Path(args[args.index('--output') + 1]) / 'logs'
     print(f'[storage] START {label}; deadline={timeout}s; log={log}', flush=True)
     with log.open('wb') as stream:
         proc = subprocess.Popen([str(a) for a in args], cwd=cwd, env=env, stdout=stream,
@@ -109,6 +113,20 @@ def command(args, cwd, directory, label, env, timeout):
                                 excerpt = progress.read(512).decode('utf-8', errors='replace')
                             print('[storage] OUTPUT ' + re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', excerpt).replace('\r', '\n'), flush=True)
                             displayed_bytes = length
+                        if detail_directory is not None:
+                            for detail in sorted(detail_directory.glob('log-*.txt')):
+                                try:
+                                    stamp = (detail.stat().st_size, detail.stat().st_mtime_ns)
+                                    if displayed_details.get(detail) == stamp:
+                                        continue
+                                    with detail.open('rb') as progress:
+                                        progress.seek(max(0, stamp[0] - 512))
+                                        excerpt = progress.read(512).decode('utf-8', errors='replace')
+                                    print('[storage] PROGRESS ' + re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', excerpt).replace('\r', '\n'), flush=True)
+                                    displayed_details[detail] = stamp
+                                except OSError:
+                                    # Diagnostic sampling must not interrupt collection.
+                                    pass
                         continue
                     timed_out = True
                     try:
@@ -284,7 +302,7 @@ def supplement(original, patched):
 
 
 def run(output, root, dotnet, provenance_path, official, config, test_project, fixture=False, timeout=600,
-        mutation_directory=None):
+        mutation_directory=None, private_timeout=None):
     root, output = root.resolve(), output.resolve()
     config, test_project = config.resolve(), test_project.resolve()
     provenance_path, official = provenance_path.resolve(), official.resolve()
@@ -370,7 +388,8 @@ def run(output, root, dotnet, provenance_path, official, config, test_project, f
             if config.read_bytes() != frozen:
                 raise ValueError('Configuration changed')
             mutation_command = command([dotnet, tool, '--config-file', config, '--output', output / label, '--log-to-file'],
-                                       mutation_directory, output, label, env, timeout)
+                                       mutation_directory, output, label, env,
+                                       private_timeout if label == 'private-patched' and private_timeout is not None else timeout)
             # Pinned Stryker ExitCodes.BreakThresholdViolated is 2. Retain the
             # failed threshold while collecting its report; never turn it into PASS.
             if mutation_command['timeout'] or mutation_command['exit_code'] not in (0, 2):

@@ -36,7 +36,7 @@ jobs:
         run: python tooling/quality/storage/qualify.py run .artifacts/storage/${{ matrix.os }}
       - name: Trusted private Persistence replay collection
         if: success()
-        timeout-minutes: 210
+        timeout-minutes: 225
         run: python tooling/quality/storage/replay_ci.py .artifacts/storage/${{ matrix.os }}
       - if: ${{ !cancelled() }}
         run: python tooling/quality/storage/volume.py .artifacts/storage/${{ matrix.os }}/volume

@@ -369,3 +369,34 @@ artifacts. Windows path execution and complete hosted private/product mutation
 runs have **not** been performed by this implementation task. Historical macOS
 mutation outputs are diagnostic only. Full current-head Windows/macOS execution,
 aggregate qualification and independent product QA remain required.
+## Windows private replay runtime correction
+
+The Windows collection at `083344305855fdb9e2e08038748d00f20d864a3c`
+[failed at its command deadline](https://github.com/MrFrydae/ChunkMaestro/actions/runs/43715235691/job/132815295510).
+Its initial collection completed, and its replay official pass finished in
+4,308.8 seconds. The private pass was terminated at 5,401.8 seconds by its
+5,400-second bound. The retained debug log contains 534 completed mutant sessions
+and further test activity through the termination time. This establishes active
+work at the cutoff, not a deadlock or a completed mutation score. Baseline and
+restoration each passed all 185 Windows tests; tracked inputs were preserved.
+
+The immutable Windows artifact is ID `14171990695`, SHA-256
+`d2d0f975baa2530d60bac28be54862b941e95413cccfb7a65d5383b2056a4bcf`.
+The failed aggregate correctly refused the incomplete replay. Its partial
+mutation metrics do not establish combined-platform qualification.
+
+The private Windows command now has a bounded 7,200-second allowance. Its
+official replay remains bounded to 5,400 seconds; macOS command limits and the
+350-minute whole-job limit remain unchanged. The containing replay step allows
+225 minutes for both commands, baseline/restoration and provenance preparation.
+This adjustment follows observed ongoing execution; no safety threshold, mutant
+denominator, timeout kill-credit rule or acceptance check changes.
+
+Heartbeats also show a bounded, ANSI-stripped tail from Stryker's main debug log
+when it changes. This makes mutant activity visible when console output is
+buffered. Raw logs are preserved byte for byte, and progress sampling grants no
+qualification credit. The regression exercises progress output, bounded output
+size, original-byte preservation and unchanged command deadlines.
+
+Local validation: 35 storage-tooling regressions and 15 build-tooling regressions
+passed. Fresh hosted collection and independent QA remain required.
