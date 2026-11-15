@@ -325,6 +325,15 @@ The command runner prints START/END records and a WAIT heartbeat every 30 second
 with elapsed time and log byte count. A heartbeat proves the runner is waiting;
 it does not claim that mutation execution is making useful progress. Failures and
 timeouts also print a bounded diagnostic log tail. Full logs remain unchanged.
+When output grows, a heartbeat includes its latest 512 bytes with terminal color
+escapes removed from the displayed copy. Both ordinary and replay configurations
+enable Stryker's Dots reporter (actual per-mutant outcomes), while ordinary runs
+also retain debug/testhost logs via `--log-to-file`, as replay already does.
+These diagnostics distinguish completed mutants from a silent testhost without
+claiming that a runner heartbeat alone proves mutant completion. The Windows
+run at `9cda0e3` passed all 133 runtime tests and full-volume recovery but its
+Persistence mutation command hit the unchanged 2400-second deadline without a
+final report. No qualification or mutation kill credit was granted to that run.
 Timeout termination has bounded taskkill/exit waits; an unconfirmed exit remains
 an explicit unresolved timeout, never a mutation kill. Baseline commands have a
 separate maximum of 600 seconds, including restoration.

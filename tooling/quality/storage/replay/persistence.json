@@ -3,6 +3,7 @@
     "project": "ChunkMaestro.Persistence.csproj",
     "configuration": "Release",
     "reporters": [
+      "dots",
       "json",
       "html"
     ],

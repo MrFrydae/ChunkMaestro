@@ -72,6 +72,7 @@ def command(args, cwd, directory, label, env, timeout):
     started = time.monotonic()
     timed_out = False
     termination_error = None
+    displayed_bytes = 0
     print(f'[storage] START {label}; deadline={timeout}s; log={log}', flush=True)
     with log.open('wb') as stream:
         proc = subprocess.Popen([str(a) for a in args], cwd=cwd, env=env, stdout=stream,
@@ -100,7 +101,14 @@ def command(args, cwd, directory, label, env, timeout):
                     break
                 except subprocess.TimeoutExpired:
                     if time.monotonic() - started < timeout:
-                        print(f'[storage] WAIT {label}; elapsed={time.monotonic()-started:.0f}s; log_bytes={log.stat().st_size}', flush=True)
+                        length = log.stat().st_size
+                        print(f'[storage] WAIT {label}; elapsed={time.monotonic()-started:.0f}s; log_bytes={length}', flush=True)
+                        if length > displayed_bytes:
+                            with log.open('rb') as progress:
+                                progress.seek(max(0, length - 512))
+                                excerpt = progress.read(512).decode('utf-8', errors='replace')
+                            print('[storage] OUTPUT ' + re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', excerpt).replace('\r', '\n'), flush=True)
+                            displayed_bytes = length
                         continue
                     timed_out = True
                     try:

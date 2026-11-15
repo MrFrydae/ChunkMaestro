@@ -20,7 +20,15 @@ class ReplayContracts(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             proc = MagicMock()
-            proc.wait.side_effect = [subprocess.TimeoutExpired('fixture', 30), 0]
+            waits = []
+            raw = b'\x1b[31m.S.T\x1b[0m\r'
+            def wait(timeout):
+                waits.append(timeout)
+                if len(waits) == 1:
+                    next(root.glob('heartbeat-*.log')).write_bytes(raw)
+                    raise subprocess.TimeoutExpired('fixture', 30)
+                return 0
+            proc.wait.side_effect = wait
             output = io.StringIO()
             with patch.object(replay.subprocess, 'Popen', return_value=proc), \
                     patch.object(replay.time, 'monotonic', side_effect=[0, 0, 30, 30, 30, 31]), \
@@ -29,6 +37,9 @@ class ReplayContracts(unittest.TestCase):
             self.assertFalse(result['timeout'])
             self.assertIn('WAIT heartbeat', output.getvalue())
             self.assertIn('END heartbeat', output.getvalue())
+            self.assertIn('OUTPUT .S.T', output.getvalue())
+            self.assertNotIn('\x1b', output.getvalue())
+            self.assertEqual(next(root.glob('heartbeat-*.log')).read_bytes(), raw)
             self.assertEqual([call.kwargs['timeout'] for call in proc.wait.call_args_list], [30, 30])
 
     def test_windows_failed_termination_never_enters_unbounded_wait(self):

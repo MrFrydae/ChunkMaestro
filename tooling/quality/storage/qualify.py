@@ -63,13 +63,13 @@ def run(output):
             print('[storage] Measuring ' + module, flush=True)
             config = {'stryker-config': {'project': 'ChunkMaestro.' + module + '.csproj', 'configuration': 'Release',
                       'test-projects': ['MutationTests.csproj'],
-                      'reporters': ['json', 'html'], 'thresholds': {'high': 90, 'low': 80, 'break': 80},
+                      'reporters': ['dots', 'json', 'html'], 'thresholds': {'high': 90, 'low': 80, 'break': 80},
                       'mutate': ['**/*.cs', '!**/Migrations/*.Designer.cs', '!**/Migrations/*ModelSnapshot.cs'],
                       'concurrency': 2}}
             config_path = output / (module + '.json')
             config_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
             directory = output / ('mutation-' + module)
-            record = command([dotnet, 'stryker', '--config-file', str(config_path), '--output', str(directory)],
+            record = command([dotnet, 'stryker', '--config-file', str(config_path), '--output', str(directory), '--log-to-file'],
                              ROOT / 'tooling/quality/storage', timeout=2400)
             record['collection'] = complete_report(directory, record, module=module)
         manifest['status'] = 'COLLECTED'
