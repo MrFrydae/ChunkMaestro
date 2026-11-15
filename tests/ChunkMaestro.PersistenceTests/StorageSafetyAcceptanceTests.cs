@@ -221,7 +221,7 @@ public sealed class StorageSafetyAcceptanceTests : IDisposable
         command.CommandText = "PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0; CREATE TABLE Evidence (Id TEXT PRIMARY KEY, Payload BLOB); INSERT INTO Evidence VALUES ('wal-id', zeroblob(1048576))";
         await command.ExecuteNonQueryAsync();
         string completed = await LocalFleetStore.CreateBackupAsync(source, directory, default);
-        byte[] wal = await File.ReadAllBytesAsync(sourcePath + "-wal");
+        byte[] wal = await ReadSharedWalAsync(sourcePath + "-wal");
         Assert.NotEmpty(wal);
         ProcessStartInfo start = new ProcessStartInfo(Environment.GetEnvironmentVariable("CHUNKMAESTRO_DOTNET") ?? "dotnet")
         {
@@ -258,7 +258,7 @@ public sealed class StorageSafetyAcceptanceTests : IDisposable
         }
         await stdout;
         await stderr;
-        Assert.Equal(wal, await File.ReadAllBytesAsync(sourcePath + "-wal"));
+        Assert.Equal(wal, await ReadSharedWalAsync(sourcePath + "-wal"));
         Assert.True(File.Exists(partialPath));
         Assert.NotEqual(partialPath, completed);
         command.CommandText = "SELECT length(Payload) FROM Evidence WHERE Id='wal-id'";
@@ -269,6 +269,15 @@ public sealed class StorageSafetyAcceptanceTests : IDisposable
         Assert.Equal(1048576L, await verify.ExecuteScalarAsync());
         verify.CommandText = "PRAGMA integrity_check";
         Assert.Equal("ok", await verify.ExecuteScalarAsync());
+    }
+
+    private static async Task<byte[]> ReadSharedWalAsync(string path)
+    {
+        await using FileStream input = new FileStream(path, FileMode.Open, FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete, 4096, FileOptions.Asynchronous);
+        using MemoryStream bytes = new MemoryStream();
+        await input.CopyToAsync(bytes);
+        return bytes.ToArray();
     }
 
     private sealed class PauseAfterDdlInterceptor(string root) : DbCommandInterceptor

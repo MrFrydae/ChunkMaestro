@@ -169,3 +169,24 @@ namespaces are normalized without changing migration operations or model metadat
 The measurements above remain historical implementation evidence at their stated
 heads; the new integrated head requires fresh Windows/macOS collection. The safety
 gate remains FAIL until the measured thresholds and real recovery cases pass.
+
+## Windows fixture corrections after 0040146
+
+The hosted managed and measurement jobs both failed the WAL interruption fixture
+at `File.ReadAllBytesAsync`: its default sharing mode conflicts with SQLite's
+open writer on Windows. The fixture now reads using an explicit shared-read handle
+(`ReadWrite | Delete`) while retaining the before/after byte comparison and the
+actual process-kill checks. This does not weaken production locking.
+
+The full-volume job mounted its new image successfully, but the fixture reached
+it through a directory reparse point, correctly rejected by production ancestor
+validation. The runner now obtains the newly mounted volume GUID through
+[`mountvol /L`](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/mountvol)
+and passes that volume root to the test. Cleanup queries only its exact new image
+with [`Get-DiskImage`](https://learn.microsoft.com/en-us/powershell/module/storage/get-diskimage?view=windowsserver2025-ps)
+before detaching, then verifies detachment. An already detached image is distinguished
+from a query/detachment failure; failures still fail evidence and preserve the image.
+These Windows changes require hosted confirmation. No production permission or
+path policy was relaxed. Safety collection and gate checkout now select the PR
+head explicitly so artifact heads describe the actual reviewed commit rather than
+a synthetic GitHub merge commit.
