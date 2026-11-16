@@ -14,6 +14,18 @@ import qualify
 
 
 class AdapterTests(unittest.TestCase):
+    def test_platform_configurations_preserve_scope_thresholds_and_official_private_parity(self):
+        original = json.loads((ci.ROOT / ci.replay_configuration('Darwin')).read_bytes())
+        windows = json.loads((ci.ROOT / ci.replay_configuration('Windows')).read_bytes())
+        self.assertEqual(original['stryker-config']['concurrency'], 4)
+        self.assertEqual(windows['stryker-config']['concurrency'], 2)
+        restored = json.loads(json.dumps(windows))
+        restored['stryker-config']['concurrency'] = 4
+        self.assertEqual(restored, original)
+        for system in ('Windows', 'Darwin'):
+            self.assertEqual(qualify.mutation_configuration('Persistence', system),
+                             json.loads((ci.ROOT / ci.replay_configuration(system)).read_bytes()))
+
     def test_child_process_environment_is_an_explicit_allowlist(self):
         source = dict(os.environ, GITHUB_TOKEN='sentinel', AWS_SECRET_ACCESS_KEY='sentinel',
                       SSH_AUTH_SOCK='sentinel', NUGET_AUTH_TOKEN='sentinel',

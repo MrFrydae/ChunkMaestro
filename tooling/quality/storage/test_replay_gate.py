@@ -50,7 +50,7 @@ class ReplayGateTests(unittest.TestCase):
         test = 'tests/ChunkMaestro.PersistenceTests/ExampleTests.cs'
         for name, data in ((source, b'false\n'), (test, b'test source\n'),
                            ('tooling/quality/storage/replay.py', b'runner'),
-                           (gate.CONFIG, b'configuration'), ('global.json', b'{"sdk":{"version":"pin"}}')):
+                           (gate.WINDOWS_CONFIG, b'configuration'), ('global.json', b'{"sdk":{"version":"pin"}}')):
             put(root / name, data)
         directory = folder / 'replay'
         directory.mkdir()
@@ -92,7 +92,7 @@ class ReplayGateTests(unittest.TestCase):
             args = ['dotnet', verb, 'C:/agent/tooling/quality/storage/MutationTests.csproj']
             if index in (4, 5):
                 args = ['dotnet', provenance['binary'] if index == 5 else 'C:/tool/Stryker.CLI.dll',
-                        '--config-file', 'C:/agent/' + gate.CONFIG]
+                        '--config-file', 'C:/agent/' + gate.WINDOWS_CONFIG]
             commands.append({'args': args, 'exit_code': 2 if index == 4 else 0, 'timeout': False,
                              'log': prefix + f'replay/{index}.log', 'log_sha256': replay.digest(b'log')})
         (directory / 'commands.jsonl').write_text('\n'.join(map(json.dumps, commands)), encoding='utf-8')
@@ -121,7 +121,7 @@ class ReplayGateTests(unittest.TestCase):
         return root, folder, provenance, collection, seal
 
     def test_complete_relocated_contract_and_fail_closed_bindings(self):
-        for change in ('none', 'head', 'fixture', 'restoration', 'timeout', 'ledger', 'test', 'inputs', 'inventory', 'credential'):
+        for change in ('none', 'probe', 'head', 'fixture', 'restoration', 'timeout', 'ledger', 'test', 'inputs', 'inventory', 'credential'):
             with self.subTest(change=change), tempfile.TemporaryDirectory() as temporary:
                 root, folder, provenance, collection, seal = self.fixture(Path(temporary))
                 result_path = folder / 'replay/result.json'
@@ -150,7 +150,9 @@ class ReplayGateTests(unittest.TestCase):
                 seal()  # Rehashing cannot make semantically invalid evidence valid.
                 if change == 'inventory':
                     (folder / 'replay/0.log').write_bytes(b'tampered')
-                with patch.object(gate, 'private_tool', return_value=provenance), \
+                with patch.object(gate.runtime_probe, 'validate', return_value={},
+                                  side_effect=ValueError('invalid probe') if change == 'probe' else None), \
+                        patch.object(gate, 'private_tool', return_value=provenance), \
                         patch.object(replay, 'workspace_hashes', side_effect=lambda r, fixture: replay.hashes(r)):
                     if change == 'none':
                         rows = gate.validate(folder, {'head': 'a' * 40, 'platform': 'Windows'}, root)

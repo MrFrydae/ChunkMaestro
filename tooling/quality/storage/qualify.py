@@ -21,14 +21,27 @@ def source_hashes():
                 'src/ChunkMaestro.Persistence/Native/storage.c': hashlib.sha256((ROOT / 'src/ChunkMaestro.Persistence/Native/storage.c').read_bytes()).hexdigest()}
 
 
+def mutation_configuration(module, system):
+    return {'stryker-config': {'project': 'ChunkMaestro.' + module + '.csproj', 'configuration': 'Release',
+            'test-projects': ['MutationTests.csproj'], 'reporters': ['dots', 'json', 'html'],
+            'thresholds': {'high': 90, 'low': 80, 'break': 80},
+            'mutate': ['**/*.cs', '!**/Migrations/*.Designer.cs', '!**/Migrations/*ModelSnapshot.cs'],
+            'concurrency': 2 if system == 'Windows' else 4}}
+
+
 def run(output):
     # Collection is separate from lead-owned aggregate qualification.
     import time
     import replay
+    import runtime_probe
     from replay_ci import child_environment, complete_report, isolated_environment
 
     output = output.resolve()
-    output.mkdir(parents=True, exist_ok=False)
+    if output.exists():
+        if platform.system() != 'Windows' or {p.name for p in output.iterdir()} != {'runtime-probe'}:
+            raise ValueError('Collection output already contains evidence')
+    else:
+        output.mkdir(parents=True, exist_ok=False)
     dotnet = os.environ.get('CHUNKMAESTRO_DOTNET', 'dotnet')
     env = child_environment(os.environ)
     if Path(dotnet).is_absolute():
@@ -50,6 +63,8 @@ def run(output):
     try:
         if platform.system() not in ('Windows', 'Darwin'):
             raise RuntimeError('Linux is an unsupported-controller contract, not storage safety evidence')
+        if platform.system() == 'Windows':
+            runtime_probe.validate(output / 'runtime-probe', ROOT, manifest['head'])
         for args in ([dotnet, 'restore', 'tests/ChunkMaestro.PersistenceTests/ChunkMaestro.PersistenceTests.csproj', '--locked-mode'],
                      [dotnet, 'tool', 'restore'],
                      [dotnet, 'restore', 'tooling/quality/storage/MutationTests.csproj', '--locked-mode'],
@@ -61,11 +76,7 @@ def run(output):
         manifest['runtime_tests_passed'] = True
         for module in MODULES:
             print('[storage] Measuring ' + module, flush=True)
-            config = {'stryker-config': {'project': 'ChunkMaestro.' + module + '.csproj', 'configuration': 'Release',
-                      'test-projects': ['MutationTests.csproj'],
-                      'reporters': ['dots', 'json', 'html'], 'thresholds': {'high': 90, 'low': 80, 'break': 80},
-                      'mutate': ['**/*.cs', '!**/Migrations/*.Designer.cs', '!**/Migrations/*ModelSnapshot.cs'],
-                      'concurrency': 4}}
+            config = mutation_configuration(module, platform.system())
             config_path = output / (module + '.json')
             config_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
             directory = output / ('mutation-' + module)

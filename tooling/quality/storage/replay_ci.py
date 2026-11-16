@@ -117,7 +117,12 @@ def preserve(source, destination):
     return before
 
 
+def replay_configuration(system):
+    return 'tooling/quality/storage/replay/persistence-windows.json' if system == 'Windows' else 'tooling/quality/storage/replay/persistence.json'
+
+
 def collect(output):
+    import runtime_probe
     output = output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
@@ -130,6 +135,8 @@ def collect(output):
         result['trust'] = trusted_context(os.environ, event, head)
         if platform.system() not in ('Darwin', 'Windows'):
             raise ValueError('Unsupported controller platform')
+        if platform.system() == 'Windows':
+            runtime_probe.validate(output / 'runtime-probe', ROOT, head)
         if subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=normal'], cwd=ROOT, text=True).strip():
             raise ValueError('Private execution requires clean exact head')
         temporary = Path(tempfile.mkdtemp(prefix='chunkmaestro-replay-')).resolve()
@@ -162,7 +169,7 @@ def collect(output):
             replay.command = checked_command
             try:
                 code = replay.run(temporary / 'replay', ROOT, dotnet, provenance, official,
-                                  ROOT / 'tooling/quality/storage/replay/persistence.json',
+                                  ROOT / replay_configuration(platform.system()),
                                   ROOT / 'tooling/quality/storage/MutationTests.csproj',
                                   timeout=5400 if platform.system() == 'Windows' else 3600,
                                   private_timeout=7200 if platform.system() == 'Windows' else None,

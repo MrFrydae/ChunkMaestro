@@ -8,10 +8,12 @@ import tarfile
 
 import replay
 import replay_ci
+import runtime_probe
 
 IDENTITY = 'ChunkMaestro-private-stryker5-no-block-filter'
 TERMINAL = {'Killed', 'Survived', 'NoCoverage', 'Timeout', 'CompileError', 'Ignored'}
 CONFIG = 'tooling/quality/storage/replay/persistence.json'
+WINDOWS_CONFIG = 'tooling/quality/storage/replay/persistence-windows.json'
 GENERATED = 'src/Stryker.Core/Stryker.Core/Reporters/Html/Files/dist/mutation-test-elements.js'
 
 
@@ -150,6 +152,9 @@ def credited(rows):
 
 def validate(folder, manifest, root):
     """Return validated actual outcomes, retaining original compile-error eligibility."""
+    config = WINDOWS_CONFIG if manifest['platform'] == 'Windows' else CONFIG
+    if manifest['platform'] == 'Windows':
+        runtime_probe.validate(folder / 'runtime-probe', root, manifest['head'])
     collection = load(folder / 'replay-collection.json')
     require(collection['schema_version'] == 1 and collection['status'] == 'COLLECTED'
             and collection['platform'] == manifest['platform'] and collection['private_identity'] == IDENTITY,
@@ -176,7 +181,7 @@ def validate(folder, manifest, root):
             and all(result.get(k) == v for k, v in binding.items() if k != 'status'), 'initial frozen binding differs')
     require(result['inputs'] == replay.workspace_hashes(root, False)
             and result['runner_sha256'] == replay.digest((root / 'tooling/quality/storage/replay.py').read_bytes())
-            and result['config_sha256'] == replay.digest((root / CONFIG).read_bytes())
+            and result['config_sha256'] == replay.digest((root / config).read_bytes())
             and result['sdk_version'] == collection['sdk_version'] == load(root / 'global.json')['sdk']['version'],
             'replay inputs, runner, configuration or SDK differ')
     require(replay.hashes(directory) == result['artifacts'] | {'result.json': replay.digest((directory / 'result.json').read_bytes())},
@@ -224,7 +229,7 @@ def validate(folder, manifest, root):
             require(scored and (command['exit_code'] == 2) == (100 * sum(s in ('Killed', 'Timeout') for s in scored) / len(scored) < 80), 'threshold exit differs from raw report')
             reports = list((directory / label).rglob('mutation-report.json'))
             require(len(reports) == 1 and reports[0].read_bytes() == (directory / (label + '.json')).read_bytes(), 'report copy differs from original output')
-            require('--config-file' in command['args'] and command['args'][command['args'].index('--config-file') + 1].replace('\\', '/').endswith('/' + CONFIG), 'mutation config differs')
+            require('--config-file' in command['args'] and command['args'][command['args'].index('--config-file') + 1].replace('\\', '/').endswith('/' + config), 'mutation config differs')
             require(command['args'][1].replace('\\', '/') == provenance['binary'].replace('\\', '/')
                     if label == 'private-patched' else command['args'][1].replace('\\', '/').endswith('/Stryker.CLI.dll'), 'mutation tool differs')
         else:

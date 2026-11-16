@@ -31,6 +31,10 @@ jobs:
           python-version: '3.13'
       - name: Evidence contract regressions
         run: python -m unittest discover -s tooling/quality/storage -p 'test_*.py' -v
+      - name: Bounded Windows ordinary-suite concurrency experiment
+        if: runner.os == 'Windows'
+        timeout-minutes: 16
+        run: python tooling/quality/storage/runtime_probe.py .artifacts/storage/${{ matrix.os }}/runtime-probe
       - name: Official coverage and mutation collection
         timeout-minutes: 105
         run: python tooling/quality/storage/qualify.py run .artifacts/storage/${{ matrix.os }}
