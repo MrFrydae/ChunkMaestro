@@ -247,3 +247,19 @@ This is a guarded hypothesis test, not a demonstrated Windows runtime improvemen
 If the ordinary-suite experiment fails to support the hypothesis, Windows
 collection stops with retained diagnostics; it does not proceed with an unproven
 concurrency change. Native Windows execution and final qualification are pending.
+
+### Windows unit-fixture correction
+
+The [Windows job at `230a804`](https://github.com/MrFrydae/ChunkMaestro/actions/runs/43914369548/job/133464444953)
+stopped in the tooling regressions, before the concurrency experiment. The
+deadline test supplied a finite mocked clock sequence; Windows tree termination
+needs an additional clock read, which exhausted the mock and raised
+`StopIteration`. This is no evidence for or against the concurrency hypothesis.
+
+The fixture now holds its synthetic clock at the expired-work time after launch.
+A separate synthetic Windows-branch test covers successful tree termination,
+fallback after a still-running process, and taskkill timeout, requiring bounded
+tree kill and final wait in every case. It replaces the module's OS view without
+changing the host OS or executing native taskkill. Production deadlines and
+termination logic are unchanged. All 42 storage-tooling regressions passed
+locally; native Windows execution remains pending.

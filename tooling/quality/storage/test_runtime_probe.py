@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 import io
 import json
 from pathlib import Path
+from types import SimpleNamespace
 import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
@@ -163,8 +164,9 @@ class RuntimeProbeTests(unittest.TestCase):
             proc.poll.side_effect = lambda: state[0]
             proc.kill.side_effect = lambda: state.__setitem__(0, -9)
             records = []
+            moments = iter((0, 0))
             with patch.object(probe.subprocess, 'Popen', return_value=proc), \
-                    patch.object(probe.time, 'monotonic', side_effect=[0, 0, 100, 100]), \
+                    patch.object(probe.time, 'monotonic', side_effect=lambda: next(moments, 100)), \
                     patch.object(probe, 'Metrics') as metrics, \
                     patch.object(probe.subprocess, 'run', return_value=MagicMock(returncode=0)):
                 metrics.return_value.finish.return_value = {'scope': 'synthetic'}
@@ -172,6 +174,32 @@ class RuntimeProbeTests(unittest.TestCase):
                     probe.batch(lambda _: ['fixture'], 1, Path(folder) / 'batch', Path(folder), {}, 90, 120, records)
             proc.kill.assert_called_once()
             self.assertEqual(records[0]['exit_code'], -9)
+
+    def test_windows_termination_uses_bounded_tree_kill_and_wait(self):
+        for outcome in ('exited', 'still-running', 'timed-out'):
+            with self.subTest(outcome=outcome):
+                proc = MagicMock()
+                proc.pid = 12345
+                state = [None]
+                proc.poll.side_effect = lambda: state[0]
+                proc.kill.side_effect = lambda: state.__setitem__(0, -9)
+
+                def taskkill(*args, **kwargs):
+                    if outcome == 'timed-out':
+                        raise probe.subprocess.TimeoutExpired('taskkill', kwargs['timeout'])
+                    if outcome == 'exited':
+                        state[0] = -1
+                    return SimpleNamespace(returncode=0)
+
+                # Replace this module's OS view, without changing pathlib's host OS.
+                with patch.object(probe, 'os', SimpleNamespace(name='nt', environ={})), \
+                        patch.object(probe.time, 'monotonic', return_value=100), \
+                        patch.object(probe.subprocess, 'run', side_effect=taskkill) as kill_tree:
+                    probe.terminate([proc], 120)
+                self.assertEqual(kill_tree.call_args.args[0], ['taskkill', '/PID', '12345', '/T', '/F'])
+                self.assertEqual(kill_tree.call_args.kwargs['timeout'], 10)
+                self.assertEqual(proc.wait.call_args.kwargs['timeout'], 5)
+                self.assertEqual(proc.kill.call_count, 0 if outcome == 'exited' else 1)
 
 
 if __name__ == '__main__':
