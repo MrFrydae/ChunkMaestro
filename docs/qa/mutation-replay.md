@@ -219,8 +219,12 @@ fixture-shape tests are mechanism proof and must not inflate the product baselin
 
 ## Hosted adapter and portable artifact contract (issue 3)
 
-`replay_ci.py` runs serially after the existing official coverage and three-module
-collection in each Windows/macOS measurement job. Both jobs explicitly check out
+`replay_ci.py` runs serially after full coverage and official Domain/Application
+collection in each Windows/macOS measurement job. Its official Persistence run is
+the single authoritative original Persistence catalogue. The former initial
+Persistence campaign duplicated this entire official run and has been removed.
+Both official and private Persistence campaigns still execute in full. Both jobs
+explicitly check out
 `pull_request.head.sha` (dispatch uses `github.sha`); the replay binding independently
 records that actual clean Git head. There are no privileged event handlers, added
 permissions, secrets, action-pin changes or automatic retries. Full-volume and
@@ -256,8 +260,10 @@ in `.config/dotnet-tools.json`; no separately installed tool replaces it.
 
 The uploaded **existing platform folder** now contains:
 
-- Existing `manifest.json`, coverage, Domain/Application/Persistence official
-  mutation reports, volume and native evidence, without relocation.
+- Schema-2 `manifest.json`, coverage, Domain/Application official mutation
+  reports, volume and native evidence, without relocation. The manifest explicitly
+  binds Persistence to `replay/official.json`; the aggregate rejects older or
+  altered layouts instead of treating absent evidence as complete.
 - `replay/`: byte-for-byte runner `result.json`, `binding.json`, commands, original
   official/private-patched output trees and report copies, both catalogues, ledger,
   baselines/restoration and every runner log.
@@ -300,10 +306,13 @@ It reads artifacts without executing them. Compiler paths remain recorded host
 provenance; the Linux aggregator does not claim to reopen another runner's SDK.
 Collection trust comes from the owner-only workflow, not from hashes alone.
 
-Only validated supplemental Killed outcomes join the ordinary Windows/macOS
-union. Original compile-error eligibility is retained, while new compile errors,
+The validated replay official catalogue supplies every original Persistence
+status, including surviving, ignored, timed-out and compile-error observations.
+Only validated supplemental Killed outcomes join the Windows/macOS union. Original
+compile-error eligibility is retained, while new compile errors,
 timeouts, missing cases, stale inputs and unresolved identities receive no credit.
-Supplemental reports must match the ordinary Persistence catalogue. Native C,
+Supplemental reports must match that original official Persistence catalogue.
+Native C,
 full-volume, populated upgrade/interruption and the unchanged 90/85/80 checks
 still apply. Independent exact-head role verdicts remain a separate merge gate.
 
@@ -322,10 +331,10 @@ actual exit code and `collected-threshold-fail` record. `COLLECTED` alone return
 collection success; the unchanged 90/85/80 aggregate acceptance remains separate.
 
 GitHub documents a [six-hour hosted-job execution limit](https://docs.github.com/en/actions/reference/limits).
-The job is bounded at 350 minutes; official collection at 105 minutes (Windows
-Persistence commands 5400 seconds, other official commands 2400 seconds), and
-private replay at 210 minutes (Windows mutation commands 5400 seconds, macOS
-mutation commands 3600 seconds; upstream build 600 seconds). These are finite collection
+The job is bounded at 350 minutes; initial coverage and Domain/Application
+collection at 105 minutes (mutation commands 2400 seconds), and replay collection
+at 225 minutes (Windows official 5400 seconds/private 7200 seconds, macOS mutation
+commands 3600 seconds; upstream build 600 seconds). These are finite collection
 budgets, not measured completion promises. Commands record wall time and timeout;
 exhaustion fails unresolved with available partial artifacts, never a hidden
 retry or successful substitute. Remaining job time accommodates volume/native
@@ -355,9 +364,10 @@ Timeout termination has bounded taskkill/exit waits; an unconfirmed exit remains
 an explicit unresolved timeout, never a mutation kill. Baseline commands have a
 separate maximum of 600 seconds, including restoration.
 
-Private replay requires successful ordinary collection (a complete threshold-fail
-report is still collection success). A failed/timed-out official command no longer
-launches another long replay. Volume/native/diagnostic upload and aggregation use
+Persistence replay requires successful initial coverage and Domain/Application
+collection (a complete threshold-fail report is still collection success). Within
+replay, a failed/timed-out official Persistence command prevents the private
+command from starting. Volume/native/diagnostic upload and aggregation use
 `!cancelled()` so ordinary failure preserves evidence while cancellation stops
 work. Per-PR concurrency cancels superseded runs. These controls do not relax any
 score, omit a required acceptance result or turn cancellation into qualification.
@@ -400,3 +410,26 @@ size, original-byte preservation and unchanged command deadlines.
 
 Local validation: 35 storage-tooling regressions and 15 build-tooling regressions
 passed. Fresh hosted collection and independent QA remain required.
+
+## CI work reduction
+
+Normal PR qualification runs two complete Persistence campaigns per platform:
+official and private. It previously ran three: an additional initial official
+campaign plus that same pair. The gate now reads original outcomes directly from
+the fully validated pair, preserving its complete original denominator, test
+attribution, source binding and restoration checks. No mutation result is cached
+or reused across heads. Thresholds remain 90/85/80; timeouts receive no kill credit.
+
+The Windows concurrency experiment (fourteen full-suite invocations) and CPU
+trace are now separate diagnostic jobs, enabled only by an explicit
+`workflow_dispatch` with `diagnostics: true`. They are not dependencies of the
+qualification jobs and cannot block ordinary collection. Their scripts and raw
+validation remain available for investigating runner behavior. Windows mutation
+concurrency remains two and macOS four; both Persistence tools use the same
+platform configuration. No unmeasured concurrency increase is introduced.
+
+This removes one entire official Persistence campaign on each platform and the
+Windows diagnostic from the default critical path. Elapsed-time savings are not
+yet measured on the revised workflow. The raw CPU profile is diagnostic evidence,
+not a decoded performance result. Full current-head platform qualification and
+independent QA remain required.

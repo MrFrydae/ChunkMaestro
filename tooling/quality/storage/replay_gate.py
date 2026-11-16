@@ -8,7 +8,6 @@ import tarfile
 
 import replay
 import replay_ci
-import runtime_probe
 
 IDENTITY = 'ChunkMaestro-private-stryker5-no-block-filter'
 TERMINAL = {'Killed', 'Survived', 'NoCoverage', 'Timeout', 'CompileError', 'Ignored'}
@@ -153,8 +152,6 @@ def credited(rows):
 def validate(folder, manifest, root):
     """Return validated actual outcomes, retaining original compile-error eligibility."""
     config = WINDOWS_CONFIG if manifest['platform'] == 'Windows' else CONFIG
-    if manifest['platform'] == 'Windows':
-        runtime_probe.validate(folder / 'runtime-probe', root, manifest['head'])
     collection = load(folder / 'replay-collection.json')
     require(collection['schema_version'] == 1 and collection['status'] == 'COLLECTED'
             and collection['platform'] == manifest['platform'] and collection['private_identity'] == IDENTITY,

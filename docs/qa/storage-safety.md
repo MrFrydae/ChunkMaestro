@@ -19,11 +19,16 @@ Use a fresh, nonexistent output directory per run:
 python3 tooling/build/build.py verify
 python3 -m unittest discover -s tooling/quality/storage -p 'test_*.py' -v
 python3 tooling/quality/storage/qualify.py run .artifacts/storage/macos
+# Hosted trusted context only; see mutation-replay.md for local collection.
+python3 tooling/quality/storage/replay_ci.py .artifacts/storage/macos
 python3 tooling/quality/storage/volume.py .artifacts/storage/macos/volume
 python3 tooling/quality/storage/native.py .artifacts/storage/macos/native
 ```
 
-Windows uses the same run and volume commands, with a separate output directory.
+The initial collector measures coverage and Domain/Application mutations. The
+trusted replay collector supplies the required official/private Persistence pair;
+initial collection alone cannot qualify storage. Windows uses the same commands,
+with a separate output directory.
 Native helper measurement is macOS only; the helper is not compiled on Windows.
 Combine the actual downloaded Windows/macOS artifacts at the SAME checkout head:
 
@@ -31,7 +36,7 @@ Combine the actual downloaded Windows/macOS artifacts at the SAME checkout head:
 python3 tooling/quality/storage/qualify.py gate .artifacts/storage/windows .artifacts/storage/macos --output .artifacts/storage/gate.json
 ```
 
-The new storage-safety workflow executes both platforms, preserves reports even
+The storage-safety workflow executes both platforms, preserves reports even
 on failures and combines evidence in a separate job. Existing ci.yml is untouched.
 No protection settings or external checks were changed. Linux remains the existing
 single unsupported-controller contract; it is not storage runtime evidence.

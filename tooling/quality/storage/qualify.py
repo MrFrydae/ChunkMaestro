@@ -11,6 +11,11 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[3]
 MODULES = ('Domain', 'Application', 'Persistence')
+# Persistence's official run is retained inside the validated official/private
+# replay pair. Running it here as well repeats the entire mutation campaign.
+INITIAL_MUTATION_MODULES = ('Domain', 'Application')
+MUTATION_REPORTS = {'Domain': 'mutation-Domain', 'Application': 'mutation-Application',
+                    'Persistence': 'replay/official.json'}
 EXCLUDES = ('*.Designer.cs', '*ModelSnapshot.cs')
 
 
@@ -33,15 +38,10 @@ def run(output):
     # Collection is separate from lead-owned aggregate qualification.
     import time
     import replay
-    import runtime_probe
     from replay_ci import child_environment, complete_report, isolated_environment
 
     output = output.resolve()
-    if output.exists():
-        if platform.system() != 'Windows' or {p.name for p in output.iterdir()} != {'runtime-probe'}:
-            raise ValueError('Collection output already contains evidence')
-    else:
-        output.mkdir(parents=True, exist_ok=False)
+    output.mkdir(parents=True, exist_ok=False)
     dotnet = os.environ.get('CHUNKMAESTRO_DOTNET', 'dotnet')
     env = child_environment(os.environ)
     if Path(dotnet).is_absolute():
@@ -55,16 +55,15 @@ def run(output):
         records.append(record)
         return record
 
-    manifest = {'schema_version': 1, 'head': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+    manifest = {'schema_version': 2, 'head': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
                 'platform': platform.system(), 'sources': source_hashes(), 'commands': records,
+                'mutation_reports': MUTATION_REPORTS,
                 'status': 'UNRESOLVED', 'runtime_tests_passed': False,
                 'clean': not subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=normal'], cwd=ROOT, text=True).strip()}
     started = time.monotonic()
     try:
         if platform.system() not in ('Windows', 'Darwin'):
             raise RuntimeError('Linux is an unsupported-controller contract, not storage safety evidence')
-        if platform.system() == 'Windows':
-            runtime_probe.validate(output / 'runtime-probe', ROOT, manifest['head'])
         for args in ([dotnet, 'restore', 'tests/ChunkMaestro.PersistenceTests/ChunkMaestro.PersistenceTests.csproj', '--locked-mode'],
                      [dotnet, 'tool', 'restore'],
                      [dotnet, 'restore', 'tooling/quality/storage/MutationTests.csproj', '--locked-mode'],
@@ -74,7 +73,7 @@ def run(output):
             replay.require(command(args))
         runtime_cases(output)
         manifest['runtime_tests_passed'] = True
-        for module in MODULES:
+        for module in INITIAL_MUTATION_MODULES:
             print('[storage] Measuring ' + module, flush=True)
             config = mutation_configuration(module, platform.system())
             config_path = output / (module + '.json')
@@ -82,7 +81,7 @@ def run(output):
             directory = output / ('mutation-' + module)
             record = command([dotnet, 'stryker', '--config-file', str(config_path), '--output', str(directory), '--log-to-file'],
                              ROOT / 'tooling/quality/storage',
-                             timeout=5400 if platform.system() == 'Windows' and module == 'Persistence' else 2400)
+                             timeout=2400)
             record['collection'] = complete_report(directory, record, module=module)
         manifest['status'] = 'COLLECTED'
     except (RuntimeError, ValueError, KeyError, OSError, ET.ParseError, subprocess.SubprocessError) as error:
@@ -201,6 +200,8 @@ def gate(folders, output):
         for folder in folders:
             manifest = json.loads((folder / 'manifest.json').read_text(encoding='utf-8'))
             manifests.append(manifest)
+            if manifest.get('schema_version') != 2 or manifest.get('mutation_reports') != MUTATION_REPORTS:
+                raise ValueError('Collection mutation report layout differs from the required scope')
             if manifest.get('status') != 'COLLECTED':
                 failures.append(str(folder) + ': ordinary collection incomplete')
             if not manifest.get('runtime_tests_passed'):
@@ -219,7 +220,10 @@ def gate(folders, output):
                 failures.append(str(folder) + ': full-volume evidence failed or mismatched')
             if manifest['platform'] == 'Darwin':
                 native_evidence(folder / 'native', manifest)
-            for module in MODULES:
+            # Validate the full official/private pair before its official report
+            # supplies the original Persistence outcomes and fixed denominator.
+            supplemented = replay_gate.validate(folder, manifest, ROOT)
+            for module in INITIAL_MUTATION_MODULES:
                 reports = list((folder / ('mutation-' + module)).rglob('mutation-report.json'))
                 if len(reports) != 1:
                     failures.append(str(folder) + ': missing/ambiguous mutation report for ' + module)
@@ -232,10 +236,11 @@ def gate(folders, output):
                     for mutant in data['mutants']:
                         key = mutation_key(file, mutant)
                         mutants[module].setdefault(key, set()).add(mutant['status'])
-            supplemented = replay_gate.validate(folder, manifest, ROOT)
-            replay_keys = {mutation_key(row['file'], row['original']) for row in supplemented}
-            if replay_keys != set(mutants['Persistence']):
-                raise ValueError('Ordinary and replay Persistence catalogues differ')
+            if not supplemented:
+                raise ValueError('Missing Persistence mutation catalogue')
+            for row in supplemented:
+                key = mutation_key(row['file'], row['original'])
+                mutants['Persistence'].setdefault(key, set()).add(row['original']['status'])
             for row in replay_gate.credited(supplemented):
                 # New compile errors/timeouts never shrink the original denominator
                 # and never become kill credit. Original compile errors stay excluded

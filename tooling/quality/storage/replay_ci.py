@@ -122,7 +122,6 @@ def replay_configuration(system):
 
 
 def collect(output):
-    import runtime_probe
     output = output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
@@ -135,8 +134,6 @@ def collect(output):
         result['trust'] = trusted_context(os.environ, event, head)
         if platform.system() not in ('Darwin', 'Windows'):
             raise ValueError('Unsupported controller platform')
-        if platform.system() == 'Windows':
-            runtime_probe.validate(output / 'runtime-probe', ROOT, head)
         if subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=normal'], cwd=ROOT, text=True).strip():
             raise ValueError('Private execution requires clean exact head')
         temporary = Path(tempfile.mkdtemp(prefix='chunkmaestro-replay-')).resolve()

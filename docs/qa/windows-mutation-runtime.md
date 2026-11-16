@@ -291,3 +291,18 @@ sampling: dropped events and traces from deliberately killed fixture processes
 must be assessed during decoding. This diagnostic supplies no throughput,
 mutation, coverage or independent-QA credit. The concurrency hypothesis remains
 unproven, and all existing safety gates stay blocking.
+
+### Current CI execution policy
+
+The mandatory experiment above describes the historical investigation pipeline.
+Normal PR qualification now omits the fourteen-suite concurrency experiment and
+the CPU profile. Both remain available as independent opt-in jobs through the
+Storage safety workflow's `diagnostics` dispatch input. They are not qualification
+prerequisites. Windows mutation concurrency stays two; macOS stays four.
+
+The complete official Persistence campaign now runs once, within the validated
+official/private pair, rather than once in each collector. The aggregate uses
+that original report without changing scope, eligibility, thresholds, kill-credit
+rules or cross-platform requirements. See `mutation-replay.md` for the current
+artifact contract. Removing duplicate execution is not a claimed measured
+throughput gain or a qualification PASS.

@@ -121,7 +121,7 @@ class ReplayGateTests(unittest.TestCase):
         return root, folder, provenance, collection, seal
 
     def test_complete_relocated_contract_and_fail_closed_bindings(self):
-        for change in ('none', 'probe', 'head', 'fixture', 'restoration', 'timeout', 'ledger', 'test', 'inputs', 'inventory', 'credential'):
+        for change in ('none', 'head', 'fixture', 'restoration', 'timeout', 'ledger', 'test', 'inputs', 'inventory', 'credential'):
             with self.subTest(change=change), tempfile.TemporaryDirectory() as temporary:
                 root, folder, provenance, collection, seal = self.fixture(Path(temporary))
                 result_path = folder / 'replay/result.json'
@@ -150,9 +150,7 @@ class ReplayGateTests(unittest.TestCase):
                 seal()  # Rehashing cannot make semantically invalid evidence valid.
                 if change == 'inventory':
                     (folder / 'replay/0.log').write_bytes(b'tampered')
-                with patch.object(gate.runtime_probe, 'validate', return_value={},
-                                  side_effect=ValueError('invalid probe') if change == 'probe' else None), \
-                        patch.object(gate, 'private_tool', return_value=provenance), \
+                with patch.object(gate, 'private_tool', return_value=provenance), \
                         patch.object(replay, 'workspace_hashes', side_effect=lambda r, fixture: replay.hashes(r)):
                     if change == 'none':
                         rows = gate.validate(folder, {'head': 'a' * 40, 'platform': 'Windows'}, root)
