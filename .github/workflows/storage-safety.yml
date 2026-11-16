@@ -8,6 +8,30 @@ concurrency:
   group: storage-safety-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
+  windows-profile:
+    name: Windows CPU profile (diagnostic only)
+    runs-on: windows-2025
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-dotnet@d4c94342e560b34958eacfc5d055d21461ed1c5d
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c
+        with:
+          python-version: '3.13'
+      - name: Capture one unfiltered Windows suite with runtime CPU sampling
+        timeout-minutes: 6
+        run: python tooling/quality/storage/runtime_trace.py .artifacts/windows-profile
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: windows-cpu-profile
+          path: .artifacts/windows-profile/
+          if-no-files-found: error
   measure:
     strategy:
       fail-fast: false

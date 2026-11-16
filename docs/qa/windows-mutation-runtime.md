@@ -263,3 +263,31 @@ tree kill and final wait in every case. It replaces the module's OS view without
 changing the host OS or executing native taskkill. Production deadlines and
 termination logic are unchanged. All 42 storage-tooling regressions passed
 locally; native Windows execution remains pending.
+
+### Inconclusive experiment and CPU trace follow-up
+
+The [Windows experiment at `1b164ea`](https://github.com/MrFrydae/ChunkMaestro/actions/runs/43915305867/job/133467720396)
+stopped at its work deadline after 870.8 seconds and retained `INCONCLUSIVE`.
+Five of six groups completed; the second four-process group was terminated.
+The first complete wave did not support the required throughput improvement
+from four processes to two. No recommendation or mutation score follows from
+these partial results, and the existing gate correctly blocked collection.
+Windows artifact `14250367573` has SHA-256
+`811b5ee8480f1096f6a5ef2e1d4e5e8ee52898d5f7618adf38694dd382677e89`;
+the lead reopened its raw result JSON and verified the archive hash.
+
+The next diagnostic is one unfiltered Windows suite under the runtime's built-in
+[EventPipe startup tracing](https://learn.microsoft.com/en-us/dotnet/core/diagnostics/eventpipe).
+It installs no package or profiler and changes no runner permissions. A separate
+read-only workflow job performs locked restore/build and runs the suite with
+controlled CPU/runtime providers and per-process `{pid}` trace filenames. Only
+the test command receives the explicit tracing variables; inherited credentials
+and startup hooks remain excluded. The whole capture is bounded to five minutes,
+with time reserved for process-tree termination. Raw traces, TRX, commands, hashes
+and limitations are retained separately from qualification artifacts.
+
+Tracing affects execution timing. A nonempty trace is not proof of complete
+sampling: dropped events and traces from deliberately killed fixture processes
+must be assessed during decoding. This diagnostic supplies no throughput,
+mutation, coverage or independent-QA credit. The concurrency hypothesis remains
+unproven, and all existing safety gates stay blocking.
