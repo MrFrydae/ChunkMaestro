@@ -52,7 +52,7 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
                 controller = StorageLocation.CreateOrOpen(Path.Combine(directory, "controller.lock"));
             }
 
-            catch (IOException)
+            catch (IOException ex) when (IsControllerContention(ex))
             {
                 throw new FleetStorageException(StorageFailure.ControllerInUse, "Another controller holds this local store.");
             }
@@ -184,6 +184,18 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
             }
         }
 
+    }
+
+    internal static bool IsControllerContention(IOException error)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            // HRESULT_FROM_WIN32: ERROR_SHARING_VIOLATION / ERROR_LOCK_VIOLATION.
+            return error.HResult is unchecked((int) 0x80070020) or unchecked((int) 0x80070021);
+        }
+
+        // FileStream's nonblocking flock reports the raw macOS EWOULDBLOCK errno.
+        return OperatingSystem.IsMacOS() && error.HResult == 35;
     }
 
     internal static Task<string> CreateBackupAsync(SqliteConnection connection, string directory, CancellationToken token,
