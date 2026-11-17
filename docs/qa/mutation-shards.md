@@ -1,20 +1,20 @@
 # Source mutation regions: planner and accounting contract
 
-Issue 3 / PR 6, Q190–195. This standalone diagnostic does not run qualification,
+Issue 3 / PR 6, Q190–195. The planning/accounting layer does not run qualification,
 change the 90/85/80 thresholds, or publish global PASS. Full mutation qualification,
 native, volume, recovery and independent review gates remain required before the
-storage PR merges. The cancelled campaign is not evidence. No workflow changes
-or product mutation campaigns belong to this patch.
+storage PR merges. The cancelled campaign is not evidence. The bounded hosted
+pilot below measures one batch per platform; it cannot publish qualification.
 
 ## Mechanism and API
 
-`tooling/quality/storage/shards.py` imports existing `replay.catalogue`, UTF-16
-location handling and artifact-path guards. It is read-only. API exceptions are
+`tooling/quality/storage/shards.py` reuses existing replay identity conventions,
+UTF-16 location handling and artifact-path guards. It is read-only. API exceptions are
 failures, never an empty successful result. JSON serialization is `canonical()`:
 UTF-8 JSON with sorted keys, compact separators and ASCII escaping; `sha()` hashes
 those bytes. All artifact SHA-256 values hash raw bytes instead.
 
-1. `read_catalogue(report_path, checkout_root)` returns `rows`, complete reported
+1. `read_catalogue(report_path, checkout_root, host_root=None)` returns `rows`, complete reported
    `sources` (including files without mutants), and raw `report_sha256`. Every
    report source must match checkout bytes exactly. Reject mapped `#line`, empty
    spans, escaping/symlink paths, ambiguous identities and unsafe glob filenames.
@@ -53,7 +53,9 @@ on every shard. Selected noncompile owners must finish Killed, Survived or
 NoCoverage; Timeout and Ignored deny. Out-of-owner noncompile rows must be Ignored
 with exact reason `Removed by mutate filter`. Actual Killed requires nonempty
 killedBy IDs bound to source-verified test definitions and baseline method names.
-Only those actual owner kills receive credit. No averaging, partial sets,
+Only those actual owner kills receive credit. The original region validator
+retains this stricter selected-Timeout refusal; the batch API below accepts
+completed per-mutant Timeouts as eligible and uncredited. No averaging, partial sets,
 Timeout credit, denominator shrinkage or union of compile exclusions is allowed.
 
 The collector still owns authenticity: exact SDK executable/tool dependency and
@@ -77,11 +79,13 @@ This deterministic greedy algorithm targets balance, not an optimal partition.
 
 Every region includes its root and excludes delegated descendant roots using
 full UTF16Span.Contains. Ancestor block mutants remain with their ancestor.
-No disjoint region coalescing is performed: combining an ancestor exclusion with
-an owned descendant could remove that descendant from execution. Every in-scope
+The original `plan()` does not coalesce disjoint regions: combining an ancestor
+exclusion with an owned descendant could remove that descendant from execution.
+The separate batch planner below proves compatibility before coalescing them. Every in-scope
 identity has exactly one owner; original excluded rows and compile eligibility
-remain retained. Planning an all-Ignored empty-span catalogue is INDEXED only,
-never COLLECTED or qualifying evidence.
+remain retained. A complete all-Ignored catalogue is INDEXED only, never COLLECTED or qualifying
+evidence. An empty-span selection is unsafe for nested files; see the mandatory
+reporting workaround below.
 
 Propose an initial matrix width **at most 4 macOS jobs**, reserving one of the
 owner-reported five standard-plan macOS slots; keep total concurrency at most 20
@@ -94,6 +98,117 @@ these diagnostic bounds do not replace full qualification. Repeated full-source
 instrumentation/compilation, baseline/coverage, queue waves, giant equal-span
 groups, slow tests and platform skew can dominate critical path. No product
 speedup or hosted Windows latency has been measured.
+
+## Bounded compatible batches and portable raw reports
+
+`batch_plan(plan_value, max_batches)` independently rebuilds the source plan and
+returns schema 1 `BATCHED_INDEX`: `source_plan_sha256`, `max_batches`, ordered
+`batches`, and `batch_plan_sha256`. Each batch has `id`, `region_ids`, `owners`,
+`patterns`, and `weight`. Deterministic weighted graph coloring packs compatible
+regions into at most the requested width. An exclusion containing another
+region's owner creates a conflict. The merged selection is independently checked
+against the exact owner union, with every original region represented once.
+Failure to color is an error, never permission to create unbounded matrix jobs.
+This greedy packing can refuse a feasible width; no optimality is claimed.
+
+`batch_configuration(plan_value, batches, batch_id)` rebuilds/checks the canonical
+batch plan, copies the complete baseline configuration, and replaces only mutate.
+The baseline EF exclusions remain mandatory. Workers must use separate checkout
+and build outputs; the number of batches is the matrix bound for each tool and
+platform, not a measured runtime or an overall runner entitlement.
+
+**Stryker 5 reporting workaround:** every batch prepends `**/*.cs{0..1}`.
+The planner refuses any input with an in-scope original mutation contained in
+UTF-16 interval `[0, 1]`, proving this selector executes no additional identity.
+A zero-length `{0..0}` selector can make nested files disappear behind source
+`File ignored by mutate filter` placeholders. The actual product probe lost two
+migration catalogues this way (708 identities instead of 811). The nonempty
+selector retained all 811 identities, including 27 CompileError rows, in a
+27-second INDEX probe; all other rows were Ignored. This is catalogue generation,
+not mutation execution. Every worker still must return the complete byte-bound
+source inventory and catalogue. Never fill missing/placeholder source from the
+checkout or fabricate omitted identities. Strict rejection is intentional.
+
+`read_catalogue(..., host_root=None)` and test-definition binding accept an
+explicit collector-authenticated producer workspace prefix, for example
+`D:\a\ChunkMaestro\ChunkMaestro`. Only that exact prefix can map an absolute
+foreign filename to a safe repository-relative path in memory. Relative local
+paths remain supported. Unknown prefixes, traversal, aliases, symlinks, source
+changes and duplicate identities deny accounting. Raw report bytes are never
+rewritten; their original SHA-256 is retained. Test source and complete baseline
+method definitions use the same mapping and byte checks. A prefix from an
+untrusted report is not authentication: the collector must bind it to the actual
+producer workspace and must independently verify the inventory/head.
+
+`validate_batches(plan_value, batches, records, root, expected_binding,
+original_report, expected_tests, original_host_root=None)` independently rebuilds
+both plans and parses every raw report. Records contain `batch_id`, `plan_sha256`,
+`batch_plan_sha256`, complete `config`, local `report` path, `report_sha256`,
+`exit_code`, `timeout`, `cancelled`, and optional authenticated `workspace_root`.
+The original report can separately use `original_host_root`. Every batch must
+appear exactly once; both hashes, source/test bytes, full identities, original
+CompileError mask and generated configuration must match. Killed owners need
+actual `killedBy` IDs bound to complete source-verified baseline test definitions.
+Owners may finish Killed, Survived, NoCoverage or per-mutant Timeout; Timeouts stay
+in the fixed denominator, receive no kill credit and are listed separately as
+`uncredited_mutant_timeouts`. Selected Ignored rows deny because this API expects
+the private unfiltered tool. Out-of-owner rows must be original CompileError or
+mutate-filter Ignored. Whole-command timeout, cancellation, missing/partial runs
+and exits other than completed 0/2 always deny. The result is `ACCOUNTED` /
+`qualification: NOT_EVALUATED`, fixed denominator, killed identities and invocation
+count. Existing official/private reconciliation and qualification remain separate.
+
+Mechanical packing of the frozen production diagnostic plan (811 identities,
+27 CompileError, 53 containment regions, target 100) succeeded at both bounds:
+
+| Maximum batches | Actual batches | Weights in canonical batch order |
+| --- | --- | --- |
+| 12 | 12 | 99, 62, 83, 63, 63, 63, 63, 63, 63, 63, 63, 63 |
+| 4 | 4 | 203, 202, 203, 203 |
+
+Input: `/private/tmp/cm-product-index-trivia-q7ctgz4h/plan.json`. These are work
+counts only. No production speedup, hosted concurrency or Windows runtime was
+measured. This does not replace complete same-head qualification before merge.
+
+## Bounded hosted timing pilot
+
+`.github/workflows/storage-shard-pilot.yml` runs only after the owner adds
+`storage-shard-pilot`, or explicitly dispatches the workflow at the candidate
+branch. It is separate from `storage-safety.yml` and has no qualification gate.
+Ordinary pushes do not launch this pilot or the full mutation campaign. An
+unrelated label has a different concurrency key and cannot cancel a requested
+pilot. Each planning and diagnostic job has a ten-minute hard cap.
+
+`python tooling/quality/storage/shard_ci.py prepare OUTPUT --batches N` freezes
+the complete passing runtime cases, source inputs, official/private catalogue
+indices, original CompileError mask and deterministic batch plan. It builds the
+private tool once per platform and retains its pinned archive, sole source patch,
+compiler/output provenance and advisory logs. The planning job has a shared
+420-second command budget and each index command is capped at 180 seconds.
+Preparation must return `PREPARED_DIAGNOSTIC`; a missing source, placeholder,
+changed eligibility mask, failing/skipped baseline or failed command is unresolved.
+
+`python tooling/quality/storage/shard_ci.py probe BUNDLE OUTPUT` verifies the
+unchanged bundle, raw command ledger/logs, trusted same-workflow run/attempt,
+head/platform/SDK and complete workspace/source/test bytes before private
+execution. It runs only the heaviest packed batch: at most 16 batches are planned
+for Windows and four for macOS. The probe has a shared 480-second budget, caps
+the mutation command at 300 seconds, and reserves 90 seconds for a clean rebuild
+and full baseline restoration. A completed batch reports only
+`PARTIAL_DIAGNOSTIC` / `qualification: NOT_EVALUATED`. Timeout/cancellation,
+changed inputs, missing owner outcomes or failed restoration remain unresolved.
+Per-mutant Timeouts stay eligible and receive no kill credit.
+
+The existing command runner prints elapsed/remaining time, last log activity and
+the retained raw-log path. Failure metadata, original reports, byte inventories
+and human outcome summaries are uploaded even after a failed step, unless the
+job itself is cancelled. Summaries are written outside the sealed bundle so they
+cannot change its inventory. Green pilot jobs measure preparation and a partial
+batch only; they cannot satisfy the full premerge workflow or independent QA.
+
+Local integration validation: **113 storage-tooling tests**, **16 build-tooling
+tests**, Python compilation and the specification checker passed. No hosted
+Windows/macOS pilot or production speedup has yet been measured by this change.
 
 ## Evidence and reproduction
 
@@ -167,11 +282,47 @@ The helper's later additions strengthen preflight provenance, process-tree timeo
 termination and baseline method-name binding; the executed fixture and original
 logs remain untouched, and final accounting was re-run over raw evidence.
 
+## Fresh merged-batch mechanism proof
+
+The portable/batch extension passed **37 shard contracts** (the original 27 plus
+10 grouped regressions), and the full storage tooling suite passed **96 tests**. They cover ownership conflicts, bounded packing,
+UTF-16/equal/nested spans, explicit Windows prefix mapping, unchanged raw bytes,
+source/test/identity/mask tampering, traversal/alias/symlink refusal, partial sets,
+failed/cancelled commands, per-mutant Timeout accounting and placeholder refusal.
+A symlink creation probe executes only where the host permits creating one;
+no Windows symlink privilege or runtime claim is made.
+
+A fresh disposable macOS arm64 fixture moved one source into a nested folder and
+executed a full private-tool run followed by **four merged batch invocations**:
+
+- All 26 original identities and both CompileError entries survived in every raw
+  report; the denominator stayed 24. All four batches retained nested source.
+- Actual attributed kills matched the unsharded run exactly: **22 / 24**.
+- All five baseline and restoration cases passed with identical identities;
+  Unicode/CRLF and three equal-span groups were retained.
+- Commands used the independently verified historical private tool and pinned SDK,
+  an explicit noncredential child environment, no retries and a 150-second bound
+  per command. No product source, tests, locks or original evidence was changed.
+
+Evidence: `/var/folders/8p/klwq9s9n3jg2hm6pqx99hc3w0000gn/T/cm-shard-proof-okkzumjh`.
+Its `commands.json`, raw reports/configs, `plan.json`, `batches.json`, `result.json`
+and SHA inventory preserve the completed execution. The inventory SHA-256 is
+`a73bbdb1ea268d73aa53b9724b4dc2c635e82797493569d15495897620124229`;
+the raw result SHA-256 is
+`19cda9c2778bbb263a30f28df6cdb64c065765723ddc710ffe9cd207d4937e9e`. The external diagnostic
+launcher is `/tmp/cm-merged-batch-proof.py` (SHA-256
+`c808ebb24835e72577fabccc4ed3735a275bd80a7624261c739fd06fc58124a5`);
+it adapts the existing standalone pilot to call the batch APIs and nest the source
+file. This bounded fixture is
+not a product/Windows campaign, official/private supplement reconciliation,
+current-head hosted provenance, independent QA or a speedup measurement.
+
 ## Integration limits and rollback
 
 This is reviewable mechanism code, not production-ready qualification integration.
-No product INDEX run, Windows fixture, official/private cross-platform mask
-comparison, matrix collector authentication or complete module campaign ran.
+A product INDEX catalogue was inspected mechanically; no product mutation
+campaign, Windows fixture, official/private cross-platform mask comparison or
+matrix collector authentication was executed by this bounded change.
 Official block-filtered owner rows deliberately deny rather than guess eligibility;
 a collector must preserve the existing official/private supplement policy as a
 separate layer. A baseline config with additional filters is unsupported and must

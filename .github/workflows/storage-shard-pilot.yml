@@ -1,0 +1,91 @@
+name: Storage shard pilot
+on:
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+run-name: ${{ (github.event_name == 'workflow_dispatch' || github.event.label.name == 'storage-shard-pilot') && 'Storage shard diagnostic (not qualification)' || 'Storage shard pilot not requested' }}
+permissions:
+  contents: read
+concurrency:
+  group: storage-shard-pilot-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.event_name == 'workflow_dispatch' || github.event.label.name == 'storage-shard-pilot' }}
+  cancel-in-progress: true
+jobs:
+  prepare:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.label.name == 'storage-shard-pilot' }}
+    name: shard planning (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            batches: 16
+          - os: macos-15
+            batches: 4
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-dotnet@d4c94342e560b34958eacfc5d055d21461ed1c5d
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c
+        with:
+          python-version: '3.13'
+      - name: Verify shard accounting contracts
+        run: python -m unittest discover -s tooling/quality/storage -p 'test_*.py' -v
+      - name: Freeze full catalogue and a bounded batch plan (no mutation score)
+        timeout-minutes: 8
+        run: python tooling/quality/storage/shard_ci.py prepare .artifacts/shard-bundle/${{ matrix.os }}/bundle --batches ${{ matrix.batches }}
+      - name: Explain preparation outcome
+        if: ${{ !cancelled() }}
+        run: python tooling/quality/storage/summary.py .artifacts/shard-bundle/${{ matrix.os }}/bundle --artifact-directory .artifacts/shard-bundle/${{ matrix.os }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: ${{ !cancelled() }}
+        with:
+          name: shard-bundle-${{ matrix.os }}
+          path: .artifacts/shard-bundle/${{ matrix.os }}/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+  probe:
+    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || github.event.label.name == 'storage-shard-pilot') }}
+    needs: prepare
+    name: heaviest shard diagnostic (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-dotnet@d4c94342e560b34958eacfc5d055d21461ed1c5d
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: shard-bundle-${{ matrix.os }}
+          path: .artifacts/shard-input/${{ matrix.os }}
+      - name: Measure one heavy private batch and restore the full baseline
+        timeout-minutes: 9
+        run: python tooling/quality/storage/shard_ci.py probe .artifacts/shard-input/${{ matrix.os }}/bundle .artifacts/shard-probe/${{ matrix.os }}/result
+      - name: Explain diagnostic outcome (never qualification)
+        if: ${{ !cancelled() }}
+        run: python tooling/quality/storage/summary.py .artifacts/shard-probe/${{ matrix.os }}/result --artifact-directory .artifacts/shard-probe/${{ matrix.os }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: ${{ !cancelled() }}
+        with:
+          name: shard-probe-${{ matrix.os }}
+          path: .artifacts/shard-probe/${{ matrix.os }}/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14

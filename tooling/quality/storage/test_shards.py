@@ -180,6 +180,148 @@ class ShardContracts(unittest.TestCase):
             self.assertEqual(sorted(weights), sorted(owners))
             self.assertEqual(len(owners), len(set(owners)))
 
+    def batch_fixture(self, width=2, producer=None):
+        original, value, raw = self.original, deepcopy(self.plan), deepcopy(self.raw)
+        if producer:
+            raw['files'] = {producer + '/Code.cs': raw['files']['Code.cs']}
+            raw['testFiles'] = {producer + '/Tests.cs': raw['testFiles']['Tests.cs']}
+            original = self.write('foreign-original.json', raw)
+            value = shards.plan(shards.read_catalogue(original, self.root, producer), self.config, self.binding, target=2)
+        batches = shards.batch_plan(value, width)
+        records = []
+        for batch in batches['batches']:
+            report = deepcopy(raw)
+            owners = set(batch['owners'])
+            mutants = next(iter(report['files'].values()))['mutants']
+            for mutant, row in zip(mutants, value['catalogue']['rows']):
+                if row['identity'] not in owners and mutant['status'] != 'CompileError':
+                    mutant.update(status='Ignored', statusReason=shards.FILTER_REASON, killedBy=[])
+            path = self.write('batch-%d.json' % batch['id'], report)
+            record = {'batch_id': batch['id'], 'plan_sha256': value['plan_sha256'],
+                      'batch_plan_sha256': batches['batch_plan_sha256'],
+                      'config': shards.batch_configuration(value, batches, batch['id']),
+                      'report': path, 'report_sha256': replay.digest(path.read_bytes()),
+                      'exit_code': 0, 'timeout': False, 'cancelled': False}
+            if producer:
+                record['workspace_root'] = producer
+            records.append(record)
+        return value, batches, records, original
+
+    def validate_batch_fixture(self, fixture, producer=None):
+        value, batches, records, original = fixture
+        return shards.validate_batches(value, batches, records, self.root, self.binding,
+                                       original, {'Test'}, producer)
+
+    def test_batch_accounting_keeps_all_original_eligibility_and_actual_kills(self):
+        result = self.validate_batch_fixture(self.batch_fixture())
+        self.assertEqual((result['status'], result['original_denominator'], len(result['attributed_killed'])),
+                         ('ACCOUNTED', 4, 4))
+        self.assertEqual(result['qualification'], 'NOT_EVALUATED')
+
+    def test_batch_packing_separates_ancestor_exclusion_from_descendant_owner(self):
+        value, batches, _, _ = self.batch_fixture()
+        region_batch = {r: b['id'] for b in batches['batches'] for r in b['region_ids']}
+        for ancestor in value['regions']:
+            for descendant in value['regions']:
+                if ancestor['id'] != descendant['id'] and any(n['file'] == descendant['root']['file'] and
+                        shards.contains(n['span'], descendant['root']['span']) for n in ancestor['exclusions']):
+                    self.assertNotEqual(region_batch[ancestor['id']], region_batch[descendant['id']])
+        with self.assertRaisesRegex(ValueError, 'width'):
+            shards.batch_plan(value, 1)
+
+    def test_batches_are_deterministic_complete_and_bounded(self):
+        for width in (2, 3, 12):
+            value, batches, _, _ = self.batch_fixture(width)
+            self.assertEqual(batches, shards.batch_plan(value, width))
+            self.assertLessEqual(len(batches['batches']), width)
+            self.assertTrue(all(b['patterns'][0] == shards.CATALOGUE_KEEPALIVE for b in batches['batches']))
+            self.assertEqual(sorted(i for b in batches['batches'] for i in b['region_ids']), list(range(len(value['regions']))))
+            self.assertEqual(len([i for b in batches['batches'] for i in b['owners']]), len(value['weights']))
+        for width in (0, -1, True, 2.0):
+            with self.assertRaises(ValueError): shards.batch_plan(self.plan, width)
+
+    def test_keepalive_cannot_select_an_extra_original_mutant(self):
+        catalogue = deepcopy(self.catalogue)
+        catalogue['rows'][0]['span_utf16'] = [0, 1]
+        value = shards.plan(catalogue, self.config, self.binding, target=2)
+        with self.assertRaisesRegex(ValueError, 'keepalive'):
+            shards.batch_plan(value, 2)
+
+    def test_ignored_file_placeholder_is_never_filled_from_checkout(self):
+        raw = deepcopy(self.raw)
+        raw['files']['Code.cs'] = {'source': 'File ignored by mutate filter', 'language': 'none', 'mutants': []}
+        with self.assertRaisesRegex(ValueError, 'source'):
+            shards.read_catalogue(self.write('placeholder.json', raw), self.root)
+
+    def test_batch_portable_windows_source_and_test_paths_are_bound_without_raw_rewrite(self):
+        producer = 'D:/agent/work/repo'
+        fixture = self.batch_fixture(producer=producer)
+        before = {p: p.read_bytes() for p in [fixture[3], *(r['report'] for r in fixture[2])]}
+        self.assertEqual(len(self.validate_batch_fixture(fixture, producer)['attributed_killed']), 4)
+        self.assertTrue(all(p.read_bytes() == b for p, b in before.items()))
+        with self.assertRaises(ValueError): self.validate_batch_fixture(fixture)
+        with self.assertRaises(ValueError): self.validate_batch_fixture(fixture, 'D:/other/repo')
+
+    def test_portable_path_rejects_traversal_alias_symlink_and_unknown_root(self):
+        for name in ('D:/agent/repo/../Code.cs', 'D:/other/Code.cs', 'D:/agent/repo/a/../Code.cs',
+                     'D:/agent/repo//Code.cs', '../Code.cs', 'sub/../Code.cs'):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                shards.report_path(self.root, name, 'D:/agent/repo')
+        alias = self.root / 'Alias.cs'
+        try:
+            alias.symlink_to(self.root / 'Code.cs')
+        except OSError:
+            return  # Windows privilege limitation; traversal cases above still execute.
+        with self.assertRaises(ValueError): shards.report_path(self.root, str(alias))
+        raw = deepcopy(self.raw)
+        raw['files']['D:/agent/repo/Code.cs'] = raw['files']['Code.cs']
+        with self.assertRaises(ValueError): shards.read_catalogue(self.write('aliased.json', raw), self.root, 'D:/agent/repo')
+
+    def test_batch_denies_missing_duplicate_tampered_and_wrong_execution_records(self):
+        for defect in ('missing', 'duplicate', 'plan', 'batch', 'config', 'timeout', 'cancelled', 'exit', 'bool-exit'):
+            fixture = self.batch_fixture()
+            value, batches, records, _ = fixture
+            if defect == 'missing': records.pop()
+            if defect == 'duplicate': records[-1] = records[0]
+            if defect == 'plan': value['regions'][0]['owners'] = []
+            if defect == 'batch': batches['batches'][0]['patterns'].append('**/*.cs')
+            if defect == 'config': records[0]['config']['stryker-config']['mutate'] = ['**/*.cs']
+            if defect == 'timeout': records[0]['timeout'] = True
+            if defect == 'cancelled': records[0]['cancelled'] = True
+            if defect == 'exit': records[0]['exit_code'] = 1
+            if defect == 'bool-exit': records[0]['exit_code'] = False
+            with self.subTest(defect=defect), self.assertRaises(ValueError): self.validate_batch_fixture(fixture)
+
+    def test_batch_denies_source_test_identity_mask_attribution_and_outside_execution_tampering(self):
+        for defect in ('source', 'test', 'identity', 'mask', 'attribution', 'outside', 'ignored-owner', 'partial'):
+            fixture = self.batch_fixture()
+            record = fixture[2][0]
+            raw = json.loads(record['report'].read_bytes())
+            mutants = raw['files']['Code.cs']['mutants']
+            if defect == 'source': raw['files']['Code.cs']['source'] = 'changed'
+            if defect == 'test': raw['testFiles']['Tests.cs']['source'] = 'changed'
+            if defect == 'identity': mutants[0]['replacement'] = 'changed'
+            if defect == 'mask': mutants[-1]['status'] = 'Ignored'
+            if defect == 'attribution': next(m for m in mutants if m['status'] == 'Killed')['killedBy'] = ['unknown']
+            if defect == 'outside': next(m for m in mutants if m['status'] == 'Ignored').update(status='Killed', killedBy=['t'])
+            if defect == 'ignored-owner': next(m for m in mutants if m['status'] == 'Killed')['status'] = 'Ignored'
+            if defect == 'partial': mutants.pop()
+            record['report'].write_bytes(shards.canonical(raw))
+            record['report_sha256'] = replay.digest(record['report'].read_bytes())
+            with self.subTest(defect=defect), self.assertRaises(ValueError): self.validate_batch_fixture(fixture)
+
+    def test_complete_mutant_timeout_retains_denominator_without_kill_credit(self):
+        fixture = self.batch_fixture()
+        record = fixture[2][0]
+        raw = json.loads(record['report'].read_bytes())
+        next(m for m in raw['files']['Code.cs']['mutants'] if m['status'] == 'Killed')['status'] = 'Timeout'
+        record['report'].write_bytes(shards.canonical(raw))
+        record['report_sha256'] = replay.digest(record['report'].read_bytes())
+        result = self.validate_batch_fixture(fixture)
+        self.assertEqual(result['original_denominator'], 4)
+        self.assertEqual(len(result['attributed_killed']), 3)
+        self.assertEqual(len(result['uncredited_mutant_timeouts']), 1)
+
 
 if __name__ == '__main__':
     unittest.main()

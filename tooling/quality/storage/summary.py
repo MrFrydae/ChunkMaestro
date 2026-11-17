@@ -2,13 +2,13 @@
 import json
 import os
 from pathlib import Path
-import sys
+import argparse
 
 
 def describe(folder):
     lines = ['## Storage run outcome', '', 'Fast coverage is not full safety qualification.', '']
     found = False
-    for name in ('coverage-manifest.json', 'manifest.json', 'replay-collection.json', 'replay/result.json',
+    for name in ('coverage-manifest.json', 'manifest.json', 'bundle.json', 'probe.json', 'replay-collection.json', 'replay/result.json',
                  'volume/volume.json', 'native/native.json'):
         path = folder / name
         if not path.is_file():
@@ -33,16 +33,25 @@ def describe(folder):
                 lines.append(f'  - Retained raw log: `{log}` in the uploaded platform artifact. No timeout kill credit.')
     if not found:
         lines.append('**No runtime evidence produced.** Check the preceding setup/tooling step; no test success is claimed.')
+    if (folder / 'bundle.json').is_file() or (folder / 'probe.json').is_file():
+        lines.append('**Shard pilot only:** catalogue planning or a partial diagnostic cannot satisfy full qualification.')
     lines.extend(['', 'If qualification was not requested, add `storage-qualify` to the final candidate PR.',
                   'After another push, remove/re-add that label for the new head. Full evidence and independent QA still block merge.'])
     return '\n'.join(lines) + '\n'
 
 
 if __name__ == '__main__':
-    folder = Path(sys.argv[1])
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('folder', type=Path)
+    parser.add_argument('--artifact-directory', type=Path,
+                        help='Write the human summary outside an immutable sealed bundle')
+    args = parser.parse_args()
+    folder = args.folder
     folder.mkdir(parents=True, exist_ok=True)
     message = describe(folder)
-    (folder / 'outcome.md').write_text(message, encoding='utf-8')
+    destination = args.artifact_directory or folder
+    destination.mkdir(parents=True, exist_ok=True)
+    (destination / 'outcome.md').write_text(message, encoding='utf-8')
     print(message)
     if os.environ.get('GITHUB_STEP_SUMMARY'):
         with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as stream:

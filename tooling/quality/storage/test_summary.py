@@ -1,5 +1,7 @@
 import json
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -7,6 +9,21 @@ from summary import describe
 
 
 class SummaryTests(unittest.TestCase):
+    def test_summary_can_leave_a_sealed_bundle_unchanged(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            folder = root / 'bundle'
+            folder.mkdir()
+            data = b'{"status":"PREPARED_DIAGNOSTIC"}\n'
+            (folder / 'bundle.json').write_bytes(data)
+            result = subprocess.run([sys.executable, str(Path(__file__).with_name('summary.py')), str(folder),
+                                     '--artifact-directory', str(root / 'human')],
+                                    check=True, capture_output=True, text=True, timeout=10)
+            self.assertEqual([p.name for p in folder.iterdir()], ['bundle.json'])
+            self.assertEqual((folder / 'bundle.json').read_bytes(), data)
+            self.assertTrue((root / 'human/outcome.md').is_file())
+            self.assertIn('Shard pilot only', result.stdout)
+
     def test_incomplete_mutation_explains_timeout_and_retained_log_without_credit(self):
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary)
