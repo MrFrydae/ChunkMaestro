@@ -247,6 +247,9 @@ def validate_commands(folder, bundle, root):
                 'preparation baseline command changed: ' + label)
     provenance = load(folder / 'private/provenance.json')
     require(by_label['private-build'] == provenance['build'], 'private build record differs from provenance')
+    source = Path(bundle['original_bundle_root']) / 'private' / ('stryker-net-' + replay.COMMIT)
+    require(by_label['private-build']['args'] == [str(arg) for arg in replay.private_build_command(dotnet, source)]
+            and by_label['private-build']['cwd'] == str(source), 'private build command differs from pinned policy')
     private_original = str(Path(bundle['original_bundle_root']) / 'private' / bundle['private_binary_relative'])
     require(provenance['binary'] == private_original, 'private entry point differs from original build')
     for label, tool in (('official-index', bundle['official_tool_path']), ('private-index', private_original)):
@@ -263,10 +266,21 @@ def validate_commands(folder, bundle, root):
 
 
 def binaries(root):
-    return {path.relative_to(root).as_posix(): replay.digest(path.read_bytes())
-            for path in sorted(root.rglob('*.dll')) if 'bin' in path.relative_to(root).parts
-            and path.name in ('ChunkMaestro.Domain.dll', 'ChunkMaestro.Application.dll',
-                              'ChunkMaestro.Persistence.dll', 'ChunkMaestro.PersistenceTests.dll')}
+    # Hash the complete relevant Release output trees, including managed/native
+    # dependencies, apphosts, runtime configuration and exact file membership.
+    # Private-tool artifact copies and unrelated project outputs are not runtime
+    # inputs to this test project and must not enter this restoration inventory.
+    result = {}
+    for project in ('src/ChunkMaestro.Domain', 'src/ChunkMaestro.Application',
+                    'src/ChunkMaestro.Persistence', 'tests/ChunkMaestro.PersistenceTests',
+                    'tooling/quality/storage'):
+        directory = replay_gate.child(root, project + '/bin/Release')
+        for path in sorted(directory.rglob('*')):
+            name = path.relative_to(root).as_posix()
+            replay_gate.child(root, name)
+            if path.is_file():
+                result[name] = replay.digest(path.read_bytes())
+    return result
 
 
 def verify_probe_report(report, root, plan, batch, cases):

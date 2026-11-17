@@ -237,8 +237,9 @@ class PilotContracts(unittest.TestCase):
             '--collect', 'XPlat Code Coverage', '--settings', 'tooling/quality/storage/coverage.runsettings',
             '--logger', 'trx', '--results-directory', self.folder / 'coverage'], self.root)
         private = self.folder / 'private/private-tool.dll'
-        build = record('private-build', [self.dotnet, 'build', 'synthetic-pinned-project'],
-                       self.folder / 'private', self.folder / 'private')
+        private_source = self.folder / 'private' / ('stryker-net-' + replay.COMMIT)
+        build = record('private-build', replay.private_build_command(self.dotnet, private_source),
+                       private_source, self.folder / 'private')
         self.json(self.folder / 'private/provenance.json', {'binary': str(private), 'build': build})
         for label, tool in (('official-index', bundle['official_tool_path']), ('private-index', private)):
             args = [self.dotnet, tool, '--config-file', self.root / replay_ci.replay_configuration('Darwin'),
@@ -254,6 +255,20 @@ class PilotContracts(unittest.TestCase):
             self.write(self.folder / 'private/commands.jsonl', json.dumps(build) + '\n')
         ledgers()
         shard_ci.validate_commands(self.folder, bundle, self.root)
+        original_build = deepcopy(build)
+        for change in ('compiler', 'flags', 'project', 'cwd'):
+            if change == 'compiler': build['args'][0] = '/unapproved/compiler'
+            if change == 'flags': build['args'][-1] = '-p:RestoreLockedMode=false'
+            if change == 'project': build['args'][2] = '/unapproved/project.csproj'
+            if change == 'cwd': build['cwd'] = str(self.root)
+            self.json(self.folder / 'private/provenance.json', {'binary': str(private), 'build': build})
+            ledgers()
+            with self.subTest(change=change), self.assertRaisesRegex(ValueError, 'pinned policy'):
+                shard_ci.validate_commands(self.folder, bundle, self.root)
+            build.clear()
+            build.update(deepcopy(original_build))
+        self.json(self.folder / 'private/provenance.json', {'binary': str(private), 'build': build})
+        ledgers()
         commands[-1]['args'][5] = '**/*.cs'
         ledgers()
         with self.assertRaises(ValueError): shard_ci.validate_commands(self.folder, bundle, self.root)
@@ -264,6 +279,31 @@ class PilotContracts(unittest.TestCase):
         self.json(self.folder / 'private-index/reports/mutation-report.json', self.raw)
         Path(commands[-1]['log']).write_text('tampered', encoding='utf-8')
         with self.assertRaises(ValueError): shard_ci.validate_commands(self.folder, bundle, self.root)
+
+    def test_restoration_inventory_detects_native_bytes_runtime_config_and_file_membership(self):
+        files = (
+            'src/ChunkMaestro.Persistence/bin/Release/net10.0/ChunkMaestro.Persistence.dll',
+            'tooling/quality/storage/bin/Release/net10.0/runtimes/win-x64/native/e_sqlite3.dll',
+            'tooling/quality/storage/bin/Release/net10.0/libchunkmaestro_storage.dylib',
+            'tooling/quality/storage/bin/Release/net10.0/ChunkMaestro.PersistenceTests.runtimeconfig.json',
+            'tooling/quality/storage/bin/Release/net10.0/ChunkMaestro.PersistenceTests')
+        for name in files:
+            self.write(self.root / name, name)
+        self.write(self.root / '.artifacts/private/bin/Release/unrelated.dll', 'tool')
+        original = shard_ci.binaries(self.root)
+        self.assertEqual(set(original), set(files))
+        native = self.root / files[1]
+        native.write_bytes(b'changed native dependency')
+        self.assertNotEqual(shard_ci.binaries(self.root), original)
+        self.write(native, files[1])
+        runtime = self.root / files[3]
+        runtime.unlink()
+        self.assertNotEqual(shard_ci.binaries(self.root), original)
+        self.write(runtime, files[3])
+        added = self.write(native.parent / 'extra.dll', 'extra dependency')
+        self.assertNotEqual(shard_ci.binaries(self.root), original)
+        added.unlink()
+        self.assertEqual(shard_ci.binaries(self.root), original)
 
     def test_budget_absolute_and_restoration_reserve(self):
         with patch('shard_ci.replay.command', return_value={'exit_code': 0, 'timeout': False}) as run, \

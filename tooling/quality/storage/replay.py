@@ -232,6 +232,12 @@ def require(result):
                          'see ' + result['log'])
 
 
+def private_build_command(dotnet, source):
+    """Shared pinned private-build policy, also checked on artifact transfer."""
+    return [dotnet, 'build', source / 'src/Stryker.CLI/Stryker.CLI/Stryker.CLI.csproj',
+            '-c', 'Release', '--no-incremental', '--force', '-p:RestoreLockedMode=true']
+
+
 def build_private(output, dotnet, archive=None):
     if sys.version_info < (3, 12):
         raise ValueError('Private source extraction requires Python 3.12+ data-filter support')
@@ -259,8 +265,7 @@ def build_private(output, dotnet, archive=None):
         before.decode().splitlines(True), factory.read_text().splitlines(True),
         fromfile='a/' + FACTORY, tofile='b/' + FACTORY)), encoding='utf-8')
     env = environment(dotnet)
-    result = command([dotnet, 'build', source / 'src/Stryker.CLI/Stryker.CLI/Stryker.CLI.csproj',
-                      '-c', 'Release', '--no-incremental', '--force', '-p:RestoreLockedMode=true'],
+    result = command(private_build_command(dotnet, source),
                      source, output, 'private-build', env, 600)
     binary = source / 'src/Stryker.CLI/Stryker.CLI/bin/Release/Stryker.CLI.dll'
     provenance = {'schema_version': 1, 'identity': 'ChunkMaestro-private-stryker5-no-block-filter',

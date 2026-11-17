@@ -229,6 +229,23 @@ contracts passed**, including Windows/POSIX emitted-path and alias/traversal
 denials. A new hosted timing diagnostic remains necessary; no speedup or score
 is inferred from preparation or offline checks.
 
+Bounded review corrections retain the original FAIL reports. Private-build
+validation now checks the exact SDK executable, pinned source project, Release,
+no-incremental, forced locked-restore arguments and working directory against
+the same policy function used by the builder. Agreement between two JSON records
+alone is insufficient. Regression probes change both matching records together
+and still require refusal for changed compiler, project, flags or cwd.
+
+Restoration inventories every file in the relevant project `bin/Release` trees,
+including managed dependencies, native SQLite/storage libraries, runtime config,
+apphosts and exact file membership. It excludes the transferred private-tool
+artifact tree. Changed native bytes and added/removed dependencies deny equality.
+The corrected storage tooling suite passed **116 tests**. A local macOS clean
+baseline and clean restoration each passed all **195 cases** and produced
+identical **311-file** runtime inventories. No mutation ran during that check.
+Logs/result: `/var/folders/8p/klwq9s9n3jg2hm6pqx99hc3w0000gn/T/cm-runtime-restoration-ey0jyi8r`.
+Fresh independent review and current-head hosted evidence remain required.
+
 ## Evidence and reproduction
 
 Prior verified research (read before implementation):
