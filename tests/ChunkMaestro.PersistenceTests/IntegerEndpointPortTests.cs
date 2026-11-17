@@ -33,7 +33,15 @@ public sealed class IntegerEndpointPortTests : IDisposable
             Assert.Equal("real:25565.5", await ScalarAsync(connection, "SELECT typeof(Port)||':'||quote(Port) FROM Endpoints WHERE Port=25565.5"));
         }
         string backup = Path.Combine(root, "before-migration-existing.db");
-        File.Copy(Path.Combine(root, "fleet.db"), backup);
+        // Elevated Windows tokens may assign Administrators as the default
+        // owner. Create this existing-backup fixture through the same secure
+        // file boundary as production, then copy bytes without replacing it.
+        using (FileStream backupFile = StorageLocation.CreateOrOpen(backup))
+        {
+            using FileStream databaseFile = File.OpenRead(Path.Combine(root, "fleet.db"));
+            await databaseFile.CopyToAsync(backupFile);
+        }
+        StorageLocation.CheckScope(backup);
         string before = await RawAsync(root);
         string databaseHash = Hash(Path.Combine(root, "fleet.db"));
         string backupHash = Hash(backup);

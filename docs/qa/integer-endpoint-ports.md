@@ -29,6 +29,16 @@ migration's DROP, verifies an active transaction and enabled foreign keys,
 then proves row/schema/history rollback and absence of the temporary table.
 This injected failure is narrower than actual process death.
 
+The first hosted Windows run at `9120734` passed all 146 tooling contracts but
+failed the two historical refusal fixtures with `InvalidLocation` instead of
+`CorruptDatabase`. Those fixtures created their preserved backup through ordinary
+`File.Copy`, outside the secure-owner creation boundary. Elevated Windows can
+assign the default Administrators owner. The fixture now creates its backup with
+`StorageLocation.CreateOrOpen`, copies content through that stream, and explicitly
+checks its scope before invoking startup. Production ownership checks and the
+required corruption-refusal assertion remain unchanged. Hosted confirmation of
+this correction is required; the original failure is preserved.
+
 ## Migration review and integrity
 
 Existing EF Design and dotnet-ef 10.0.15 generated the new migration, Designer and
