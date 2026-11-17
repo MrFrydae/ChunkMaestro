@@ -36,13 +36,19 @@ class GateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary) / 'fast'
             calls = []
+            deadlines = []
+            clock = [0]
             def command(args, *unused):
                 calls.append(args)
+                deadlines.append(unused[-1])
+                clock[0] += 120
                 return {'exit_code': 0, 'timeout': False}
             with patch.object(qualify.platform, 'system', return_value='Windows'), \
-                    patch.object(replay, 'command', side_effect=command), patch.object(qualify, 'runtime_cases'):
+                    patch.object(replay, 'command', side_effect=command), patch.object(qualify, 'runtime_cases'), \
+                    patch('time.monotonic', side_effect=lambda: clock[0]):
                 self.assertEqual(qualify.run(folder, coverage_only=True), 0)
             self.assertEqual([c[1] for c in calls], ['restore', 'test'])
+            self.assertEqual(deadlines, [360, 240])
             self.assertNotIn('--filter', calls[1])
             self.assertIn('XPlat Code Coverage', calls[1])
             self.assertFalse((folder / 'manifest.json').exists())
@@ -51,6 +57,25 @@ class GateTests(unittest.TestCase):
             self.assertEqual(manifest['mutation_reports'], {})
             with contextlib.redirect_stdout(io.StringIO()):
                 self.assertTrue(gate([folder], Path(temporary) / 'gate.json'))
+
+    def test_fast_budget_exhaustion_refuses_next_command_without_claiming_runtime_pass(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary) / 'fast'
+            clock = [0]
+            def restore(*unused):
+                clock[0] = 361
+                return {'exit_code': 0, 'timeout': False}
+            with patch.object(qualify.platform, 'system', return_value='Darwin'), \
+                    patch.object(replay, 'command', side_effect=restore) as execute, \
+                    patch('time.monotonic', side_effect=lambda: clock[0]), \
+                    patch.object(qualify, 'runtime_cases') as runtime:
+                self.assertEqual(qualify.run(folder, coverage_only=True), 1)
+            self.assertEqual(execute.call_count, 1)
+            runtime.assert_not_called()
+            result = json.loads((folder / 'coverage-manifest.json').read_bytes())
+            self.assertEqual(result['status'], 'UNRESOLVED')
+            self.assertFalse(result['runtime_tests_passed'])
+            self.assertIn('360-second', result['error'])
 
     def test_initial_collection_runs_full_coverage_without_repeating_persistence_mutations(self):
         # Fake commands prove scheduling only, never runtime acceptance.

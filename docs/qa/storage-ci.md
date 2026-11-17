@@ -13,8 +13,8 @@ create full-volume images or perform native mutation qualification. Its distinct
 `coverage-manifest.json` / `COVERAGE_COLLECTED` result cannot satisfy the full gate.
 There is no filtered subset pretending to be the normal runtime suite.
 
-The runtime command has a ten-minute absolute bound; its containing step allows
-12 minutes and its job allows 20. Failures retain command output, TRX, coverage
+Fast restore/build/test commands share a six-minute total bound; their containing
+step allows eight minutes and the entire job allows ten. Failures retain command output, TRX, coverage
 and a human-readable job summary. These are bounds, not predicted completion times.
 
 ## During development

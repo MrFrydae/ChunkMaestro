@@ -50,6 +50,11 @@ def run(output, coverage_only=False):
     records = []
 
     def command(args, cwd=ROOT, timeout=600):
+        if coverage_only:
+            remaining = 360 - (time.monotonic() - started)
+            if remaining <= 0:
+                raise RuntimeError('Fast storage check exhausted its 360-second total command budget before starting the next command')
+            timeout = min(timeout, remaining)
         with isolated_environment(env):
             record = replay.command(args, cwd, output, 'command-%02d' % len(records), env, timeout)
         records.append(record)
