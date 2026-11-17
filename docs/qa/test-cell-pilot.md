@@ -170,7 +170,7 @@ success and tamper/denial paths: all cells mandatory, duplicates, omissions,
 rehashed group overlap, extra options, unbound kills, source bytes, compile mask,
 foreign roots, raw ledgers, deadlines, full restoration and backup evidence,
 prepared-plan reconstruction, and workflow structure/Action pins. The storage
-suite totals **167 passing tests**; specification validation passes. Ruby Psych
+suite totals **171 passing tests**; specification validation passes. Ruby Psych
 parsed the YAML successfully (its YAML 1.1 parser treats `on` as boolean; Actions
 uses its own workflow schema). No actionlint installation was available.
 
@@ -210,6 +210,16 @@ phase edges were ignored. Both collection and accounting now refuse canonical
 messages whose millisecond timestamp bucket touches either phase edge. A new
 public-boundary regression covers start/completion messages at exact and
 sub-millisecond-overlapping edges. The original FAIL remains historical.
+
+The first reviewed Windows run `44155608934` at `f2c9890` finished both private
+commands and full baseline/restoration controls. Both cells remained UNRESOLVED
+because the initial-event parser expected the macOS console basename. Retained
+Windows logs also exposed an initial active-only zero-result progress event and
+distinct host/console wall-clock timestamps. The narrow compatibility correction
+and unchanged refusal checks are documented in `initial-test-events.md`. Original
+raw cell outcomes remain unchanged and receive no kill credit. Read-only derived
+initial proof is not full cell accounting. Further pilots are paused pending
+fresh independent review; deadlines and qualification thresholds are unchanged.
 
 Historically, the stdout consistency parser accepted both immutable logs
 from `cm-test-group-proof-zdfiu90c`, with selected counts 1/5 and unchanged SHA256

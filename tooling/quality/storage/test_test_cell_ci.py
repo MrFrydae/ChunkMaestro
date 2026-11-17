@@ -154,6 +154,23 @@ class Cells(unittest.TestCase):
         self.assertEqual(2, self.plan['sources']['original_denominator'])
         self.assertIs(True, cell.configuration(self.plan, 0)['stryker-config']['break-on-initial-test-failure'])
 
+    def test_windows_console_and_active_only_initial_progress_validate_end_to_end(self):
+        folder = self.folders[0]
+        wire = folder / 'mutation/logs/Runner 0-log.txt'
+        lines = wire.read_bytes().replace(b'vstest.console.dll,', b'vstest.console.exe,').splitlines()
+        done = json.loads(lines[-1].split(cell.initial_events.RECEIVE.encode(), 1)[1])
+        active = done['Payload']['LastRunTests']['NewTestResults'][0]['TestCase']
+        progress = {'Version': 7, 'MessageType': 'TestExecution.StatsChange', 'Payload': {
+            'NewTestResults': [], 'ActiveTests': [active],
+            'TestRunStatistics': {'ExecutedTests': 0, 'Stats': {}}}}
+        header = b'TpTrace Verbose: 0 : 123, 4, 2026/11/17, 12:00:01.500, 1, vstest.console.exe, '
+        lines.insert(1, header + cell.initial_events.RECEIVE.encode() + json.dumps(progress).encode())
+        wire.write_bytes(b'\n'.join(lines) + b'\n')
+        def reconstruct(directory, value):
+            value['initial_case_evidence'] = cell.initial_case_evidence(directory, self.plan, 0, str(self.root))
+        self.reseal(reconstruct)
+        self.assertEqual(0, self.validate()[0])
+
     def test_raw_tamper_denied(self):
         (self.folders[0] / 'private.log').write_text('tampered')
         with self.assertRaisesRegex(ValueError, 'evidence'):

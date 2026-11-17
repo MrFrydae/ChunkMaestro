@@ -38,7 +38,7 @@ SOURCE_HASHES = {'src/Stryker.CLI/Stryker.CLI/Logging/ApplicationLogging.cs': '8
  'src/Stryker.TestRunner.VsTest/VsTestContextInformation.cs': '0d704339d71d06c57d635d0e9e3a1bcba9189298cbb4d1666db95a83e1799fb9',
  'src/Stryker.TestRunner.VsTest/VsTestRunner.cs': '174ae64ae04b33149da7651639549f1ed02da4c37f49137d3679c4bb90d07d2e',
  'src/Stryker.TestRunner.VsTest/VsTestRunnerPool.cs': 'dcf3aeb86a68abf8983534d1b24c6c2315fa6e698ca326f5367a6fc43e30599f'}
-WIRE = re.compile(r'^TpTrace Verbose: 0 : (\d+), \d+, (\d{4}/\d\d/\d\d), (\d\d:\d\d:\d\d\.\d{3}), (\d+), vstest.console.dll, (.*)$')
+WIRE = re.compile(r'^TpTrace Verbose: 0 : (\d+), \d+, (\d{4}/\d\d/\d\d), (\d\d:\d\d:\d\d\.\d{3}), (\d+), vstest\.console\.(?:dll|exe), (.*)$')
 SEND = 'TestRequestSender.StartTestRun: Sending test run with message: '
 RECEIVE = 'TestRequestSender.OnExecutionMessageReceived: Received message: '
 
@@ -55,8 +55,10 @@ def require(condition, reason):
 def passed_statistics(value, count):
     return (isinstance(value, dict) and set(value) == {'ExecutedTests', 'Stats'} and
             type(value['ExecutedTests']) is int and value['ExecutedTests'] == count and
-            isinstance(value['Stats'], dict) and set(value['Stats']) == {'Passed'} and
-            type(value['Stats']['Passed']) is int and value['Stats']['Passed'] == count)
+            isinstance(value['Stats'], dict) and
+            ((count == 0 and value['Stats'] == {}) or
+             (set(value['Stats']) == {'Passed'} and type(value['Stats']['Passed']) is int and
+              value['Stats']['Passed'] == count)))
 
 
 def load_json(data):
@@ -140,9 +142,10 @@ def inspect_wire(data, start, end, cases, assembly, test_filter=None):
             continue
         require(int(ticks) >= clock, 'nonmonotonic wire clock')
         clock = int(ticks)
+        console_process = (process, line.split(', ', 6)[5])
         if pid is None:
-            pid = process
-        require(pid == process, 'concurrent processes')
+            pid = console_process
+        require(pid == console_process, 'concurrent processes or mixed console hosts')
         prefix = SEND if text.startswith(SEND) else RECEIVE
         message = load_json(text[len(prefix):])
         require(type(message['Version']) is int and message['Version'] == 7, 'unsupported protocol version')
@@ -189,7 +192,10 @@ def inspect_wire(data, start, end, cases, assembly, test_filter=None):
             require(result['ErrorMessage'] is None and result['ErrorStackTrace'] is None, 'result error')
             first = datetime.fromisoformat(result['StartTime'])
             last = datetime.fromisoformat(result['EndTime'])
-            require(first.tzinfo is not None and last.tzinfo is not None and session_start <= first <= last <= stamp, 'invalid result timestamps')
+            # Host result clocks and console trace clocks are distinct. Require
+            # ordered case times within the bound initial phase, not a presumed
+            # ordering against the particular console receipt's wall clock.
+            require(first.tzinfo is not None and last.tzinfo is not None and session_start <= first <= last < end, 'invalid result timestamps')
             ids.add(identifier)
             seen[identity] = {'fqn': identity[0], 'display': identity[1], 'wire_id': identifier, 'outcome': 'Passed', 'start': result['StartTime'], 'end': result['EndTime']}
         require(passed_statistics(chunk['TestRunStatistics'], len(seen)), 'inconsistent chunk statistics')

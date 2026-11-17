@@ -50,7 +50,8 @@ cannot provide the required result proof. It is preserved separately.
 ## Observed schema and binding
 
 The supported input is the console-side Verbose TpTrace record with process,
-thread, local date/time (milliseconds), monotonic clock, `vstest.console.dll`, and
+thread, local date/time (milliseconds), monotonic clock, `vstest.console.dll`
+(macOS) or `vstest.console.exe` (Windows), and
 one of these exact log sites:
 
 - `TestRequestSender.StartTestRun: Sending test run with message: <JSON>`
@@ -196,7 +197,7 @@ launch/check output: `.artifacts/filtered-initial-toy.log` and
 rewritten. A read-only inspection helper first used the wrong regex group index;
 its corrected inspection confirmed the emitted filter before parser integration.
 No product mutation or hosted pilot was run. Current storage-tooling validation
-passes 167 tests, including full-cell skip/partial/abort/cancel/wrong-filter/missing
+passes 171 tests, including full-cell skip/partial/abort/cancel/wrong-filter/missing
 proof denials and strict numeric-count tests; build-tooling 16, specification and
 workflow parsing pass. Production C# is unchanged from `909557a`, whose hosted
 Windows/macOS storage checks and three managed jobs passed. Full qualification
@@ -229,3 +230,45 @@ outside records can be excluded. A complete-validator regression covers starts
 and completion messages at both exact edges and overlapping timestamp buckets;
 both producer evidence and final accounting must refuse before credit. The
 original functional FAIL is preserved; this correction needs independent recheck.
+
+## First Windows two-cell execution
+
+Run `44155608934`, attempt 1, at `f2c9890` completed both private commands within
+the existing 180-second limit. Both full baseline and restoration TRX files
+report 243 Passed, zero failed/skipped cases. The original cells remain
+UNRESOLVED at initial-case evidence: the parser recognized only the macOS
+`vstest.console.dll` prefix, while all canonical Windows records name
+`vstest.console.exe`. Accounting refused the incomplete cells. No kill credit or
+qualification follows from this run.
+
+After admitting the exact Windows basename, read-only inspection exposed an
+active-only StatsChange before any result: NewTestResults is empty, ExecutedTests
+is integer zero, Stats is an empty object, and an exact planned case is active.
+This is accepted only at zero observed results; failed/skipped statistic keys,
+coerced counts and missing final results/completion still refuse evidence. A
+single initial session must retain both its process ID and console basename;
+unknown or mixed console names refuse evidence.
+
+One Windows host result also had an EndTime 1.203 milliseconds after its console
+receipt's wall-clock timestamp. The clocks are separate observations, not an
+asserted causal ordering. The pinned [xUnit adapter's result construction](https://github.com/xunit/visualstudio.xunit/blob/0f7d528729972578553fb146cbde5f95b316cdc4/src/xunit.runner.visualstudio/Sinks/VsExecutionSink.cs)
+copies the host message's StartTime/FinishTime; the console logger supplies its
+own timestamp. This observation does not establish the precise cause of the
+clock difference. Ordered, timezone-aware host case times must remain within
+the bound initial phase (at or after the session start and strictly before phase
+end). They are not compared to the particular receipt's wall clock. Canonical
+message ordering, edge ambiguity refusal, exact case/ID/source/filter binding,
+all-Passed statistics and completed/nonaborted session remain mandatory. No
+arbitrary clock tolerance or additional runner is introduced.
+
+Original downloaded cells are retained under
+`.artifacts/pilot-44155608934/cell-{0,1}`; every original inventory member hash
+matches. Separate read-only derived initial-event results under
+`reprocessed-initial-events-v2` recognize 119 and 124 Passed initial cases.
+Original cell.json files are unchanged UNRESOLVED; this is parser compatibility
+evidence only, not reclassified cell success or mutation credit. The first
+read-only attempt stopped at the timestamp check; the corrected inspection uses
+a distinct v2 output directory.
+Four added synthetic contracts cover host variants, zero-result progress,
+phase-bound case timestamps and complete producer/accounting integration.
+New independent review is required; further hosted pilots remain paused.

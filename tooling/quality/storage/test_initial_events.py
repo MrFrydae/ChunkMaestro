@@ -45,6 +45,47 @@ class InitialEventsTests(unittest.TestCase):
     def test_affirmative_final_chunk(self):
         self.assertEqual(len(self.inspect([self.begin, self.done])['cases']), 2)
 
+    def test_only_known_consistent_console_hosts_are_supported(self):
+        raw = self.raw([self.begin, self.done])
+        windows = raw.replace(b'vstest.console.dll,', b'vstest.console.exe,')
+        self.assertEqual(2, len(events.inspect_wire(windows, self.start, self.end,
+            self.cases, self.assembly)['cases']))
+        for malformed in (raw.replace(b'vstest.console.dll,', b'other.exe,'),
+                          raw.replace(b'vstest.console.dll,', b'vstest.console.exe,', 1)):
+            with self.assertRaises(ValueError):
+                events.inspect_wire(malformed, self.start, self.end, self.cases, self.assembly)
+
+    def test_initial_active_only_progress_is_not_completion_evidence(self):
+        progress = {'Version': 7, 'MessageType': 'TestExecution.StatsChange', 'Payload': {
+            'NewTestResults': [], 'ActiveTests': [deepcopy(self.results[0]['TestCase'])],
+            'TestRunStatistics': {'ExecutedTests': 0, 'Stats': {}}}}
+        self.assertEqual(2, len(self.inspect([self.begin, progress, self.done])['cases']))
+        with self.assertRaises(ValueError):
+            self.inspect([self.begin, progress])
+        for stats in ({'ExecutedTests': False, 'Stats': {}}, {'ExecutedTests': 1, 'Stats': {}},
+                      {'ExecutedTests': 0, 'Stats': {'Failed': 0}},
+                      {'ExecutedTests': 0, 'Stats': {'Skipped': 0}}):
+            bad = deepcopy(progress)
+            bad['Payload']['TestRunStatistics'] = stats
+            with self.assertRaises(ValueError):
+                self.inspect([self.begin, bad, self.done])
+
+    def test_host_result_times_are_ordered_and_bound_to_initial_phase(self):
+        done = deepcopy(self.done)
+        # Real Windows host result time can lead the console record's clock.
+        done['Payload']['LastRunTests']['NewTestResults'][0]['EndTime'] = '2026-11-17T12:00:06.0012039+00:00'
+        self.assertEqual(2, len(self.inspect([self.begin, done])['cases']))
+        for first, last in (
+            ('2026-11-17T11:59:59+00:00', '2026-11-17T12:00:03+00:00'),
+            ('2026-11-17T12:00:03+00:00', '2026-11-17T12:00:02+00:00'),
+            ('2026-11-17T12:00:02+00:00', '2026-11-17T12:01:00+00:00'),
+            ('2026-11-17T12:00:02+00:00', '2026-11-17T12:01:01+00:00'),
+        ):
+            bad = deepcopy(self.done)
+            bad['Payload']['LastRunTests']['NewTestResults'][0].update(StartTime=first, EndTime=last)
+            with self.assertRaisesRegex(ValueError, 'timestamps'):
+                self.inspect([self.begin, bad])
+
     def test_disjoint_batch_and_final_chunk(self):
         done = deepcopy(self.done)
         done['Payload']['LastRunTests']['NewTestResults'] = [self.results[1]]
