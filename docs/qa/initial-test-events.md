@@ -196,7 +196,7 @@ launch/check output: `.artifacts/filtered-initial-toy.log` and
 rewritten. A read-only inspection helper first used the wrong regex group index;
 its corrected inspection confirmed the emitted filter before parser integration.
 No product mutation or hosted pilot was run. Current storage-tooling validation
-passes 163 tests, including full-cell skip/partial/abort/cancel/wrong-filter/missing
+passes 167 tests, including full-cell skip/partial/abort/cancel/wrong-filter/missing
 proof denials and strict numeric-count tests; build-tooling 16, specification and
 workflow parsing pass. Production C# is unchanged from `909557a`, whose hosted
 Windows/macOS storage checks and three managed jobs passed. Full qualification
@@ -208,6 +208,24 @@ output handlers; failed compilation still throws after extra diagnostics. The
 collector's complete baseline/restoration inventory and original CompileError
 mask checks remain enforced. Extra diagnostic I/O and parsing cost at product
 scale remain unmeasured; deadlines are unchanged.
-Each initial phase/wire log has a 32 MiB parsing bound. The collector checks file
-size before loading; oversized diagnostics are retained and refuse evidence with
-an explicit reason, rather than entering an unbounded JSON parse.
+The independent UX review at `fb29e05` found that inventory hashing and the
+standalone binding reader loaded whole diagnostics before enforcing the parsing
+limit. Its original FAIL report remains unchanged. Inventory and command-log
+hashing now stream 1 MiB chunks. Phase, wire and captured mutation stdout readers
+check the open regular file's size before reading at most that size plus one byte;
+size changes and inputs exceeding 32 MiB refuse evidence. This applies to producer,
+final accounting and the standalone binding API. Raw files remain retained, and
+hash verification remains mandatory where the binding supplies an expected hash.
+Three additional synthetic I/O contracts exercise oversized inputs through the
+complete cell validator and binding API, forbid whole-file materialization, and
+check hash compatibility and size-change refusal. They establish I/O bounds, not
+product performance or qualification. Fresh independent review remains required.
+
+The functional `fb29e05` review separately found that canonical session starts at
+phase boundaries were skipped before session validation. Canonical send/receive
+records now refuse evidence when their millisecond timestamp bucket touches
+either phase edge, including sub-millisecond phase timestamps. Only clearly
+outside records can be excluded. A complete-validator regression covers starts
+and completion messages at both exact edges and overlapping timestamp buckets;
+both producer evidence and final accounting must refuse before credit. The
+original functional FAIL is preserved; this correction needs independent recheck.

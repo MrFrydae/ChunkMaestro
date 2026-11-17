@@ -170,7 +170,7 @@ success and tamper/denial paths: all cells mandatory, duplicates, omissions,
 rehashed group overlap, extra options, unbound kills, source bytes, compile mask,
 foreign roots, raw ledgers, deadlines, full restoration and backup evidence,
 prepared-plan reconstruction, and workflow structure/Action pins. The storage
-suite totals **163 passing tests**; specification validation passes. Ruby Psych
+suite totals **167 passing tests**; specification validation passes. Ruby Psych
 parsed the YAML successfully (its YAML 1.1 parser treats `on` as boolean; Actions
 uses its own workflow schema). No actionlint installation was available.
 
@@ -196,6 +196,20 @@ these separately; the prior FAIL originals remain historical. The secure-backup
 fixture correction at `909557a` subsequently passed both hosted storage jobs and
 all three managed jobs. The new event integration still needs exact-head review
 and hosted execution. The pilot remains paused.
+
+The `fb29e05` UX review found whole-file diagnostic reads before the size guard.
+Inventory, command-log and retained-runtime hashes now stream 1 MiB chunks;
+phase/wire and mutation stdout readers enforce the 32 MiB bound before loading
+through producer, accounting and the standalone API. Open-file size changes are
+refused, hashes remain checked and oversized raw files remain retained. Three
+synthetic I/O regressions cover complete-validator and API entry points. The
+historical FAIL remains unchanged; fresh review is required before the pilot.
+
+The same-head functional review found ambiguous canonical session starts at
+phase edges were ignored. Both collection and accounting now refuse canonical
+messages whose millisecond timestamp bucket touches either phase edge. A new
+public-boundary regression covers start/completion messages at exact and
+sub-millisecond-overlapping edges. The original FAIL remains historical.
 
 Historically, the stdout consistency parser accepted both immutable logs
 from `cm-test-group-proof-zdfiu90c`, with selected counts 1/5 and unchanged SHA256

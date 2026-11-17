@@ -196,7 +196,8 @@ def initial_case_evidence(folder, plan, group, workspace):
         wire = replay_gate.child(folder, wire.relative_to(folder).as_posix())
         require(all(path.stat().st_size <= initial_events.MAX_LOG_BYTES for path in (phase, wire)),
                 'initial diagnostic log exceeds 32 MiB bound; raw files retained')
-        phase_bytes, wire_bytes = phase.read_bytes(), wire.read_bytes()
+        phase_bytes = initial_events.read_diagnostic(phase)
+        wire_bytes = initial_events.read_diagnostic(wire)
         start, end = initial_events.phase_window(phase_bytes)
         cases = [{'fqn': case['method'], 'display': case['display']}
                  for case in plan['tests']['groups'][group]['cases']]
@@ -260,7 +261,7 @@ def probe(folder, output, group, root=ROOT):
             require(len(reports) == 1, 'missing/ambiguous raw report')
             details = verify_report(reports[0], plan, group, root, str(root))
             require((record['exit_code'] == 2) == details['raw_threshold_failed'], 'raw score/exit mismatch')
-            selection_log(Path(record['log']).read_text(encoding='utf-8', errors='replace'),
+            selection_log(initial_events.read_diagnostic(record['log'], record['log_sha256']).decode('utf-8', errors='replace'),
                           len(plan['tests']['groups'][group]['cases']))
             result['failure_phase'] = 'initial-case-evidence'
             evidence = initial_case_evidence(output, plan, group, str(root))
@@ -307,7 +308,7 @@ def cell_inventory(folder):
         if path.is_file() and path != folder / 'cell.json':
             relative = path.relative_to(folder).as_posix()
             replay_gate.child(folder, relative)
-            result[relative] = replay.digest(path.read_bytes())
+            result[relative] = replay.file_digest(path)
     return result
 
 
@@ -345,7 +346,7 @@ def validate_cell(folder, plan, bundle, current, root, prepared_relative=Path('.
                 record['exit_code'] in ((0, 2) if index == 4 else (0,)) and
                 0 <= record['seconds'] <= (PRIVATE_SECONDS if index == 4 else 180), 'failed/timedout cell command')
         log = relocated(folder, record['log'], value['output_root'])
-        require(replay.digest(log.read_bytes()) == record['log_sha256'], 'changed raw command log')
+        require(replay.file_digest(log) == record['log_sha256'], 'changed raw command log')
     require(load(folder / 'cell-config.json') == configuration(plan, group), 'changed config/extra options')
     for label in ('baseline', 'restored'):
         require(trx(folder / label)['cases'] == plan['tests']['baseline']['cases'], 'omitted/changed full cases')
@@ -357,12 +358,13 @@ def validate_cell(folder, plan, bundle, current, root, prepared_relative=Path('.
     require(runtime and load(folder / 'restored-final-binaries.json') == runtime, 'changed runtime membership/bytes')
     for backup in value['retained_tool_backups']:
         require(runtime[backup['original_runtime_file']] == backup['sha256'] ==
-            replay.digest(replay_gate.child(folder, backup['evidence_file']).read_bytes()), 'native/runtime backup differs')
+            replay.file_digest(replay_gate.child(folder, backup['evidence_file'])), 'native/runtime backup differs')
     reports = list((folder / 'mutation').rglob('mutation-report.json'))
     require(len(reports) == 1, 'missing/ambiguous raw cell report')
     details = verify_report(reports[0], plan, group, root, value['workspace_root'])
     require((records[4]['exit_code'] == 2) == details['raw_threshold_failed'], 'raw score/exit mismatch')
-    selection_log(relocated(folder, records[4]['log'], value['output_root']).read_text(encoding='utf-8', errors='replace'),
+    selection_log(initial_events.read_diagnostic(relocated(folder, records[4]['log'], value['output_root']),
+                  records[4]['log_sha256']).decode('utf-8', errors='replace'),
                   len(plan['tests']['groups'][group]['cases']))
     evidence = initial_case_evidence(folder, plan, group, value['workspace_root'])
     require(value['initial_case_evidence'] == evidence, 'initial-case evidence summary differs from raw events')

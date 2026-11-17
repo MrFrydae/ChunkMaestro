@@ -5,11 +5,13 @@ an additional initial-run predicate, never discovery, kill or qualification cred
 Only the observed single-runner, single-assembly, protocol-v7 xUnit shape is
 supported. No deduplication, report-ID inference or warning heuristics.
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
+import stat
 import uuid
 import xml.etree.ElementTree as ET
 
@@ -73,6 +75,18 @@ def read_bound(path, expected):
     return data
 
 
+def read_diagnostic(path, expected=None):
+    with Path(path).open('rb') as stream:
+        info = os.fstat(stream.fileno())
+        require(stat.S_ISREG(info.st_mode), 'diagnostic is not a regular file')
+        require(info.st_size <= MAX_LOG_BYTES, 'initial diagnostic exceeds 32 MiB bound')
+        data = stream.read(info.st_size + 1)
+        require(len(data) == info.st_size, 'diagnostic changed while reading')
+    if expected is not None:
+        require(digest(data) == expected, 'artifact hash mismatch')
+    return data
+
+
 def phase_window(data):
     require(len(data) <= MAX_LOG_BYTES, 'initial phase log exceeds 32 MiB bound')
     lines = data.decode('utf-8', errors='strict').splitlines()
@@ -115,9 +129,14 @@ def inspect_wire(data, start, end, cases, assembly, test_filter=None):
             continue
         process, day, at, ticks, text = match.groups()
         stamp = datetime.strptime(day + ' ' + at, '%Y/%m/%d %H:%M:%S.%f').replace(tzinfo=start.tzinfo)
-        if not start < stamp < end:
-            continue
         if not (text.startswith(SEND) or text.startswith(RECEIVE)):
+            continue
+        # Wire clocks lose sub-millisecond precision. Refuse any canonical
+        # message whose timestamp bucket touches a phase edge before filtering.
+        bucket_end = stamp + timedelta(milliseconds=1)
+        require(not any(stamp <= edge <= bucket_end for edge in (start, end)),
+                'ambiguous canonical message at phase boundary')
+        if not start < stamp < end:
             continue
         require(int(ticks) >= clock, 'nonmonotonic wire clock')
         clock = int(ticks)
@@ -208,7 +227,7 @@ def validate_initial_events(binding):
         require(binding['cancelled'] is False, 'external cancellation/unknown')
         argv = command['args']
         require(all(option in argv for option in ('--diag', '--log-to-file', '--config-file', '--output')), 'missing diagnostic options')
-        read_bound(command['log'], command['log_sha256'])
+        read_diagnostic(command['log'], command['log_sha256'])
         read_bound(argv[0], binding['sdk_sha256'])
         read_bound(argv[1], binding['tool_sha256'])
         config_path = argv[argv.index('--config-file') + 1]
@@ -220,8 +239,8 @@ def validate_initial_events(binding):
         require(Path(binding['wire_path']) == output / 'logs/Runner 0-log.txt', 'unbound diagnostic path')
         require(Path(binding['phase_path']).parent == output / 'logs', 'unbound phase path')
         require(Path(binding['phase_path']).name.startswith('log-') and Path(binding['phase_path']).suffix == '.txt', 'unsupported phase log')
-        phase = read_bound(binding['phase_path'], binding['phase_sha256'])
-        wire = read_bound(binding['wire_path'], binding['wire_sha256'])
+        phase = read_diagnostic(binding['phase_path'], binding['phase_sha256'])
+        wire = read_diagnostic(binding['wire_path'], binding['wire_sha256'])
         start, end = phase_window(phase)
         result = inspect_wire(wire, start, end, binding['cases'], binding['assembly'], test_filter)
         return {'status': 'PASS', 'credit': False, 'initial_cases_passed': True,

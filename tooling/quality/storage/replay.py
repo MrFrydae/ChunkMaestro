@@ -36,6 +36,15 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def file_digest(path):
+    value = hashlib.sha256()
+    source = path if isinstance(path, Path) else Path(path)
+    with source.open('rb') as stream:
+        while chunk := stream.read(1024 * 1024):
+            value.update(chunk)
+    return value.hexdigest()
+
+
 def write(path, value):
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + '\n', encoding='utf-8')
 
@@ -199,7 +208,7 @@ def command(args, cwd, directory, label, env, timeout):
         sample_activity(ended)
     result = {'args': [str(a) for a in args], 'cwd': str(cwd), 'exit_code': code,
               'timeout': timed_out, 'seconds': ended - started,
-              'log': str(log), 'log_sha256': digest(log.read_bytes()),
+              'log': str(log), 'log_sha256': file_digest(log),
               'inactivity_limit_seconds': inactivity_limit,
               'last_log_update_age_seconds': max(0, ended - last_activity),
               'observed_completed_test_sessions': completed_sessions}
