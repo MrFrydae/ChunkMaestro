@@ -38,7 +38,7 @@ class PilotContracts(unittest.TestCase):
         self.config = {'stryker-config': {'mutate': shards.BASE_PATTERNS[:]}}
         self.current = {'head': 'a' * 40, 'platform': 'Darwin', 'architecture': 'arm64',
                         'run_id': '1', 'run_attempt': '1', 'trust': {'authenticated': True}}
-        self.dotnet = Path(self.temp.name) / 'sdk/dotnet'
+        self.dotnet = Path(self.temp.name) / 'sdk' / ('dotnet.exe' if os.name == 'nt' else 'dotnet')
         self.write(self.dotnet, 'sdk')
         self.dotnet.chmod(0o700)
         self.sdk_hash = replay.digest(self.dotnet.read_bytes())
