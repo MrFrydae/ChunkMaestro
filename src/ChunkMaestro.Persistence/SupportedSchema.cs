@@ -37,6 +37,7 @@ internal static class SupportedSchema
         }
         if (migration != null)
         {
+            await VerifyIdentitiesAsync(actual, token);
             command.CommandText = "SELECT 1 FROM Hosts WHERE typeof(RegisteredAt)<>'integer' " +
                 "OR RegisteredAt<$minimum OR RegisteredAt>$maximum " +
                 "UNION ALL SELECT 1 FROM Instances WHERE typeof(RegisteredAt)<>'integer' " +
@@ -58,6 +59,32 @@ internal static class SupportedSchema
                 throw new FleetStorageException(StorageFailure.CorruptDatabase,
                     "Database contains inconsistent endpoint ownership. Preserve files for reviewed recovery.");
             }
+        }
+    }
+
+    private static async Task VerifyIdentitiesAsync(SqliteConnection connection, CancellationToken token)
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT Id FROM Fleets UNION ALL SELECT Id FROM Hosts " +
+            "UNION ALL SELECT FleetId FROM Hosts UNION ALL SELECT Id FROM Instances " +
+            "UNION ALL SELECT HostId FROM Instances UNION ALL SELECT InstanceId FROM Endpoints " +
+            "UNION ALL SELECT HostId FROM Endpoints";
+        using SqliteDataReader reader = await command.ExecuteReaderAsync(token);
+        while (await reader.ReadAsync(token))
+        {
+            try
+            {
+                if (reader.GetGuid(0) != Guid.Empty)
+                {
+                    continue;
+                }
+            }
+            catch (Exception error) when (error is FormatException or InvalidCastException)
+            {
+
+            }
+            throw new FleetStorageException(StorageFailure.CorruptDatabase,
+                "Database contains invalid identities. Preserve files for reviewed recovery.");
         }
     }
 
