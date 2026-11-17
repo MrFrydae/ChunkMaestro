@@ -11,9 +11,9 @@ public sealed class PersistedIdentityTests : IDisposable
 {
     private readonly string directory = Path.Combine(OperatingSystem.IsMacOS() ? "/private/tmp" : Path.GetTempPath(),
         "chunkmaestro-persisted-identity-" + Guid.NewGuid().ToString("N"));
-    private readonly FleetId fleet = new FleetId(Guid.NewGuid());
-    private readonly HostId host = new HostId(Guid.NewGuid());
-    private readonly InstanceId instance = new InstanceId(Guid.NewGuid());
+    private readonly FleetId fleet = new FleetId(Guid.Parse("ABCDEF01-1000-4000-8000-000000000001"));
+    private readonly HostId host = new HostId(Guid.Parse("ABCDEF02-1000-4000-8000-000000000002"));
+    private readonly InstanceId instance = new InstanceId(Guid.Parse("ABCDEF03-1000-4000-8000-000000000003"));
     private StorageLocation Location => StorageLocation.ForTests(directory);
     private string DatabasePath => Path.Combine(directory, "fleet.db");
 
@@ -30,6 +30,18 @@ public sealed class PersistedIdentityTests : IDisposable
     [InlineData("Fleets", "blob")]
     [InlineData("Hosts", "blob")]
     [InlineData("Instances", "blob")]
+    [InlineData("Fleets", "compact")]
+    [InlineData("Hosts", "compact")]
+    [InlineData("Instances", "compact")]
+    [InlineData("Fleets", "braced")]
+    [InlineData("Hosts", "braced")]
+    [InlineData("Instances", "braced")]
+    [InlineData("Fleets", "lowercase")]
+    [InlineData("Hosts", "lowercase")]
+    [InlineData("Instances", "lowercase")]
+    [InlineData("Fleets", "guid-blob")]
+    [InlineData("Hosts", "guid-blob")]
+    [InlineData("Instances", "guid-blob")]
     public async Task DamagedIdentityIsRefusedWithValidForeignKeysAndPreservedForExplicitRecovery(string table, string damage)
     {
         await SeedAsync();
@@ -46,6 +58,7 @@ public sealed class PersistedIdentityTests : IDisposable
             };
             await command.ExecuteNonQueryAsync();
         }
+        Guid restoredId = table == "Fleets" ? fleet.Value : table == "Hosts" ? host.Value : instance.Value;
         object invalid = damage switch
         {
             "empty" => Guid.Empty,
@@ -54,6 +67,10 @@ public sealed class PersistedIdentityTests : IDisposable
             {
                 1, 2, 3
             },
+            "compact" => restoredId.ToString("N"),
+            "braced" => restoredId.ToString("B").ToUpperInvariant(),
+            "lowercase" => restoredId.ToString("D").ToLowerInvariant(),
+            "guid-blob" => restoredId.ToByteArray(),
             _ => "private-not-a-guid"
         };
         await SetAsync(table, invalid);
@@ -88,7 +105,6 @@ public sealed class PersistedIdentityTests : IDisposable
             Assert.Equal(raw, await RawAsync(table));
             Assert.Equal(backups, Directory.GetFiles(directory, "before-migration-*.db").Order().ToArray());
         }
-        Guid restoredId = table == "Fleets" ? fleet.Value : table == "Hosts" ? host.Value : instance.Value;
         await SetAsync(table, restoredId);
         await using LocalFleetStore recovered = await LocalFleetStore.OpenAsync(Location);
         FleetInventory inventory = await recovered.ReadAsync();

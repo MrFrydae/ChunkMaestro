@@ -74,7 +74,12 @@ internal static class SupportedSchema
         {
             try
             {
-                if (reader.GetGuid(0) != Guid.Empty)
+                Guid identity = reader.GetGuid(0);
+                // SQLite compares persisted keys literally. GetGuid alone also
+                // accepts alternate text and BLOB forms that could materialize
+                // as the same public identity as a different stored primary key.
+                if (identity != Guid.Empty && reader.GetValue(0) is string encoded &&
+                    string.Equals(encoded, identity.ToString("D").ToUpperInvariant(), StringComparison.Ordinal))
                 {
                     continue;
                 }
