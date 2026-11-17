@@ -55,10 +55,17 @@ class ReplayContracts(unittest.TestCase):
                 patch.object(replay.subprocess, 'Popen', return_value=proc), \
                 patch.object(replay, 'os', SimpleNamespace(name='posix',
                     killpg=lambda *a: proc.kill(), fsync=replay.os.fsync)), \
+                patch.object(replay, 'signal', SimpleNamespace(SIGKILL=9)), \
                 contextlib.redirect_stdout(output):
             result = replay.command(args or ['fixture', '--output', root / 'mutation'],
                                     root, root, label, {}, deadline)
         return result, output.getvalue(), proc
+
+    def test_synthetic_unix_cleanup_does_not_require_unix_apis_on_host(self):
+        with patch.object(replay, 'os', SimpleNamespace(name='nt', fsync=replay.os.fsync)), \
+                patch.object(replay, 'signal', SimpleNamespace()):
+            result, _, _ = self.simulated_command()
+        self.assertEqual(result['timeout_reason'], 'log-inactivity')
 
     def test_mutation_inactivity_stops_with_reason_and_finite_cleanup(self):
         result, output, proc = self.simulated_command()
