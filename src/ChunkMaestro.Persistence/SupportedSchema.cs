@@ -37,6 +37,18 @@ internal static class SupportedSchema
         }
         if (migration != null)
         {
+            command.CommandText = "SELECT 1 FROM Hosts WHERE typeof(RegisteredAt)<>'integer' " +
+                "OR RegisteredAt<$minimum OR RegisteredAt>$maximum " +
+                "UNION ALL SELECT 1 FROM Instances WHERE typeof(RegisteredAt)<>'integer' " +
+                "OR RegisteredAt<$minimum OR RegisteredAt>$maximum LIMIT 1";
+            command.Parameters.AddWithValue("$minimum", DateTimeOffset.MinValue.ToUnixTimeMilliseconds());
+            command.Parameters.AddWithValue("$maximum", DateTimeOffset.MaxValue.ToUnixTimeMilliseconds());
+            if (await command.ExecuteScalarAsync(token) is not null)
+            {
+                throw new FleetStorageException(StorageFailure.CorruptDatabase,
+                    "Database contains invalid registration timestamps. Preserve files for reviewed recovery.");
+            }
+            command.Parameters.Clear();
             // Both individual foreign keys can be valid while their host pair is
             // inconsistent. Port ownership must use the instance's actual host.
             command.CommandText = "SELECT 1 FROM Endpoints AS e JOIN Instances AS i ON e.InstanceId=i.Id " +
