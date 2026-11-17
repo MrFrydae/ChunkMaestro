@@ -1,0 +1,110 @@
+name: Storage two-cell pilot
+on:
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: storage-test-cell-pilot-${{ github.event.pull_request.head.sha || github.sha }}-${{ (github.event_name == 'workflow_dispatch' || (github.event.label.name == 'storage-test-cell-pilot' && github.event.pull_request.user.id == 38875853 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && github.actor_id == '38875853' && github.event.sender.id == 38875853 }}
+  cancel-in-progress: true
+jobs:
+  prepare:
+    if: ${{ (github.event_name == 'workflow_dispatch' || (github.event.label.name == 'storage-test-cell-pilot' && github.event.pull_request.user.id == 38875853 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && github.actor_id == '38875853' && github.event.sender.id == 38875853 }}
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-dotnet@d4c94342e560b34958eacfc5d055d21461ed1c5d
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c
+        with:
+          python-version: '3.13'
+      - run: python -m unittest discover -s tooling/quality/storage -p 'test_*.py' -q
+      - run: python tooling/quality/storage/test_cell_ci.py prepare .artifacts/cell-bundle
+      - if: ${{ always() }}
+        run: python tooling/quality/storage/test_cell_ci.py summary .artifacts/cell-bundle
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: ${{ always() }}
+        with:
+          name: cell-bundle-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/cell-bundle
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+  probe:
+    needs: prepare
+    if: ${{ success() && ((github.event_name == 'workflow_dispatch' || (github.event.label.name == 'storage-test-cell-pilot' && github.event.pull_request.user.id == 38875853 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && github.actor_id == '38875853' && github.event.sender.id == 38875853) }}
+    runs-on: windows-2025
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        group: [0, 1]
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-dotnet@d4c94342e560b34958eacfc5d055d21461ed1c5d
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: cell-bundle-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/cell-input
+      - run: python tooling/quality/storage/test_cell_ci.py probe .artifacts/cell-input .artifacts/cell-result --group ${{ matrix.group }}
+      - if: ${{ always() }}
+        run: python tooling/quality/storage/test_cell_ci.py summary .artifacts/cell-result
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: ${{ always() }}
+        with:
+          name: cell-result-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.group }}
+          path: .artifacts/cell-result
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+  account:
+    needs: [prepare, probe]
+    if: ${{ always() && ((github.event_name == 'workflow_dispatch' || (github.event.label.name == 'storage-test-cell-pilot' && github.event.pull_request.user.id == 38875853 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && github.actor_id == '38875853' && github.event.sender.id == 38875853) }}
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-dotnet@d4c94342e560b34958eacfc5d055d21461ed1c5d
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        continue-on-error: true
+        with:
+          name: cell-bundle-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/cell-input
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        continue-on-error: true
+        with:
+          pattern: cell-result-${{ github.run_id }}-${{ github.run_attempt }}-*
+          path: .artifacts/cells
+      - run: python tooling/quality/storage/test_cell_ci.py account .artifacts/cell-input .artifacts/cell-outcome .artifacts/cells/cell-result-${{ github.run_id }}-${{ github.run_attempt }}-0 .artifacts/cells/cell-result-${{ github.run_id }}-${{ github.run_attempt }}-1
+      - if: ${{ always() }}
+        run: python tooling/quality/storage/test_cell_ci.py summary .artifacts/cell-outcome
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: ${{ always() }}
+        with:
+          name: cell-outcome-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/cell-outcome
+          if-no-files-found: error
+          retention-days: 14
