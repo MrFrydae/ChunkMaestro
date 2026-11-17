@@ -1,5 +1,8 @@
 # Private Stryker block execution experiment (issue 3, Q190)
 
+Current scheduling and hang diagnostics: [Storage CI](storage-ci.md). Full
+qualification is explicitly requested for a candidate; ordinary pushes run coverage/tests.
+
 Q190 and directive §13.1 remain **90% line / 85% branch / 80% mutation**.
 This implementation collects supplemental evidence in CI. Collection never passes
 qualification, changes mutation exclusions or dependency versions, or grants QA credit.
@@ -425,8 +428,10 @@ trace are now separate diagnostic jobs, enabled only by an explicit
 `workflow_dispatch` with `diagnostics: true`. They are not dependencies of the
 qualification jobs and cannot block ordinary collection. Their scripts and raw
 validation remain available for investigating runner behavior. Windows mutation
-concurrency remains two and macOS four; both Persistence tools use the same
-platform configuration. No unmeasured concurrency increase is introduced.
+concurrency returns to the earlier four-worker setting after the two-worker
+official campaign at `ba6c0b0` exhausted its 5400-second deadline. macOS remains
+four; both Persistence tools use matching platform configurations. Earlier
+four-worker campaigns completed, but fresh-head completion remains unproven.
 
 This removes one entire official Persistence campaign on each platform and the
 Windows diagnostic from the default critical path. Elapsed-time savings are not

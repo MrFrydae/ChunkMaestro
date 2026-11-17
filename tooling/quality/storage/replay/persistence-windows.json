@@ -17,7 +17,7 @@
       "!**/Migrations/*.Designer.cs",
       "!**/Migrations/*ModelSnapshot.cs"
     ],
-    "concurrency": 2,
+    "concurrency": 4,
     "test-projects": [
       "MutationTests.csproj"
     ]

@@ -15,6 +15,26 @@ from qualify import ROOT, canonical, coverage, gate, mutation_key, native_eviden
 
 
 class GateTests(unittest.TestCase):
+    def test_fast_check_has_full_tests_but_no_tool_restore_mutations_or_qualification_manifest(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary) / 'fast'
+            calls = []
+            def command(args, *unused):
+                calls.append(args)
+                return {'exit_code': 0, 'timeout': False}
+            with patch.object(qualify.platform, 'system', return_value='Windows'), \
+                    patch.object(replay, 'command', side_effect=command), patch.object(qualify, 'runtime_cases'):
+                self.assertEqual(qualify.run(folder, coverage_only=True), 0)
+            self.assertEqual([c[1] for c in calls], ['restore', 'test'])
+            self.assertNotIn('--filter', calls[1])
+            self.assertIn('XPlat Code Coverage', calls[1])
+            self.assertFalse((folder / 'manifest.json').exists())
+            manifest = json.loads((folder / 'coverage-manifest.json').read_bytes())
+            self.assertEqual(manifest['status'], 'COVERAGE_COLLECTED')
+            self.assertEqual(manifest['mutation_reports'], {})
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertTrue(gate([folder], Path(temporary) / 'gate.json'))
+
     def test_initial_collection_runs_full_coverage_without_repeating_persistence_mutations(self):
         # Fake commands prove scheduling only, never runtime acceptance.
         for system in ('Windows', 'Darwin'):

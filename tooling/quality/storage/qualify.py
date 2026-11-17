@@ -31,10 +31,10 @@ def mutation_configuration(module, system):
             'test-projects': ['MutationTests.csproj'], 'reporters': ['dots', 'json', 'html'],
             'thresholds': {'high': 90, 'low': 80, 'break': 80},
             'mutate': ['**/*.cs', '!**/Migrations/*.Designer.cs', '!**/Migrations/*ModelSnapshot.cs'],
-            'concurrency': 2 if system == 'Windows' else 4}}
+            'concurrency': 4}}
 
 
-def run(output):
+def run(output, coverage_only=False):
     # Collection is separate from lead-owned aggregate qualification.
     import time
     import replay
@@ -57,23 +57,26 @@ def run(output):
 
     manifest = {'schema_version': 2, 'head': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
                 'platform': platform.system(), 'sources': source_hashes(), 'commands': records,
-                'mutation_reports': MUTATION_REPORTS,
+                'mutation_reports': {} if coverage_only else MUTATION_REPORTS,
+                'scope': 'coverage-only' if coverage_only else 'qualification',
                 'status': 'UNRESOLVED', 'runtime_tests_passed': False,
                 'clean': not subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=normal'], cwd=ROOT, text=True).strip()}
     started = time.monotonic()
     try:
         if platform.system() not in ('Windows', 'Darwin'):
             raise RuntimeError('Linux is an unsupported-controller contract, not storage safety evidence')
-        for args in ([dotnet, 'restore', 'tests/ChunkMaestro.PersistenceTests/ChunkMaestro.PersistenceTests.csproj', '--locked-mode'],
-                     [dotnet, 'tool', 'restore'],
-                     [dotnet, 'restore', 'tooling/quality/storage/MutationTests.csproj', '--locked-mode'],
-                     [dotnet, 'test', 'tests/ChunkMaestro.PersistenceTests/ChunkMaestro.PersistenceTests.csproj', '-c', 'Release', '--no-restore',
-                      '--collect', 'XPlat Code Coverage', '--settings', 'tooling/quality/storage/coverage.runsettings',
-                      '--logger', 'trx', '--results-directory', str(output / 'coverage')]):
+        commands = [[dotnet, 'restore', 'tests/ChunkMaestro.PersistenceTests/ChunkMaestro.PersistenceTests.csproj', '--locked-mode']]
+        if not coverage_only:
+            commands.extend([[dotnet, 'tool', 'restore'],
+                             [dotnet, 'restore', 'tooling/quality/storage/MutationTests.csproj', '--locked-mode']])
+        commands.append([dotnet, 'test', 'tests/ChunkMaestro.PersistenceTests/ChunkMaestro.PersistenceTests.csproj', '-c', 'Release', '--no-restore',
+                         '--collect', 'XPlat Code Coverage', '--settings', 'tooling/quality/storage/coverage.runsettings',
+                         '--logger', 'trx', '--results-directory', str(output / 'coverage')])
+        for args in commands:
             replay.require(command(args))
         runtime_cases(output)
         manifest['runtime_tests_passed'] = True
-        for module in INITIAL_MUTATION_MODULES:
+        for module in (() if coverage_only else INITIAL_MUTATION_MODULES):
             print('[storage] Measuring ' + module, flush=True)
             config = mutation_configuration(module, platform.system())
             config_path = output / (module + '.json')
@@ -83,14 +86,14 @@ def run(output):
                              ROOT / 'tooling/quality/storage',
                              timeout=2400)
             record['collection'] = complete_report(directory, record, module=module)
-        manifest['status'] = 'COLLECTED'
+        manifest['status'] = 'COVERAGE_COLLECTED' if coverage_only else 'COLLECTED'
     except (RuntimeError, ValueError, KeyError, OSError, ET.ParseError, subprocess.SubprocessError) as error:
         manifest['error'] = str(error)
         print('[storage] UNRESOLVED: ' + str(error), flush=True)
     finally:
         manifest['seconds'] = time.monotonic() - started
-        (output / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
-    return 0 if manifest['status'] == 'COLLECTED' else 1
+        (output / ('coverage-manifest.json' if coverage_only else 'manifest.json')).write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
+    return 0 if manifest['status'] in ('COVERAGE_COLLECTED', 'COLLECTED') else 1
 
 
 def canonical(path):
@@ -285,8 +288,11 @@ if __name__ == '__main__':
     sub = parser.add_subparsers(dest='mode', required=True)
     collect = sub.add_parser('run')
     collect.add_argument('output', type=Path)
+    check = sub.add_parser('check', help='Full runtime tests and coverage only; never qualification')
+    check.add_argument('output', type=Path)
     combine = sub.add_parser('gate')
     combine.add_argument('folders', nargs='+', type=Path)
     combine.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
-    sys.exit(run(args.output.resolve()) if args.mode == 'run' else gate(args.folders, args.output))
+    sys.exit(run(args.output.resolve(), coverage_only=args.mode == 'check')
+             if args.mode in ('run', 'check') else gate(args.folders, args.output))

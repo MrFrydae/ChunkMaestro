@@ -1,5 +1,8 @@
 # Issue 3 storage safety qualification
 
+Current scheduling and hang diagnostics: [Storage CI](storage-ci.md). Full
+qualification is explicitly requested for a candidate; ordinary pushes run coverage/tests.
+
 This is implementation evidence, not independent QA or merge acceptance. Q149,
 Q153, Q163–164, Q189–195 and directive §13 govern. Historical functional,
 security/reliability and UX/performance verdicts against 9122a15 remain FAIL.

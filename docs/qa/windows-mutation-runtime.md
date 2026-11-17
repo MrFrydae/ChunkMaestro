@@ -1,5 +1,8 @@
 # Windows mutation runtime investigation — issue #3, PR #6
 
+Current scheduling and hang diagnostics: [Storage CI](storage-ci.md). Full
+qualification is explicitly requested for a candidate; ordinary pushes run coverage/tests.
+
 Implementation/performance investigation, not independent QA approval. Investigated
 head: `94b30ab7027ce7f6580b150e2007d2ba2b64e1cb`. Requirements: Q149/Q153,
 Q163–164, Q189–195; all three independent QA roles remain required. No production,
@@ -298,7 +301,8 @@ The mandatory experiment above describes the historical investigation pipeline.
 Normal PR qualification now omits the fourteen-suite concurrency experiment and
 the CPU profile. Both remain available as independent opt-in jobs through the
 Storage safety workflow's `diagnostics` dispatch input. They are not qualification
-prerequisites. Windows mutation concurrency stays two; macOS stays four.
+prerequisites. Windows mutation concurrency returns to four after the actual
+two-worker mutation timeout below; macOS stays four.
 
 The complete official Persistence campaign now runs once, within the validated
 official/private pair, rather than once in each collector. The aggregate uses
@@ -306,3 +310,31 @@ that original report without changing scope, eligibility, thresholds, kill-credi
 rules or cross-platform requirements. See `mutation-replay.md` for the current
 artifact contract. Removing duplicate execution is not a claimed measured
 throughput gain or a qualification PASS.
+
+### Two-worker mutation outcome and restoration of prior setting
+
+The [Windows measurement at `ba6c0b0`](https://github.com/MrFrydae/ChunkMaestro/actions/runs/43924148354/job/133499220964)
+completed coverage and Domain/Application collection, then exhausted the official
+Persistence command's unchanged 5,400-second limit (recorded 5,400.97 seconds).
+The raw debug log shows continued test activity through the deadline. The private
+command never started; no complete Windows catalogue or mutation score exists.
+Baseline and restored suites each passed all 185 Windows cases; restoration and
+the disposable full-volume fixture passed. These do not turn incomplete mutation
+collection into qualification. macOS completed both mutation commands and its
+measurement job; the combined gate correctly rejected the incomplete Windows pair.
+
+Windows artifact `14263900440` was downloaded and its archive SHA-256 verified as
+`7570f933b32d88d992f2e5cf1387f4c848ddb59458db5da4cc141a65ed9fba82`.
+Raw result, command ledger and official debug log were reopened under
+`/tmp/pr6-ba6c0b0-inspect/`; the original archive remains
+`/tmp/pr6-ba6c0b0-windows.zip`. No report was edited or incomplete kill credited.
+
+The two-worker setting selected for the ordinary-suite experiment did not deliver
+a complete actual mutation pass. Restore the earlier four-worker setting, for
+which historical Windows campaigns completed (see the `d064403` collection and
+`0833443` official pass). This is a return to a previously executed configuration,
+not a controlled same-head speedup measurement. The normal workflow still omits
+the duplicate official campaign and optional diagnostics. Scope, thresholds,
+original eligibility, timeout credit and command/job budgets remain unchanged.
+No identical rerun or budget increase is used as a repair. Fresh-head Windows
+execution and full independent acceptance remain required.

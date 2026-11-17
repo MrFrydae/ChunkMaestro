@@ -1,16 +1,18 @@
 name: Storage safety
 on:
   pull_request:
+    types: [labeled]
   workflow_dispatch:
     inputs:
       diagnostics:
         description: Run additional Windows CPU and concurrency diagnostics
         type: boolean
         default: false
+run-name: ${{ (github.event_name == 'workflow_dispatch' || github.event.label.name == 'storage-qualify') && 'Storage qualification' || 'Storage qualification not requested' }}
 permissions:
   contents: read
 concurrency:
-  group: storage-safety-${{ github.event.pull_request.number || github.ref }}
+  group: storage-qualification-${{ github.event.pull_request.head.sha || github.sha }}
   cancel-in-progress: true
 jobs:
   windows-profile:
@@ -64,6 +66,7 @@ jobs:
           path: .artifacts/windows-runtime/
           if-no-files-found: error
   measure:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.label.name == 'storage-qualify' }}
     strategy:
       fail-fast: false
       matrix:
@@ -97,6 +100,9 @@ jobs:
         run: python tooling/quality/storage/volume.py .artifacts/storage/${{ matrix.os }}/volume
       - if: ${{ !cancelled() && runner.os == 'macOS' }}
         run: python tooling/quality/storage/native.py .artifacts/storage/${{ matrix.os }}/native
+      - name: Explain storage outcome and retained evidence
+        if: ${{ !cancelled() }}
+        run: python tooling/quality/storage/summary.py .artifacts/storage/${{ matrix.os }}
       - if: ${{ !cancelled() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -105,7 +111,7 @@ jobs:
           path: .artifacts/storage/${{ matrix.os }}/
           if-no-files-found: error
   gate:
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || github.event.label.name == 'storage-qualify') }}
     needs: measure
     runs-on: ubuntu-24.04
     steps:

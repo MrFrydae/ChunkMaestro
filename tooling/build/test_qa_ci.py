@@ -1,11 +1,41 @@
 """Trust, head binding and risk escalation checks for CI QA publication."""
 import json
 import unittest
+from unittest.mock import patch
 
 import qa_ci
 
 
 class QaCiTests(unittest.TestCase):
+    def test_storage_requires_latest_requested_exact_head_full_run_and_all_jobs(self):
+        head = 'a' * 40
+        run = {'id': 2, 'head_sha': head, 'display_title': 'Storage qualification',
+               'event': 'pull_request', 'status': 'completed', 'conclusion': 'success',
+               'jobs_url': 'https://api.github.com/jobs', 'html_url': 'https://github.com/run/2'}
+        jobs = [{'name': name, 'conclusion': 'success'} for name in
+                ('measure (windows-2025)', 'measure (macos-15)', 'gate')]
+        for defect in ('none', 'missing', 'stale', 'fast', 'running', 'failure', 'skipped', 'newer-failed'):
+            with self.subTest(defect=defect):
+                candidate = dict(run)
+                incoming_jobs = [dict(job) for job in jobs]
+                if defect == 'stale': candidate['head_sha'] = 'b' * 40
+                if defect == 'fast': candidate['display_title'] = 'Storage qualification not requested'
+                if defect == 'running': candidate['status'] = 'in_progress'
+                if defect == 'failure': candidate['conclusion'] = 'failure'
+                if defect == 'skipped': incoming_jobs[2]['conclusion'] = 'skipped'
+                runs = [] if defect == 'missing' else [candidate]
+                if defect == 'newer-failed': runs.append(dict(run, id=3, conclusion='failure'))
+                with patch.object(qa_ci, 'api', side_effect=[{'workflow_runs': runs}, {'jobs': incoming_jobs}]):
+                    if defect == 'none':
+                        self.assertEqual(qa_ci.storage_qualification('repos/o/r', head,
+                            ['src/ChunkMaestro.Persistence/Store.cs'])['run_id'], 2)
+                    else:
+                        with self.assertRaises(ValueError):
+                            qa_ci.storage_qualification('repos/o/r', head, ['src/ChunkMaestro.Persistence/Store.cs'])
+        with patch.object(qa_ci, 'api') as api:
+            self.assertIsNone(qa_ci.storage_qualification('repos/o/r', head, ['docs/readme.md']))
+            api.assert_not_called()
+
     def setUp(self):
         self.head = 'a' * 40
         self.report = {'head': self.head, 'implementers': ['implementation-agent', 'lead'],

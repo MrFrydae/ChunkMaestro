@@ -69,7 +69,10 @@ def trusted_context(env, event, head):
 def complete_report(directory, record, root=ROOT, threshold=80, module=None):
     """Validate terminal, source-bound reports; code 2 only means threshold failure."""
     if record['timeout'] or record['exit_code'] not in (0, 2):
-        raise ValueError('Mutation execution failed or timed out')
+        reason = record.get('timeout_reason', 'process-error')
+        age = record.get('last_log_update_age_seconds', 'unknown')
+        raise ValueError(f'Mutation collection stopped: {reason}; exit={record["exit_code"]}; '
+                         f'last observed log update {age}s ago; raw log: {record.get("log", "unavailable")}')
     reports = list(directory.rglob('mutation-report.json'))
     if len(reports) != 1:
         raise ValueError('Missing or ambiguous mutation report')

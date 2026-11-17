@@ -18,10 +18,8 @@ class AdapterTests(unittest.TestCase):
         original = json.loads((ci.ROOT / ci.replay_configuration('Darwin')).read_bytes())
         windows = json.loads((ci.ROOT / ci.replay_configuration('Windows')).read_bytes())
         self.assertEqual(original['stryker-config']['concurrency'], 4)
-        self.assertEqual(windows['stryker-config']['concurrency'], 2)
-        restored = json.loads(json.dumps(windows))
-        restored['stryker-config']['concurrency'] = 4
-        self.assertEqual(restored, original)
+        self.assertEqual(windows['stryker-config']['concurrency'], 4)
+        self.assertEqual(windows, original)
         for system in ('Windows', 'Darwin'):
             self.assertEqual(qualify.mutation_configuration('Persistence', system),
                              json.loads((ci.ROOT / ci.replay_configuration(system)).read_bytes()))

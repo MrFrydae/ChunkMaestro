@@ -16,6 +16,116 @@ import replay
 
 
 class ReplayContracts(unittest.TestCase):
+    def simulated_command(self, label='official', updates=None, exit_at=None, deadline=900, args=None):
+        """Synthetic clock/process; never a runtime or performance acceptance claim."""
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        clock = [0]
+        proc = MagicMock()
+        running = [True]
+        fired = set()
+        def wait(timeout):
+            self.assertGreaterEqual(timeout, 0)
+            if not running[0]:
+                return -9
+            clock[0] += timeout
+            for stamp, source in (updates or {}).items():
+                if stamp <= clock[0] and stamp not in fired:
+                    fired.add(stamp)
+                    if source == 'stdout':
+                        path = next(root.glob(label + '-*.log'))
+                        with path.open('ab') as stream:
+                            stream.write(b'new console activity\n')
+                    else:
+                        path = root / 'mutation/logs/log-fixture.txt'
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        with path.open('ab') as stream:
+                            stream.write(b'2026-11-16T00:00:00Z [DBG] "Runner 1": Test session finished.\n')
+            if exit_at is not None and clock[0] >= exit_at:
+                running[0] = False
+                return 0
+            raise subprocess.TimeoutExpired('synthetic', timeout)
+        proc.wait.side_effect = wait
+        proc.poll.side_effect = lambda: None if running[0] else -9
+        proc.kill.side_effect = lambda: running.__setitem__(0, False)
+        output = io.StringIO()
+        with patch.object(replay.time, 'monotonic', side_effect=lambda: clock[0]), \
+                patch.object(replay.subprocess, 'Popen', return_value=proc), \
+                patch.object(replay.os, 'killpg', side_effect=lambda *a: proc.kill()), \
+                contextlib.redirect_stdout(output):
+            result = replay.command(args or ['fixture', '--output', root / 'mutation'],
+                                    root, root, label, {}, deadline)
+        return result, output.getvalue(), proc
+
+    def test_mutation_inactivity_stops_with_reason_and_finite_cleanup(self):
+        result, output, proc = self.simulated_command()
+        self.assertTrue(result['timeout'])
+        self.assertEqual(result['timeout_reason'], 'log-inactivity')
+        self.assertEqual(result['seconds'], 600)
+        self.assertEqual(result['last_log_update_age_seconds'], 600)
+        self.assertEqual(result['observed_completed_test_sessions'], 0)
+        self.assertIn('reason=log-inactivity', output)
+        self.assertIn('remaining=300s', output)
+        self.assertIn('last_log_update_age=600s', output)
+        self.assertIn('raw_log=', output)
+        self.assertIn('collection is incomplete', output)
+        proc.kill.assert_called_once()
+        with self.assertRaises(ValueError):
+            replay.require(result)
+
+    def test_stdout_or_main_debug_log_changes_reset_mutation_inactivity(self):
+        for source in ('stdout', 'details'):
+            with self.subTest(source=source):
+                result, output, proc = self.simulated_command(updates={300: source}, exit_at=750)
+                self.assertFalse(result['timeout'])
+                self.assertEqual(result['seconds'], 750)
+                self.assertEqual(result['observed_completed_test_sessions'], int(source == 'details'))
+                self.assertNotIn('STOP official', output)
+                self.assertIn('last_log_update_age=0s', output)
+                proc.kill.assert_not_called()
+
+    def test_ordinary_commands_keep_absolute_deadline_and_quiet_tests_are_not_called_stalled(self):
+        result, output, proc = self.simulated_command(label='baseline-test', exit_at=630)
+        self.assertFalse(result['timeout'])
+        self.assertIsNone(result['inactivity_limit_seconds'])
+        self.assertIn('inactivity_limit=disabled', output)
+        proc.kill.assert_not_called()
+        result, output, proc = self.simulated_command(deadline=45)
+        self.assertTrue(result['timeout'])
+        self.assertEqual(result['timeout_reason'], 'absolute-deadline')
+        self.assertEqual(result['seconds'], 45)
+        self.assertIn('reason=absolute-deadline', output)
+        proc.kill.assert_called_once()
+
+    def test_generated_qualify_labels_still_enable_mutation_watchdog(self):
+        result, output, _ = self.simulated_command(label='command-04', args=['dotnet', 'stryker'])
+        self.assertTrue(result['timeout'])
+        self.assertEqual(result['timeout_reason'], 'log-inactivity')
+        self.assertIn('STOP command-04', output)
+
+    def test_debug_log_session_count_observes_new_bytes_once_without_claiming_mutant_counts(self):
+        result, output, _ = self.simulated_command(updates={30: 'details', 60: 'details'}, exit_at=90)
+        self.assertFalse(result['timeout'])
+        self.assertEqual(result['observed_completed_test_sessions'], 2)
+        self.assertIn('Test session finished', result['last_observed_event'])
+        self.assertIn('observed_completed_test_sessions=2', output)
+        self.assertNotIn('completed_mutants=', output)
+
+    def test_actual_quiet_mutation_process_is_killed_at_inactivity_not_absolute_deadline(self):
+        with tempfile.TemporaryDirectory() as folder, \
+                patch.object(replay, 'MUTATION_INACTIVITY_SECONDS', 0.05), \
+                contextlib.redirect_stdout(io.StringIO()):
+            root = Path(folder)
+            result = replay.command([sys.executable, '-c', 'import time; time.sleep(30)'],
+                                    root, root, 'official', dict(replay.os.environ), 3)
+        self.assertTrue(result['timeout'])
+        self.assertEqual(result['timeout_reason'], 'log-inactivity')
+        self.assertIsNotNone(result['exit_code'])
+        self.assertLess(result['seconds'], 3)
+        with self.assertRaisesRegex(ValueError, 'reason=log-inactivity'):
+            replay.require(result)
+
     def test_running_command_emits_heartbeat_without_extending_deadline(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

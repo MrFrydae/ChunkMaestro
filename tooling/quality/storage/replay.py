@@ -29,6 +29,7 @@ PATCHED_FACTORY_SHA = 'ba884d6b60901af8743e3942f12a9237ef8f61c1874029dadc0578985
 FACTORY_SHA = '203c899e3f5bdd8b0f263b02559ab8f2d7c20754e6bd7c501ac2a1c6b360d3e7'
 REMOVE = b'                new IgnoreBlockMutantFilter(),\n'
 RESOURCE = Path(__file__).with_suffix('')
+MUTATION_INACTIVITY_SECONDS = 600
 
 
 def digest(data):
@@ -67,17 +68,74 @@ def environment(dotnet):
 
 
 def command(args, cwd, directory, label, env, timeout):
-    """Unique log, process-group timeout. A nonzero exit never means a kill."""
+    """Unique raw log, bounded deadline/inactivity, and observed process activity.
+
+    Log writes are activity evidence, not evidence of useful work or mutation kills.
+    Only mutation commands have an inactivity watchdog; quiet builds/tests keep
+    their existing absolute deadline. Raw logs and tool exit codes are preserved.
+    """
     log = directory / (label + '-' + uuid.uuid4().hex + '.log')
     started = time.monotonic()
+    last_activity = started
     timed_out = False
+    timeout_reason = None
     termination_error = None
-    displayed_bytes = 0
+    observed_bytes = 0
     displayed_details = {}
+    completed_sessions = 0
+    latest_event = None
+    mutation = label in ('official', 'private-patched') or 'stryker' in [str(a) for a in args[1:]]
+    inactivity_limit = MUTATION_INACTIVITY_SECONDS if mutation else None
     detail_directory = None
     if '--output' in args:
         detail_directory = Path(cwd) / Path(args[args.index('--output') + 1]) / 'logs'
-    print(f'[storage] START {label}; deadline={timeout}s; log={log}', flush=True)
+
+    def visible(data):
+        return re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', data.decode('utf-8', errors='replace')).replace('\r', '\n')
+
+    def sample_activity(now):
+        nonlocal last_activity, observed_bytes, completed_sessions, latest_event
+        length = log.stat().st_size
+        if length != observed_bytes:
+            last_activity = now
+            with log.open('rb') as progress:
+                progress.seek(max(observed_bytes if length > observed_bytes else 0, length - 512))
+                print('[storage] OUTPUT ' + visible(progress.read(512)), flush=True)
+            observed_bytes = length
+        if detail_directory is not None:
+            for detail in sorted(detail_directory.glob('log-*.txt')):
+                try:
+                    stamp = (detail.stat().st_size, detail.stat().st_mtime_ns)
+                    previous = displayed_details.get(detail)
+                    if previous is not None and previous['stamp'] == stamp:
+                        continue
+                    last_activity = now
+                    offset = previous['offset'] if previous and stamp[0] >= previous['offset'] else 0
+                    excerpt_start = max(offset, stamp[0] - 512)
+                    with detail.open('rb') as progress:
+                        progress.seek(offset)
+                        # Stream only new bytes with bounded line reads. A count
+                        # is observed session completions, never unique mutants.
+                        pending = stamp[0] - offset
+                        while pending > 0:
+                            chunk = progress.readline(min(65536, pending))
+                            if not chunk:
+                                break
+                            pending -= len(chunk)
+                            if re.match(rb'^\d{4}-\d{2}-\d{2}T.*\[(?:DBG|INF|WRN|ERR)\]', chunk):
+                                completed_sessions += len(re.findall(rb'"Runner \d+": Test session finished\.', chunk))
+                                latest_event = visible(chunk[-512:]).strip()
+                        offset = progress.tell()
+                        progress.seek(excerpt_start)
+                        excerpt = progress.read(min(512, stamp[0] - excerpt_start))
+                    print('[storage] PROGRESS ' + visible(excerpt), flush=True)
+                    displayed_details[detail] = {'stamp': stamp, 'offset': offset}
+                except OSError:
+                    # Diagnostic sampling must not interrupt collection.
+                    pass
+
+    limit_note = str(inactivity_limit) + 's' if inactivity_limit else 'disabled (absolute deadline applies)'
+    print(f'[storage] START {label}; deadline={timeout}s; inactivity_limit={limit_note}; log={log}', flush=True)
     with log.open('wb') as stream:
         proc = subprocess.Popen([str(a) for a in args], cwd=cwd, env=env, stdout=stream,
                                 stderr=subprocess.STDOUT, start_new_session=os.name != 'nt')
@@ -99,36 +157,34 @@ def command(args, cwd, directory, label, env, timeout):
             return proc.wait(timeout=15)
         try:
             while True:
-                remaining = timeout - (time.monotonic() - started)
+                now = time.monotonic()
+                remaining = timeout - (now - started)
+                quiet_remaining = inactivity_limit - (now - last_activity) if inactivity_limit else remaining
                 try:
-                    code = proc.wait(timeout=max(0, min(30, remaining)))
+                    code = proc.wait(timeout=max(0, min(30, remaining, quiet_remaining)))
                     break
                 except subprocess.TimeoutExpired:
-                    if time.monotonic() - started < timeout:
-                        length = log.stat().st_size
-                        print(f'[storage] WAIT {label}; elapsed={time.monotonic()-started:.0f}s; log_bytes={length}', flush=True)
-                        if length > displayed_bytes:
-                            with log.open('rb') as progress:
-                                progress.seek(max(0, length - 512))
-                                excerpt = progress.read(512).decode('utf-8', errors='replace')
-                            print('[storage] OUTPUT ' + re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', excerpt).replace('\r', '\n'), flush=True)
-                            displayed_bytes = length
-                        if detail_directory is not None:
-                            for detail in sorted(detail_directory.glob('log-*.txt')):
-                                try:
-                                    stamp = (detail.stat().st_size, detail.stat().st_mtime_ns)
-                                    if displayed_details.get(detail) == stamp:
-                                        continue
-                                    with detail.open('rb') as progress:
-                                        progress.seek(max(0, stamp[0] - 512))
-                                        excerpt = progress.read(512).decode('utf-8', errors='replace')
-                                    print('[storage] PROGRESS ' + re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', excerpt).replace('\r', '\n'), flush=True)
-                                    displayed_details[detail] = stamp
-                                except OSError:
-                                    # Diagnostic sampling must not interrupt collection.
-                                    pass
+                    now = time.monotonic()
+                    sample_activity(now)
+                    elapsed = now - started
+                    quiet = now - last_activity
+                    print(f'[storage] WAIT {label}; elapsed={elapsed:.0f}s; remaining={max(0, timeout-elapsed):.0f}s; '
+                          f'last_log_update_age={quiet:.0f}s; log_bytes={log.stat().st_size}; '
+                          f'observed_completed_test_sessions={completed_sessions}; '
+                          'log activity does not establish useful progress or mutation kills', flush=True)
+                    if latest_event:
+                        print('[storage] LAST EVENT ' + latest_event, flush=True)
+                    if elapsed >= timeout:
+                        timeout_reason = 'absolute-deadline'
+                    elif inactivity_limit and quiet >= inactivity_limit:
+                        timeout_reason = 'log-inactivity'
+                    else:
                         continue
                     timed_out = True
+                    print(f'[storage] STOP {label}; reason={timeout_reason}; elapsed={elapsed:.0f}s; '
+                          f'last_log_update_age={quiet:.0f}s; deadline={timeout}s; '
+                          f'inactivity_limit={limit_note}; raw_log={log}; '
+                          'collection is incomplete and receives no timeout kill credit', flush=True)
                     try:
                         code = stop()
                     except subprocess.TimeoutExpired:
@@ -138,16 +194,27 @@ def command(args, cwd, directory, label, env, timeout):
         except KeyboardInterrupt:
             stop()
             raise
+    ended = time.monotonic()
+    if mutation and not timed_out:
+        sample_activity(ended)
     result = {'args': [str(a) for a in args], 'cwd': str(cwd), 'exit_code': code,
-              'timeout': timed_out, 'seconds': time.monotonic() - started,
-              'log': str(log), 'log_sha256': digest(log.read_bytes())}
+              'timeout': timed_out, 'seconds': ended - started,
+              'log': str(log), 'log_sha256': digest(log.read_bytes()),
+              'inactivity_limit_seconds': inactivity_limit,
+              'last_log_update_age_seconds': max(0, ended - last_activity),
+              'observed_completed_test_sessions': completed_sessions}
+    if timeout_reason:
+        result['timeout_reason'] = timeout_reason
+    if latest_event:
+        result['last_observed_event'] = latest_event
     if termination_error:
         result['termination_error'] = termination_error
     with (directory / 'commands.jsonl').open('a', encoding='utf-8') as stream:
         stream.write(json.dumps(result, sort_keys=True) + '\n')
         stream.flush()
         os.fsync(stream.fileno())
-    print(f'[storage] END {label}; exit={code}; timeout={timed_out}; elapsed={result["seconds"]:.1f}s', flush=True)
+    print(f'[storage] END {label}; exit={code}; timeout={timed_out}; '
+          f'reason={timeout_reason or "process-exit"}; elapsed={result["seconds"]:.1f}s', flush=True)
     if timed_out or code not in (0, 2):
         # Bounded diagnostic tail; full immutable command output remains retained.
         with log.open('rb') as stream:
@@ -158,7 +225,11 @@ def command(args, cwd, directory, label, env, timeout):
 
 def require(result):
     if result['timeout'] or result['exit_code']:
-        raise ValueError('Command failed or timed out; see ' + result['log'])
+        reason = result.get('timeout_reason') or ('timeout' if result['timeout'] else 'process-exit')
+        raise ValueError(f'Command failed: reason={reason}; exit={result["exit_code"]}; '
+                         f'elapsed={result.get("seconds", "unknown")}s; '
+                         f'last_log_update_age={result.get("last_log_update_age_seconds", "unknown")}s; '
+                         'see ' + result['log'])
 
 
 def build_private(output, dotnet, archive=None):
