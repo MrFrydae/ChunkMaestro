@@ -50,13 +50,26 @@ class PilotContracts(unittest.TestCase):
 
     def write(self, path, text):
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding='utf-8')
+        # Reports bind exact source bytes; native newline translation would make
+        # every Windows fixture differ from the source embedded in its report.
+        path.write_bytes(text.encode('utf-8'))
         return path
 
     def json(self, path, value):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(shards.canonical(value))
         return path
+
+    def test_newline_translation_is_rejected_and_fixture_restores_exact_bytes(self):
+        original_report = self.report.read_bytes()
+        source = self.raw['files'][self.code]['source']
+        (self.root / self.code).write_bytes(source.replace('\n', '\r\n').encode('utf-8'))
+        with self.assertRaises(ValueError):
+            shards.read_catalogue(self.report, self.root)
+        self.write(self.root / self.code, source)
+        self.assertEqual((self.root / self.code).read_bytes(), source.encode('utf-8'))
+        self.assertEqual(shards.read_catalogue(self.report, self.root), self.catalogue)
+        self.assertEqual(self.report.read_bytes(), original_report)
 
     def report_result(self, statuses):
         raw = deepcopy(self.raw)
