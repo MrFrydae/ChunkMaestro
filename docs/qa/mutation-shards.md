@@ -316,6 +316,38 @@ The corrected tooling suite passed **117 tests**, including full-config tamper
 refusal and proof that execution configs retain their original policy. A fresh
 hosted pilot and independent review remain necessary.
 
+## Windows diagnostic completion and retained tool backups
+
+At `3e00198`, Windows planning completed. Its heaviest private batch later hit
+the shared-budget-derived absolute deadline during mutation testing. Initial
+tests and coverage capture consumed most of the command budget. No complete
+report or mutation credit follows. The next investigation must reduce repeated
+per-worker test/setup cost, rather than retry the identical campaign or silently
+raise deadlines. macOS preparation was separately never assigned a hosted runner
+because of GitHub arm64 capacity constraints; its missing-artifact probe is not
+a product test failure.
+
+All Windows restoration commands passed, but the exact output inventory refused
+one newly added `ChunkMaestro.Persistence.dll.stryker-unchanged` file. Its hash
+matches the original baseline DLL; no original runtime file changed or vanished.
+The downloaded probe ZIP was verified against GitHub SHA-256
+`76053d21fb365b41d5e6ffc4304ca6f74d45372c39367c487fd130aaedb48f8e`.
+Original inventory/logs/result:
+`/var/folders/8p/klwq9s9n3jg2hm6pqx99hc3w0000gn/T/cm-win-shard-failure-5mcwnpyn`.
+
+The collector now retains a new `.dll.stryker-unchanged` copy under the evidence
+directory only when its bytes match an actual original runtime DLL. It verifies
+the retained bytes before removing the disposable runtime copy. The original
+restored inventory stays unchanged as raw evidence; a separate final inventory
+must exactly match the baseline after this transfer. Unknown files, changed
+runtime files, missing originals and nonmatching backups still deny restoration.
+There is no broad suffix exclusion or discarded backup evidence. A timed-out
+mutation command remains unresolved even if restoration succeeds.
+
+**118 storage tooling tests passed**, including positive verified retention,
+nonmatching-backup preservation/refusal and unknown-runtime-file refusal.
+Independent review and a new bounded runtime strategy remain outstanding.
+
 ## Evidence and reproduction
 
 Prior verified research (read before implementation):

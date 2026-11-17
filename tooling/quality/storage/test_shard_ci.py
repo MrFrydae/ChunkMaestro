@@ -336,6 +336,28 @@ class PilotContracts(unittest.TestCase):
                 budget.command(['tool'], self.root, self.folder, 'private-patched', timeout=300, reserve=90)
             self.assertEqual(1, run.call_count)
 
+    def test_only_byte_identical_new_stryker_backup_is_retained_outside_runtime(self):
+        name = 'tooling/quality/storage/bin/Release/net10.0/ChunkMaestro.Persistence.dll'
+        original_file = self.write(self.root / name, 'original runtime')
+        original = shard_ci.binaries(self.root)
+        backup = self.root / (name + '.stryker-unchanged')
+        backup.write_bytes(original_file.read_bytes())
+        output = self.folder / 'retained'
+        result = shard_ci.retain_tool_backups(self.root, output, original)
+        self.assertEqual(len(result), 1)
+        self.assertEqual((output / result[0]['evidence_file']).read_bytes(), original_file.read_bytes())
+        self.assertFalse(backup.exists())
+        self.assertEqual(shard_ci.binaries(self.root), original)
+        backup.write_bytes(b'not the original')
+        with self.assertRaisesRegex(ValueError, 'does not match'):
+            shard_ci.retain_tool_backups(self.root, self.folder / 'bad', original)
+        self.assertEqual(backup.read_bytes(), b'not the original')
+        backup.unlink()
+        unknown = self.write(original_file.parent / 'extra.dll', 'unknown')
+        self.assertEqual(shard_ci.retain_tool_backups(self.root, self.folder / 'unknown', original), [])
+        self.assertTrue(unknown.exists())
+        self.assertNotEqual(shard_ci.binaries(self.root), original)
+
     def test_private_builder_restores_command_wrapper(self):
         original = replay.command
         budget = shard_ci.Budget(420, {})

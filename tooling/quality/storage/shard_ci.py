@@ -292,6 +292,28 @@ def binaries(root):
     return result
 
 
+def retain_tool_backups(root, output, original):
+    """Preserve verified Stryker copies as evidence; never ignore output changes."""
+    current = binaries(root)
+    retained = []
+    for name in sorted(set(current) - set(original)):
+        if not name.endswith('.dll.stryker-unchanged'):
+            continue
+        target = name.removesuffix('.stryker-unchanged')
+        require(target in original and current[name] == original[target],
+                'Stryker backup does not match original runtime assembly: ' + name)
+        source = replay_gate.child(root, name)
+        destination = replay_gate.child(output, 'tool-backups/' + name)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with destination.open('xb') as stream:
+            stream.write(source.read_bytes())
+        require(replay.digest(destination.read_bytes()) == original[target], 'retained tool backup changed')
+        source.unlink()
+        retained.append({'original_runtime_file': target, 'sha256': original[target],
+                         'evidence_file': destination.relative_to(output).as_posix()})
+    return retained
+
+
 def verify_probe_report(report, root, plan, batch, cases):
     """Account this batch only; never fabricate absent batch records."""
     value = shards.read_catalogue(report, root)
@@ -464,7 +486,10 @@ def probe(bundle_folder, output, root=ROOT):
             try:
                 restored = baseline('restored', 0)
                 require(restored == initial_cases, 'restored full test-case identities differ')
-                require(binaries(root) == initial_binaries, 'restored product/test binaries differ')
+                result['retained_tool_backups'] = retain_tool_backups(root, output, initial_binaries)
+                final_binaries = binaries(root)
+                replay.write(output / 'restored-final-binaries.json', final_binaries)
+                require(final_binaries == initial_binaries, 'restored product/test binaries differ')
                 result['baseline_restored'] = True
             except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
                 result.update(status='UNRESOLVED', restoration_error=str(error))
