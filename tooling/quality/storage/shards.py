@@ -90,6 +90,18 @@ def read_catalogue(report, root, host_root=None):
 def bound_tests(raw, root, expected_tests, host_root=None):
     tests, files = {}, set()
     for name, file in raw.get('testFiles', {}).items():
+        # Stryker preserves the Compile Include spelling from MutationTests.csproj
+        # in absolute test filenames. Map only this known emitter spelling; do
+        # not normalize arbitrary traversal or change the original report bytes.
+        normalized = name.replace('\\', '/')
+        if host_root is not None:
+            prefix = host_root.replace('\\', '/').rstrip('/') + '/'
+            emitted = prefix + 'tooling/quality/storage/../../../tests/ChunkMaestro.PersistenceTests/'
+            if normalized.startswith(emitted):
+                leaf = normalized[len(emitted):]
+                require(re.fullmatch(r'[A-Za-z0-9_.-]+\.cs', leaf), 'invalid emitted test filename')
+                replay_gate.child(Path(root), 'tooling/quality/storage')
+                name = prefix + 'tests/ChunkMaestro.PersistenceTests/' + leaf
         path, relative = report_path(root, name, host_root)
         require(relative not in files, 'duplicate test source')
         files.add(relative)

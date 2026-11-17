@@ -140,6 +140,14 @@ method definitions use the same mapping and byte checks. A prefix from an
 untrusted report is not authentication: the collector must bind it to the actual
 producer workspace and must independently verify the inventory/head.
 
+Stryker also emits absolute test filenames with the literal Compile Include
+spelling `tooling/quality/storage/../../../tests/ChunkMaestro.PersistenceTests/`.
+For transferred test definitions only, the binder maps that exact prefix plus
+one safe `.cs` filename to the canonical tests directory. It checks the local
+project-directory path for symlinks and then applies the ordinary source-byte,
+symlink and duplicate-file guards. Arbitrary `..` paths and aliased duplicate
+test definitions still deny. Raw report bytes and their digests are unchanged.
+
 `validate_batches(plan_value, batches, records, root, expected_binding,
 original_report, expected_tests, original_host_root=None)` independently rebuilds
 both plans and parses every raw report. Records contain `batch_id`, `plan_sha256`,
@@ -209,6 +217,17 @@ batch only; they cannot satisfy the full premerge workflow or independent QA.
 Local integration validation: **113 storage-tooling tests**, **16 build-tooling
 tests**, Python compilation and the specification checker passed. No hosted
 Windows/macOS pilot or production speedup has yet been measured by this change.
+
+The first hosted macOS preparation at `cccfee0` completed in 169.4 seconds and
+retained 811 identities, 27 CompileError rows and all 195 runtime cases. Transfer
+preflight then refused the emitted test-path spelling before mutation execution.
+The corrected binder passed offline checks against the original hash-verified
+98.6 MB artifact, including both indices, deterministic plans, raw command logs,
+private-build provenance and all 1,438 unchanged inventoried files. No private
+tool execution or SDK rebinding occurred during that offline check. **115 storage
+contracts passed**, including Windows/POSIX emitted-path and alias/traversal
+denials. A new hosted timing diagnostic remains necessary; no speedup or score
+is inferred from preparation or offline checks.
 
 ## Evidence and reproduction
 

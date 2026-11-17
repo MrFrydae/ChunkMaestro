@@ -125,6 +125,24 @@ class PilotContracts(unittest.TestCase):
         with self.assertRaises(ValueError):
             shard_ci.bind_tests(self.report, self.root, self.cases * 2)
 
+    def test_transferred_stryker_compile_include_test_paths_bind_without_raw_rewrite(self):
+        for producer in ('/Users/runner/work/repo', 'D:/a/repo'):
+            with self.subTest(producer=producer):
+                raw = deepcopy(self.raw)
+                name = producer + '/tooling/quality/storage/../../../' + self.test
+                raw['testFiles'] = {name: raw['testFiles'][self.test]}
+                path = self.json(self.folder / 'transferred.json', raw)
+                original = path.read_bytes()
+                self.assertEqual({'t': 'Tests.Case'}, shard_ci.bind_tests(path, self.root, self.cases, producer))
+                self.assertEqual(path.read_bytes(), original)
+                raw['testFiles'][producer + '/' + self.test] = raw['testFiles'][name]
+                with self.assertRaises(ValueError):
+                    shard_ci.bind_tests(self.json(self.folder / 'alias.json', raw), self.root, self.cases, producer)
+                for invalid in ('../Tests.cs', 'sub/Tests.cs', 'Tests.cs/../../outside.cs'):
+                    raw['testFiles'] = {name.rsplit('/', 1)[0] + '/' + invalid: self.raw['testFiles'][self.test]}
+                    with self.assertRaises(ValueError):
+                        shard_ci.bind_tests(self.json(self.folder / 'escape.json', raw), self.root, self.cases, producer)
+
     def test_index_never_accepts_actual_mutation_or_placeholder(self):
         for value in (self.report_result(['Killed', 'Ignored', 'CompileError']),):
             with self.assertRaises(ValueError):
