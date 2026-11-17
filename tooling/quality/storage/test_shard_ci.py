@@ -193,6 +193,7 @@ class PilotContracts(unittest.TestCase):
     def test_bundle_full_preflight_recomputes_plan(self):
         self.json(self.root / replay_ci.replay_configuration('Darwin'), self.config)
         self.json(self.folder / 'official-index.json', self.raw)
+        self.report.unlink()  # Only the official planning index is required.
         self.json(self.folder / 'plan.json', self.plan)
         self.json(self.folder / 'batches.json', self.packed)
         bundle = dict(self.current, schema_version=1, scope=shard_ci.SCOPE, status='PREPARED_DIAGNOSTIC',
@@ -241,7 +242,7 @@ class PilotContracts(unittest.TestCase):
         build = record('private-build', replay.private_build_command(self.dotnet, private_source),
                        private_source, self.folder / 'private')
         self.json(self.folder / 'private/provenance.json', {'binary': str(private), 'build': build})
-        for label, tool in (('official-index', bundle['official_tool_path']), ('private-index', private)):
+        for label, tool in (('official-index', bundle['official_tool_path']),):
             args = [self.dotnet, tool, '--config-file', self.root / replay_ci.replay_configuration('Darwin'),
                     '--mutate', '**/*.cs{0..1}']
             for exclusion in shards.EXCLUSIONS: args.extend(['--mutate', exclusion])
@@ -274,9 +275,9 @@ class PilotContracts(unittest.TestCase):
         with self.assertRaises(ValueError): shard_ci.validate_commands(self.folder, bundle, self.root)
         commands[-1]['args'][5] = '**/*.cs{0..1}'
         ledgers()
-        self.write(self.folder / 'private-index/reports/mutation-report.json', '{}')
+        self.write(self.folder / 'official-index/reports/mutation-report.json', '{}')
         with self.assertRaises(ValueError): shard_ci.validate_commands(self.folder, bundle, self.root)
-        self.json(self.folder / 'private-index/reports/mutation-report.json', self.raw)
+        self.json(self.folder / 'official-index/reports/mutation-report.json', self.raw)
         Path(commands[-1]['log']).write_text('tampered', encoding='utf-8')
         with self.assertRaises(ValueError): shard_ci.validate_commands(self.folder, bundle, self.root)
 

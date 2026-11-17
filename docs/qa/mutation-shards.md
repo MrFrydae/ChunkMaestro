@@ -114,8 +114,9 @@ This greedy packing can refuse a feasible width; no optimality is claimed.
 `batch_configuration(plan_value, batches, batch_id)` rebuilds/checks the canonical
 batch plan, copies the complete baseline configuration, and replaces only mutate.
 The baseline EF exclusions remain mandatory. Workers must use separate checkout
-and build outputs; the number of batches is the matrix bound for each tool and
-platform, not a measured runtime or an overall runner entitlement.
+and build outputs; the number of batches bounds the matrix's rows for each tool
+and platform. Concurrent runner slots are a separate limit, not a measured
+runtime or an overall runner entitlement.
 
 **Stryker 5 reporting workaround:** every batch prepends `**/*.cs{0..1}`.
 The planner refuses any input with an in-scope original mutation contained in
@@ -188,19 +189,27 @@ unrelated label has a different concurrency key and cannot cancel a requested
 pilot. Each planning and diagnostic job has a ten-minute hard cap.
 
 `python tooling/quality/storage/shard_ci.py prepare OUTPUT --batches N` freezes
-the complete passing runtime cases, source inputs, official/private catalogue
-indices, original CompileError mask and deterministic batch plan. It builds the
+the complete passing runtime cases, source inputs, official catalogue index,
+original CompileError mask and deterministic private-tool batch plan. It builds the
 private tool once per platform and retains its pinned archive, sole source patch,
 compiler/output provenance and advisory logs. The planning job has a shared
 420-second command budget and each index command is capped at 180 seconds.
 Preparation must return `PREPARED_DIAGNOSTIC`; a missing source, placeholder,
-changed eligibility mask, failing/skipped baseline or failed command is unresolved.
+failing/skipped baseline or failed command is unresolved. The original catalogue
+comes from the official tool; the execution-plan binding separately names the
+private tool's verified hash. Each completed private shard must return the entire
+official catalogue and identical original CompileError mask before any outcome
+is accounted. A second private planning-only index is unnecessary; the actual
+private execution report supplies that comparison. This does not remove either
+tool from the existing full-qualification workflow or change its merge gate.
 
 `python tooling/quality/storage/shard_ci.py probe BUNDLE OUTPUT` verifies the
 unchanged bundle, raw command ledger/logs, trusted same-workflow run/attempt,
 head/platform/SDK and complete workspace/source/test bytes before private
 execution. It runs only the heaviest packed batch: at most 16 batches are planned
-for Windows and four for macOS. The probe has a shared 480-second budget, caps
+per platform. Planning 16 macOS batches does not launch 16 jobs: the pilot still
+executes one, and a future full matrix must cap macOS concurrency at four. The
+probe has a shared 480-second budget, caps
 the mutation command at 300 seconds, and reserves 90 seconds for a clean rebuild
 and full baseline restoration. A completed batch reports only
 `PARTIAL_DIAGNOSTIC` / `qualification: NOT_EVALUATED`. Timeout/cancellation,
@@ -245,6 +254,37 @@ baseline and clean restoration each passed all **195 cases** and produced
 identical **311-file** runtime inventories. No mutation ran during that check.
 Logs/result: `/var/folders/8p/klwq9s9n3jg2hm6pqx99hc3w0000gn/T/cm-runtime-restoration-ey0jyi8r`.
 Fresh independent review and current-head hosted evidence remain required.
+
+At `67adf04`, Windows passed tooling and runtime coverage, built the private tool,
+and completed the official index in 172.6 seconds. The redundant private index
+then reached the remaining 83-second shared deadline; preparation refused at
+421 seconds with explicit `absolute-deadline` and retained logs. It was not an
+unexplained hang and receives no mutation credit. Preparation now performs six
+pinned command phases and only one official index. The 420-second shared budget,
+180-second index cap, complete official eligibility, private-report matching and
+all premerge gates remain unchanged. This removes a repeated planning command;
+hosted end-to-end duration and full parallel speedup are still unmeasured.
+
+The `67adf04` macOS private probe reached mutation execution, hit its explicit
+300-second deadline, then completed clean/build/test restoration and reported
+`baseline_restored`. This predates the complete 311-file inventory correction;
+it is historical diagnostic evidence, not full restoration qualification or
+mutation credit. Its four-batch plan assigned about 203 identities to a batch.
+The pilot now plans 16 batches on either platform with target weight 50, still
+executing only one heaviest batch per platform and preserving all deadlines.
+Batch count is distinct from the eventual concurrency limits: at most four
+macOS and 16 Windows runners, with queued batches where necessary.
+
+An offline replan of the immutable original official index, matched to repository
+C# source bytes, retained all 811 identities and 27 original CompileError rows.
+It produced 62 regions and 16 complete batches with weights 50 or 51, with no
+mutation execution, runtime prediction or qualification. Original measurement
+head remains `cccfee0`; comparison source head is `cbe546a`, with raw bytes and
+bindings preserved. Artifacts:
+`/var/folders/8p/klwq9s9n3jg2hm6pqx99hc3w0000gn/T/cm-finer-batch-plan-lr2xy2vl`.
+The next signed candidate must regenerate its own index and obtain fresh hosted
+timing; neither this historical replan nor the bounded role PASS at `cbe546a`
+accepts the newer local optimization or timestamp correction.
 
 ## Evidence and reproduction
 

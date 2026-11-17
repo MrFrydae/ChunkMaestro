@@ -20,7 +20,7 @@ jobs:
           - os: windows-2025
             batches: 16
           - os: macos-15
-            batches: 4
+            batches: 16
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:

@@ -187,11 +187,11 @@ def validate_bundle(folder, root, current, dotnet, version, sdk_hash):
     cases = baseline_cases(folder / 'coverage')
     require(cases == bundle['baseline_cases'], 'prepared full baseline differs')
     qualify.runtime_cases(folder)
-    original = index_catalogue(folder / 'private-index.json', root, bundle['sources'], cases,
+    # The official index freezes original eligibility. Each completed private
+    # shard must return this entire catalogue/mask before receiving any credit;
+    # a second private planning-only index adds no acceptance evidence.
+    original = index_catalogue(folder / 'official-index.json', root, bundle['sources'], cases,
                                bundle['workspace_root'])
-    official = index_catalogue(folder / 'official-index.json', root, bundle['sources'], cases,
-                               bundle['workspace_root'])
-    require(catalogue_masks(original) == catalogue_masks(official), 'official/private index eligibility differs')
     plan = load(folder / 'plan.json')
     binding = {'head': current['head'], 'sdk_version': version, 'sdk_sha256': sdk_hash,
                'tool_sha256': bundle['private_tool_sha256'], 'upstream_commit': replay.COMMIT,
@@ -222,7 +222,7 @@ def validate_commands(folder, bundle, root):
         raw.extend(json.loads(line) for line in ledger.read_text(encoding='utf-8').splitlines())
     require(Counter(shards.canonical(record) for record in raw) ==
             Counter(shards.canonical(record) for record in bundle['commands']), 'raw command ledger differs')
-    require(len(raw) == 7, 'missing or extra preparation commands')
+    require(len(raw) == 6, 'missing or extra preparation commands')
     by_label = {}
     for record in raw:
         log = relocated(record['log'])
@@ -232,7 +232,7 @@ def validate_commands(folder, bundle, root):
                 replay.digest(log.read_bytes()) == record['log_sha256'], 'failed command or changed raw log')
         by_label[label] = record
     require(set(by_label) == {'restore-runtime', 'restore-tool', 'restore-mutation-project',
-            'runtime-coverage', 'private-build', 'official-index', 'private-index'}, 'preparation phases differ')
+            'runtime-coverage', 'private-build', 'official-index'}, 'preparation phases differ')
     workspace = Path(bundle['workspace_root'])
     dotnet = bundle['sdk_path']
     expected = {
@@ -252,7 +252,7 @@ def validate_commands(folder, bundle, root):
             and by_label['private-build']['cwd'] == str(source), 'private build command differs from pinned policy')
     private_original = str(Path(bundle['original_bundle_root']) / 'private' / bundle['private_binary_relative'])
     require(provenance['binary'] == private_original, 'private entry point differs from original build')
-    for label, tool in (('official-index', bundle['official_tool_path']), ('private-index', private_original)):
+    for label, tool in (('official-index', bundle['official_tool_path']),):
         args = [dotnet, tool, '--config-file', str(workspace / replay_ci.replay_configuration(bundle['platform'])),
                 '--mutate', '**/*.cs{0..1}']
         for pattern in shards.EXCLUSIONS:
@@ -351,27 +351,22 @@ def prepare(output, max_batches, root=ROOT):
                           private_binary_relative=binary.relative_to(output / 'private').as_posix(),
                           private_tool_sha256=replay.digest(binary.read_bytes()),
                           official_tool_sha256=replay.digest(official.read_bytes()), official_tool_path=str(official))
-            catalogues = {}
-            for label, tool in (('official-index', official), ('private-index', binary)):
-                args = [dotnet, tool, '--config-file', root / replay_ci.replay_configuration(current['platform']),
-                        '--mutate', '**/*.cs{0..1}']
-                for pattern in shards.EXCLUSIONS:
-                    args.extend(['--mutate', pattern])
-                args.extend(['--output', output / label, '--log-to-file'])
-                record = budget.command(args, root / 'tooling/quality/storage', output, label, timeout=INDEX_SECONDS)
-                replay.require(record)
-                reports = list((output / label).rglob('mutation-report.json'))
-                require(len(reports) == 1, label + ': missing or ambiguous raw index')
-                (output / (label + '.json')).write_bytes(reports[0].read_bytes())
-                catalogues[label] = index_catalogue(reports[0], root, result['sources'], cases)
-            require(catalogue_masks(catalogues['official-index']) == catalogue_masks(catalogues['private-index']),
-                    'official/private index eligibility differs')
+            args = [dotnet, official, '--config-file', root / replay_ci.replay_configuration(current['platform']),
+                    '--mutate', '**/*.cs{0..1}']
+            for pattern in shards.EXCLUSIONS:
+                args.extend(['--mutate', pattern])
+            args.extend(['--output', output / 'official-index', '--log-to-file'])
+            record = budget.command(args, root / 'tooling/quality/storage', output, 'official-index', timeout=INDEX_SECONDS)
+            replay.require(record)
+            reports = list((output / 'official-index').rglob('mutation-report.json'))
+            require(len(reports) == 1, 'official-index: missing or ambiguous raw index')
+            (output / 'official-index.json').write_bytes(reports[0].read_bytes())
+            original = index_catalogue(reports[0], root, result['sources'], cases)
             binding = {'head': current['head'], 'sdk_version': version, 'sdk_sha256': sdk_hash,
                        'tool_sha256': result['private_tool_sha256'], 'upstream_commit': replay.COMMIT,
                        'platform': current['platform']}
             config = load(root / replay_ci.replay_configuration(current['platform']))
-            plan = shards.plan(catalogues['private-index'], config, binding,
-                               target=50 if current['platform'] == 'Windows' else 200)
+            plan = shards.plan(original, config, binding, target=50)
             packed = shards.batch_plan(plan, max_batches)
             replay.write(output / 'plan.json', plan)
             replay.write(output / 'batches.json', packed)
