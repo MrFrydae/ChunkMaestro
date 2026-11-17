@@ -9,7 +9,9 @@ import re
 import subprocess
 import sys
 import time
+import xml.etree.ElementTree as ET
 
+import initial_events
 import replay
 import replay_ci
 import replay_gate
@@ -21,6 +23,8 @@ ROOT = source.ROOT
 SCOPE = 'storage-test-cell-pilot'
 RESTORE_RESERVE = 120
 PRIVATE_SECONDS = 180
+INITIAL_OPTIONS = ('--diag', '--log-to-file', '--verbosity', 'trace')
+MUTATION_ASSEMBLY = 'tooling/quality/storage/bin/Release/net10.0/ChunkMaestro.PersistenceTests.dll'
 require = shards.require
 load = source.load
 
@@ -73,6 +77,7 @@ def configuration(plan, group):
     config['stryker-config']['mutate'] = [shards.CATALOGUE_KEEPALIVE, *shards.EXCLUSIONS,
         shards.pattern(region['root']), *(shards.pattern(n, True) for n in region['exclusions'])]
     config['stryker-config']['break-on-initial-test-failure'] = True
+    config['stryker-config']['concurrency'] = 1
     require(config['stryker-config'].get('coverage-analysis', 'perTest') == 'perTest', 'execution coverage policy differs')
     return config
 
@@ -100,6 +105,10 @@ def preflight(folder, root, current, dotnet, version, sdk_hash):
             'cell preparation manifest differs')
     for group in (0, 1):
         require(load(folder / f'cell-{group}-config.json') == configuration(plan, group), 'changed prepared cell config')
+    require(version == initial_events.SUPPORTED_SDK, 'unsupported initial-event SDK')
+    initial_source = sealed / 'private' / ('stryker-net-' + replay.COMMIT)
+    for name, expected in initial_events.SOURCE_HASHES.items():
+        initial_events.read_bound(replay_gate.child(initial_source, name), expected)
     return bundle, plan, binary
 
 
@@ -175,6 +184,35 @@ def selection_log(text, count):
             'UNRESOLVED: unsupported/missing successful initial-run representation')
 
 
+def initial_case_evidence(folder, plan, group, workspace):
+    """Reopen actual initial-session outcomes; summaries cannot replace raw logs."""
+    try:
+        logs = replay_gate.child(folder, 'mutation/logs')
+        phases = list(logs.glob('log-*.txt'))
+        runners = list(logs.glob('Runner *-log.txt'))
+        wire = logs / 'Runner 0-log.txt'
+        require(len(phases) == 1 and runners == [wire], 'missing/ambiguous initial event logs')
+        phase = replay_gate.child(folder, phases[0].relative_to(folder).as_posix())
+        wire = replay_gate.child(folder, wire.relative_to(folder).as_posix())
+        require(all(path.stat().st_size <= initial_events.MAX_LOG_BYTES for path in (phase, wire)),
+                'initial diagnostic log exceeds 32 MiB bound; raw files retained')
+        phase_bytes, wire_bytes = phase.read_bytes(), wire.read_bytes()
+        start, end = initial_events.phase_window(phase_bytes)
+        cases = [{'fqn': case['method'], 'display': case['display']}
+                 for case in plan['tests']['groups'][group]['cases']]
+        test_filter = plan['tests']['groups'][group]['filter']
+        observed = initial_events.inspect_wire(wire_bytes, start, end, cases,
+            str(Path(workspace) / MUTATION_ASSEMBLY), test_filter)
+        return {'status': 'PASS', 'credit': False, 'initial_cases_passed': True,
+            'phase_file': phase.relative_to(folder).as_posix(),
+            'phase_sha256': replay.digest(phase_bytes), 'wire_file': wire.relative_to(folder).as_posix(),
+            'wire_sha256': replay.digest(wire_bytes), 'phase_start': start.isoformat(),
+            'phase_end': end.isoformat(), 'test_case_filter': test_filter, **observed}
+    except (ValueError, KeyError, TypeError, AttributeError, OverflowError, RecursionError,
+            OSError, UnicodeError, IndexError, ET.ParseError) as error:
+        raise ValueError('affirmative initial-case evidence: ' + str(error)) from error
+
+
 def probe(folder, output, group, root=ROOT):
     output.mkdir(parents=True, exist_ok=False)
     result = {'schema_version': 1, 'scope': SCOPE, 'status': 'UNRESOLVED',
@@ -214,7 +252,7 @@ def probe(folder, output, group, root=ROOT):
             require(before == replay.workspace_hashes(root, False), 'baseline changed frozen workspace inputs')
             result['failure_phase'] = 'private'
             record = budget.command([dotnet, binary, '--config-file', output / 'cell-config.json',
-                '--output', output / 'mutation', '--log-to-file'], root / 'tooling/quality/storage', output,
+                '--output', output / 'mutation', *INITIAL_OPTIONS], root / 'tooling/quality/storage', output,
                 'private-cell', timeout=PRIVATE_SECONDS, reserve=RESTORE_RESERVE)
             require(type(record['exit_code']) is int and record['exit_code'] in (0, 2) and not record['timeout'],
                     'private cell incomplete; raw log=' + record['log'])
@@ -224,7 +262,9 @@ def probe(folder, output, group, root=ROOT):
             require((record['exit_code'] == 2) == details['raw_threshold_failed'], 'raw score/exit mismatch')
             selection_log(Path(record['log']).read_text(encoding='utf-8', errors='replace'),
                           len(plan['tests']['groups'][group]['cases']))
-            result.update(details, status='CELL_COMPLETE', failure_phase=None)
+            result['failure_phase'] = 'initial-case-evidence'
+            evidence = initial_case_evidence(output, plan, group, str(root))
+            result.update(details, initial_case_evidence=evidence, status='CELL_COMPLETE', failure_phase=None)
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         result['error'] = str(error)
     finally:
@@ -297,7 +337,7 @@ def validate_cell(folder, plan, bundle, current, root, prepared_relative=Path('.
             ('test', ['--no-restore', '--no-build', '--logger', 'trx', '--results-directory', str(output / label)])):
             expected.append([dotnet, verb, str(workspace / source.TEST_PROJECT), '-c', 'Release', *args])
     expected.insert(4, [dotnet, value['binary_path'], '--config-file', str(output / 'cell-config.json'),
-                        '--output', str(output / 'mutation'), '--log-to-file'])
+                        '--output', str(output / 'mutation'), *INITIAL_OPTIONS])
     for index, (record, args) in enumerate(zip(records, expected)):
         require(record['args'] == args and record['cwd'] == str(workspace / 'tooling/quality/storage' if index == 4 else workspace),
                 'changed cell command/options/cwd')
@@ -324,6 +364,8 @@ def validate_cell(folder, plan, bundle, current, root, prepared_relative=Path('.
     require((records[4]['exit_code'] == 2) == details['raw_threshold_failed'], 'raw score/exit mismatch')
     selection_log(relocated(folder, records[4]['log'], value['output_root']).read_text(encoding='utf-8', errors='replace'),
                   len(plan['tests']['groups'][group]['cases']))
+    evidence = initial_case_evidence(folder, plan, group, value['workspace_root'])
+    require(value['initial_case_evidence'] == evidence, 'initial-case evidence summary differs from raw events')
     return group, details
 
 

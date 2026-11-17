@@ -6,6 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 import uuid
+from unittest.mock import patch
 
 import initial_events as events
 
@@ -112,6 +113,24 @@ class InitialEventsTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.inspect([begin, self.done])
 
+    def test_filtered_selection_matches_exact_expected_filter(self):
+        expected = 'FullyQualifiedName=Tests.Theory'
+        begin = deepcopy(self.begin)
+        begin['Payload']['TestExecutionContext']['TestCaseFilter'] = expected
+        self.assertEqual(2, len(events.inspect_wire(self.raw([begin, self.done]), self.start, self.end,
+            self.cases, self.assembly, expected)['cases']))
+        for wrong in (None, 'FullyQualifiedName=Tests.Other'):
+            with self.assertRaisesRegex(ValueError, 'selection'):
+                events.inspect_wire(self.raw([begin, self.done]), self.start, self.end,
+                    self.cases, self.assembly, wrong)
+
+    def test_statistics_do_not_coerce_boolean_or_fractional_counts(self):
+        for count in (True, 2.0, '2'):
+            done = deepcopy(self.done)
+            done['Payload']['TestRunCompleteArgs']['TestRunStatistics']['ExecutedTests'] = count
+            with self.assertRaisesRegex(ValueError, 'statistics'):
+                self.inspect([self.begin, done])
+
     def test_missing_trace_and_duplicate_plan(self):
         for raw in (b'', b'count=2 passed', b'[RAW] unsupported'):
             with self.assertRaises(ValueError):
@@ -136,6 +155,14 @@ class InitialEventsTests(unittest.TestCase):
             self.assertEqual(result['status'], 'UNRESOLVED')
             self.assertFalse(result['credit'])
             self.assertFalse(result['initial_cases_passed'])
+
+    def test_diagnostic_size_bound_refuses_before_parsing(self):
+        raw = self.raw([self.begin, self.done])
+        with patch.object(events, 'MAX_LOG_BYTES', len(raw) - 1):
+            with self.assertRaisesRegex(ValueError, 'bound'):
+                events.inspect_wire(raw, self.start, self.end, self.cases, self.assembly)
+            with self.assertRaisesRegex(ValueError, 'bound'):
+                events.phase_window(raw)
 
 
 if __name__ == '__main__':

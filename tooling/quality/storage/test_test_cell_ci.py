@@ -12,6 +12,7 @@ import shards
 import shard_ci
 import test_cell_ci as cell
 import test_groups
+import test_initial_events as event_fixture
 
 
 class Cells(unittest.TestCase):
@@ -93,7 +94,7 @@ class Cells(unittest.TestCase):
                 ('test', ['--no-restore', '--no-build', '--logger', 'trx', '--results-directory', str(folder / label)])):
                 commands.append([sdk, verb, str(self.root / shard_ci.TEST_PROJECT), '-c', 'Release', *extra])
                 labels.append(label + '-' + verb)
-        commands.insert(4, [sdk, binary, '--config-file', str(folder / 'cell-config.json'), '--output', str(folder / 'mutation'), '--log-to-file'])
+        commands.insert(4, [sdk, binary, '--config-file', str(folder / 'cell-config.json'), '--output', str(folder / 'mutation'), *cell.INITIAL_OPTIONS])
         labels.insert(4, 'private')
         records = []
         for index, (args, label) in enumerate(zip(commands, labels)):
@@ -111,6 +112,25 @@ class Cells(unittest.TestCase):
         value['derived_group_view'] = {'status': 'DERIVED', 'cases': selected,
             'baseline_trx_sha256': cell.trx(folder / 'baseline')['trx_sha256'],
             'restored_trx_sha256': cell.trx(folder / 'restored')['trx_sha256']}
+        protocol = event_fixture.InitialEventsTests()
+        protocol.setUp()
+        protocol.assembly = str(self.root / cell.MUTATION_ASSEMBLY)
+        protocol.cases = [{'fqn': case['method'], 'display': case['display']} for case in selected]
+        protocol.results = [protocol.result(case) for case in protocol.cases]
+        protocol.begin['Payload']['AdapterSourceMap'] = {'_none_': [protocol.assembly]}
+        protocol.begin['Payload']['TestExecutionContext']['TestCaseFilter'] = self.plan['tests']['groups'][group]['filter']
+        protocol.done['Payload']['LastRunTests']['NewTestResults'] = protocol.results
+        stats = {'ExecutedTests': len(selected), 'Stats': {'Passed': len(selected)}}
+        protocol.done['Payload']['LastRunTests']['TestRunStatistics'] = stats
+        protocol.done['Payload']['TestRunCompleteArgs']['TestRunStatistics'] = stats
+        logs = folder / 'mutation/logs'
+        logs.mkdir()
+        (logs / 'Runner 0-log.txt').write_bytes(protocol.raw([protocol.begin, protocol.done]))
+        (logs / 'log-20261117.txt').write_bytes(
+            b'2026-11-17T12:00:00+00:00  [INF] Number of tests found: initial. Initial test run started.\n'
+            b'2026-11-17T12:00:00.500+00:00  [DBG] Runner 0: testing assembly fixture.\n'
+            b'2026-11-17T12:01:00+00:00  [DBG] Initial test run output: complete.\n')
+        value['initial_case_evidence'] = cell.initial_case_evidence(folder, self.plan, group, str(self.root))
         value['inventory'] = cell.cell_inventory(folder)
         replay.write(folder / 'cell.json', value)
         return folder
@@ -170,6 +190,30 @@ class Cells(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'config'):
                 self.validate()
 
+    def test_raw_initial_skips_partial_abort_and_wrong_selection_refused(self):
+        wire = self.folders[0] / 'mutation/logs/Runner 0-log.txt'
+        original = wire.read_bytes()
+        actions = [lambda messages: messages[1]['Payload']['LastRunTests']['NewTestResults'][0].update(Outcome=3),
+                   lambda messages: messages[1]['Payload']['LastRunTests']['NewTestResults'].pop(),
+                   lambda messages: messages[1]['Payload']['TestRunCompleteArgs'].update(IsAborted=True),
+                   lambda messages: messages[1]['Payload']['TestRunCompleteArgs'].update(IsCanceled=True),
+                   lambda messages: messages[0]['Payload']['TestExecutionContext'].update(TestCaseFilter=None)]
+        for action in actions:
+            lines = original.decode().splitlines()
+            messages = [json.loads(line.split(prefix, 1)[1]) for line, prefix in zip(lines, (cell.initial_events.SEND, cell.initial_events.RECEIVE))]
+            action(messages)
+            changed = b''.join((line.split(prefix, 1)[0] + prefix + json.dumps(message) + '\n').encode()
+                               for line, prefix, message in zip(lines, (cell.initial_events.SEND, cell.initial_events.RECEIVE), messages))
+            self.reseal(lambda folder, value: wire.write_bytes(changed))
+            with self.assertRaisesRegex(ValueError, 'affirmative initial-case'):
+                self.validate()
+        wire.write_bytes(original)
+
+    def test_initial_event_proof_cannot_be_absent_or_replaced_by_summary(self):
+        self.reseal(lambda folder, value: (folder / 'mutation/logs/Runner 0-log.txt').unlink())
+        with self.assertRaisesRegex(ValueError, 'affirmative initial-case'):
+            self.validate()
+
     def test_coordinated_foreign_private_entry_point_denied(self):
         def change(folder, value):
             binary = str(self.root / 'foreign/source/private' / self.bundle['private_binary_relative'])
@@ -219,7 +263,7 @@ class Cells(unittest.TestCase):
     def test_command_options_timeout_and_score_denied(self):
         original = (self.folders[0] / 'cell.json').read_bytes()
         ledger = (self.folders[0] / 'commands.jsonl').read_bytes()
-        for action in (lambda r: r[4]['args'].append('--since'), lambda r: r[4].update(timeout=True),
+        for action in (lambda r: r[4]['args'].append('--since'), lambda r: r[4]['args'].remove('--diag'), lambda r: r[4].update(timeout=True),
                        lambda r: r[4].update(seconds=181), lambda r: r[4].update(exit_code=2),
                        lambda r: r[7].update(exit_code=1), lambda r: r[4].update(log='/foreign/log')):
             def change(folder, value):

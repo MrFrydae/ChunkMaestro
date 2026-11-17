@@ -1,8 +1,9 @@
-# Initial test event evidence (bounded, unintegrated)
+# Initial test event evidence (bounded collector integration)
 
 This adds an affirmative initial-case predicate for PR 6, based on parent
-`909557a2345fc63b15c9b9bba4eb34f757a21d17`. It does not award kills, change a gate,
-or resume the two-cell pilot. Q190's 80% actual mutation kills, 90% line/85% branch,
+`909557a2345fc63b15c9b9bba4eb34f757a21d17`. The two-cell collector requires it
+during collection and read-only final accounting. It does not independently
+award kills, change a qualification gate or resume the pilot. Q190's 80% actual mutation kills, 90% line/85% branch,
 Windows/macOS, native/volume/recovery and all-role acceptance remain mandatory.
 The fresh partial/Skipped findings remain integration blockers until independent
 review passes. No hosted run is alleged to have entered those states; hosted
@@ -14,8 +15,10 @@ Official archive SHA-256:
 `80702658bac0989e9416e43239ee9d0ca971cea79628bed2b7b1917edd07b269`, commit
 `6e77a3451bac4793e9c839c3ff4055c1b30ca3af`, verified read-only before extraction.
 The parser pins the hashes of eight relevant archive files in `SOURCE_HASHES`.
-No upstream source, private binaries, factory removal, dependency, project, lock,
-C# product fixture, existing collector or workflow was changed.
+The original module delivery changed no upstream source, private binaries,
+factory removal, dependency, project, lock, C# product fixture, existing collector
+or workflow. The later collector integration is described below and changes
+neither upstream patch policy nor qualification workflows.
 
 Archive-bound `LoggingInitializer.SetupLogOptions` passes **DiagMode**, rather than
 console verbosity, as `traceToFile` to `ApplicationLogging.ConfigureLogger`.
@@ -73,6 +76,8 @@ and wire file bytes, command/argv/cwd/stdout, tool/SDK/config bytes, exact assem
 source path and expected FQN+display set. It requires exactly one source session
 inside that timestamp window, consistent process and canonical clock ordering,
 no retry, no collector or session timeout, and completed all-Passed results.
+The expected TestCaseFilter must match the exact sealed method-group filter
+(or null for the original unfiltered toy); it is never derived from the events.
 Phase offsets and original marker lines are retained. Result instants must fall
 between session start and their message reception. Edge ambiguity fails closed.
 
@@ -106,8 +111,21 @@ against trusted expected values; they are not digital collection attestations.
 
 Keep full discovery/source/catalogue, CompileError accounting, true kill predicates,
 external passing controls, restoration, provenance, and original qualification
-gates separately. No existing caller imports this module. Lead integration and
-independent review are still required. Unsupported adapters, protocol versions,
+gates separately. `test_cell_ci.initial_case_evidence` calls the phase/wire
+predicates after its existing owner/head/run/attempt, source and ledger checks;
+its preflight also checks all eight source pins and the supported SDK. This avoids
+rewriting producer paths in raw command records when artifacts are relocated.
+The high-level API remains a standalone binding example. It permits completed
+integer exit codes 0/2; the collector separately requires agreement with the raw
+mutation threshold, which does not count timeouts as actual kills.
+
+Each diagnostic cell now uses one inner runner, the exact method-group filter and
+`--diag --log-to-file --verbosity trace`. The two workers can still run in parallel.
+Their entire raw output is inventoried, and the stored initial summary must equal
+a fresh reconstruction from the bound files. Merely changing a summary, removing
+logs, or resealing skipped/partial results cannot replace affirmative case proof.
+Both cells remain mandatory. The old standalone group and source-only validators
+are unchanged. Fresh independent review is required. Unsupported adapters, protocol versions,
 missing files/fields, ambiguous/retried/concurrent sessions, count-only evidence,
 nonpassing cases, unfinished active cases and tamper return no affirmative proof.
 Only single runner/single assembly/xUnit executor is supported; final null chunks,
@@ -160,3 +178,36 @@ and exception text. Use synthetic inputs and sanitized summaries for sharing;
 redacted files must have distinct hashes and cannot replace the bound raw proof.
 The final delivery directory additionally preserves logs, source hashes, bundle
 and manifest; machine-local paths are not a permanent hosted archive.
+
+## Filtered integration proof
+
+The lead ran a new toy fixture with the exact OR filter for
+`FixtureTests.CounterTests.NumberReturnsOne` and `IncrementChangesValue`, using
+the same diagnostic flags and one runner. Full baseline TRX supplied five cases;
+the independent selected plan retained the Fact and both Theory rows. All three
+actual initial outcomes, cumulative statistics and completion flags passed the
+predicate. The real skipped variant returned UNRESOLVED. The filter is present
+in the actual wire start context and must equal the expected sealed filter.
+
+Raw fixture: `/var/folders/8p/klwq9s9n3jg2hm6pqx99hc3w0000gn/T/cm-initial-events-c48p3fcm`.
+Derived source-bound bindings/results: `.artifacts/filtered-initial-proof`;
+launch/check output: `.artifacts/filtered-initial-toy.log` and
+`.artifacts/filtered-initial-proof.log`. Original child proof artifacts were not
+rewritten. A read-only inspection helper first used the wrong regex group index;
+its corrected inspection confirmed the emitted filter before parser integration.
+No product mutation or hosted pilot was run. Current storage-tooling validation
+passes 163 tests, including full-cell skip/partial/abort/cancel/wrong-filter/missing
+proof denials and strict numeric-count tests; build-tooling 16, specification and
+workflow parsing pass. Production C# is unchanged from `909557a`, whose hosted
+Windows/macOS storage checks and three managed jobs passed. Full qualification
+and exact-head independent review remain blocked.
+
+Diagnostic mode also retains mutated source/debug information and emits symbols;
+it is not solely console verbosity. The pinned host launcher adds diagnostic
+output handlers; failed compilation still throws after extra diagnostics. The
+collector's complete baseline/restoration inventory and original CompileError
+mask checks remain enforced. Extra diagnostic I/O and parsing cost at product
+scale remain unmeasured; deadlines are unchanged.
+Each initial phase/wire log has a 32 MiB parsing bound. The collector checks file
+size before loading; oversized diagnostics are retained and refuse evidence with
+an explicit reason, rather than entering an unbounded JSON parse.

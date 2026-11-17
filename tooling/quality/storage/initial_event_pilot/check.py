@@ -23,6 +23,15 @@ def binding(root, source, label, destination):
         method = definitions[result.attrib['testId']]
         cases.append({'fqn': method['className'].split(',')[0] + '.' + method['name'].split('(')[0], 'display': result.attrib['testName']})
     args = command['args']
+    config = json.loads(Path(args[args.index('--config-file') + 1]).read_bytes())['stryker-config']
+    test_filter = config.get('test-case-filter')
+    if test_filter is not None:
+        methods = []
+        for term in test_filter.split('|'):
+            assert term.startswith('FullyQualifiedName=') and term.count('=') == 1
+            methods.append(term.split('=', 1)[1])
+        assert len(methods) == len(set(methods)) and all(any(c['fqn'] == method for c in cases) for method in methods)
+        cases = [case for case in cases if case['fqn'] in methods]
     wire = root / label / 'logs/Runner 0-log.txt'
     phase = next((root / label / 'logs').glob('log-*.txt'))
     return {'source_commit': events.COMMIT, 'archive_sha256': events.ARCHIVE_SHA256,
@@ -33,7 +42,8 @@ def binding(root, source, label, destination):
             'cancelled': False, 'config_sha256': events.digest(Path(args[args.index('--config-file')+1]).read_bytes()),
             'wire_path': str(wire), 'wire_sha256': events.digest(wire.read_bytes()),
             'phase_path': str(phase), 'phase_sha256': events.digest(phase.read_bytes()),
-            'assembly': str((root / 'fixture/Tests/bin/Release/net10.0/Tests.dll').resolve()), 'cases': cases}
+            'assembly': str((root / 'fixture/Tests/bin/Release/net10.0/Tests.dll').resolve()), 'cases': cases,
+            'test_case_filter': test_filter}
 
 
 def main():

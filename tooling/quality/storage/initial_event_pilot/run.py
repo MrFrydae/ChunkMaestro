@@ -17,6 +17,7 @@ import replay_ci
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--dotnet', type=Path, required=True)
+    parser.add_argument('--test-case-filter')
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[4]
     output = Path(tempfile.mkdtemp(prefix='cm-initial-events-'))
@@ -46,9 +47,14 @@ def main():
     tool = Path('/Users/derek/.nuget/packages/dotnet-stryker/5.0.0/tools/net10.0/any/Stryker.CLI.dll')
     for label in ('passing', 'skipped'):
         if label == 'skipped':
-            tests.write_text(tests.read_text().replace('[Fact]', '[Fact(Skip = "runtime negative fixture")]'))
+            tests.write_text(tests.read_text().replace('[Fact]', '[Fact(Skip = "runtime negative fixture")]')
+                             .replace('[Theory]', '[Theory(Skip = "runtime negative fixture")]'))
         config = fixture / (label + '.json')
         replay.write(config, {'stryker-config': {'project': 'Lib/Lib.csproj', 'test-projects': ['Tests/Tests.csproj'], 'configuration': 'Release', 'reporters': ['json'], 'concurrency': 1, 'mutate': ['**/Counter.cs'], 'break-on-initial-test-failure': True}})
+        if args.test_case_filter:
+            configured = json.loads(config.read_bytes())
+            configured['stryker-config']['test-case-filter'] = args.test_case_filter
+            replay.write(config, configured)
         replay.write(output / (label + '-source-sha256.json'), replay.hashes(fixture))
         execute(label, [args.dotnet, tool, '--config-file', config, '--output', output / label, '--diag', '--log-to-file', '--verbosity', 'trace'], (0, 2))
     replay.write(output / 'inventory.json', {'tool': str(tool), 'tool_sha256': replay.digest(tool.read_bytes()), 'sdk_sha256': replay.digest(args.dotnet.read_bytes()), 'sources': replay.hashes(fixture), 'runner_sha256': replay.digest(Path(__file__).read_bytes())})

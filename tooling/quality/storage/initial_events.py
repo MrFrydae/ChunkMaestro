@@ -15,6 +15,8 @@ import xml.etree.ElementTree as ET
 
 COMMIT = '6e77a3451bac4793e9c839c3ff4055c1b30ca3af'
 ARCHIVE_SHA256 = '80702658bac0989e9416e43239ee9d0ca971cea79628bed2b7b1917edd07b269'
+SUPPORTED_SDK = '10.0.404'
+MAX_LOG_BYTES = 32 * 1024 * 1024
 EXECUTOR = 'executor://xunit/VsTestRunner3/netcore/'
 SOURCE_FILES = (
     'src/Stryker.CLI/Stryker.CLI/Logging/ApplicationLogging.cs',
@@ -48,6 +50,13 @@ def require(condition, reason):
         raise ValueError(reason)
 
 
+def passed_statistics(value, count):
+    return (isinstance(value, dict) and set(value) == {'ExecutedTests', 'Stats'} and
+            type(value['ExecutedTests']) is int and value['ExecutedTests'] == count and
+            isinstance(value['Stats'], dict) and set(value['Stats']) == {'Passed'} and
+            type(value['Stats']['Passed']) is int and value['Stats']['Passed'] == count)
+
+
 def load_json(data):
     def pairs(items):
         result = {}
@@ -65,6 +74,7 @@ def read_bound(path, expected):
 
 
 def phase_window(data):
+    require(len(data) <= MAX_LOG_BYTES, 'initial phase log exceeds 32 MiB bound')
     lines = data.decode('utf-8', errors='strict').splitlines()
     starts = [line for line in lines if '[INF] Number of tests found:' in line and 'Initial test run started.' in line]
     ends = [line for line in lines if '[DBG] Initial test run output:' in line]
@@ -79,13 +89,14 @@ def phase_window(data):
     return start, end
 
 
-def inspect_wire(data, start, end, cases, assembly):
+def inspect_wire(data, start, end, cases, assembly, test_filter=None):
     """Return observed results; timestamps are local console/file logger time.
 
     Millisecond-rounded wire timestamps touching a phase edge are ambiguous.
     Only canonical console receive records count; host/send copies are never
     inputs. Duplicate canonical results, even identical, fail closed.
     """
+    require(len(data) <= MAX_LOG_BYTES, 'initial wire log exceeds 32 MiB bound')
     planned = {(case['fqn'], case['display']) for case in cases}
     require(len(planned) == len(cases) and len(planned) > 0, 'empty/duplicate planned case set')
     require(all(all(isinstance(v, str) and v for v in pair) for pair in planned), 'invalid planned identity')
@@ -115,14 +126,14 @@ def inspect_wire(data, start, end, cases, assembly):
         require(pid == process, 'concurrent processes')
         prefix = SEND if text.startswith(SEND) else RECEIVE
         message = load_json(text[len(prefix):])
-        require(message['Version'] == 7, 'unsupported protocol version')
+        require(type(message['Version']) is int and message['Version'] == 7, 'unsupported protocol version')
         kind, payload = message['MessageType'], message['Payload']
         records.append({'line': number, 'timestamp': stamp.isoformat(), 'clock': ticks, 'type': kind})
         if prefix == SEND:
             require(not opened and not completed and kind == 'TestExecution.StartWithSources', 'ambiguous/retried/unsupported session')
             require(payload['AdapterSourceMap'] == {'_none_': [assembly]}, 'unbound assembly')
             context = payload['TestExecutionContext']
-            require(context['TestCaseFilter'] is None and context['KeepAlive'] is False, 'unsupported selection/session')
+            require(context['TestCaseFilter'] == test_filter and context['KeepAlive'] is False, 'unsupported selection/session')
             settings = ET.fromstring(payload['RunSettings'])
             require(settings.find('.//TestSessionTimeout') is None and settings.find('.//InProcDataCollectors') is None, 'coverage/mutation/timeout session')
             require(settings.findtext('.//MaxCpuCount') == '1' and settings.findtext('.//DisableParallelization') == 'true', 'parallel session')
@@ -138,7 +149,7 @@ def inspect_wire(data, start, end, cases, assembly):
         elif kind == 'TestExecution.Completed':
             args = payload['TestRunCompleteArgs']
             require(args['IsCanceled'] is False and args['IsAborted'] is False and args['Error'] is None, 'canceled/aborted/runtime error')
-            require(args['TestRunStatistics'] == {'ExecutedTests': len(planned), 'Stats': {'Passed': len(planned)}}, 'nonpassing completion statistics')
+            require(passed_statistics(args['TestRunStatistics'], len(planned)), 'nonpassing completion statistics')
             require(payload['ExecutorUris'] == [EXECUTOR], 'unsupported executor')
             chunk = payload['LastRunTests']
             completed = True
@@ -162,7 +173,7 @@ def inspect_wire(data, start, end, cases, assembly):
             require(first.tzinfo is not None and last.tzinfo is not None and session_start <= first <= last <= stamp, 'invalid result timestamps')
             ids.add(identifier)
             seen[identity] = {'fqn': identity[0], 'display': identity[1], 'wire_id': identifier, 'outcome': 'Passed', 'start': result['StartTime'], 'end': result['EndTime']}
-        require(chunk['TestRunStatistics'] == {'ExecutedTests': len(seen), 'Stats': {'Passed': len(seen)}}, 'inconsistent chunk statistics')
+        require(passed_statistics(chunk['TestRunStatistics'], len(seen)), 'inconsistent chunk statistics')
         require(isinstance(chunk['ActiveTests'], list), 'missing active cases')
         for active in chunk['ActiveTests']:
             identity = (active['FullyQualifiedName'], active['DisplayName'])
@@ -182,17 +193,18 @@ def validate_initial_events(binding):
 
     binding is trusted integration input, NOT self-authenticating evidence. The
     lead must bind its hashes and selected cases to the exact plan/source/tool
-    provenance using existing gates. No existing gate consumes this module yet.
+    provenance using existing gates. The collector integrates the phase/wire
+    predicates under its existing source and artifact-transport contract.
     """
     try:
         require(binding['source_commit'] == COMMIT and binding['archive_sha256'] == ARCHIVE_SHA256, 'unsupported source provenance')
-        require(binding['sdk_version'] == '10.0.404', 'unsupported SDK')
+        require(binding['sdk_version'] == SUPPORTED_SDK, 'unsupported SDK')
         require(binding['source_hashes'] == SOURCE_HASHES, 'source differs from verified archive')
         for relative in SOURCE_FILES:
             read_bound(Path(binding['source_root']) / relative, binding['source_hashes'][relative])
         command = load_json(read_bound(binding['command_path'], binding['command_sha256']))
         require(command['args'] == binding['argv'] and command['cwd'] == binding['cwd'], 'command binding mismatch')
-        require(command['timeout'] is False and command['exit_code'] == 0, 'command timeout/failure')
+        require(command['timeout'] is False and type(command['exit_code']) is int and command['exit_code'] in (0, 2), 'command timeout/failure')
         require(binding['cancelled'] is False, 'external cancellation/unknown')
         argv = command['args']
         require(all(option in argv for option in ('--diag', '--log-to-file', '--config-file', '--output')), 'missing diagnostic options')
@@ -202,7 +214,8 @@ def validate_initial_events(binding):
         config_path = argv[argv.index('--config-file') + 1]
         config = load_json(read_bound(config_path, binding['config_sha256']))['stryker-config']
         require(type(config['concurrency']) is int and config['concurrency'] == 1 and isinstance(config['test-projects'], list) and len(config['test-projects']) == 1, 'unsupported concurrency/projects')
-        require(config.get('test-case-filter') is None, 'unsupported configured selection')
+        test_filter = binding.get('test_case_filter')
+        require(config.get('test-case-filter') == test_filter, 'unsupported configured selection')
         output = Path(argv[argv.index('--output') + 1])
         require(Path(binding['wire_path']) == output / 'logs/Runner 0-log.txt', 'unbound diagnostic path')
         require(Path(binding['phase_path']).parent == output / 'logs', 'unbound phase path')
@@ -210,7 +223,7 @@ def validate_initial_events(binding):
         phase = read_bound(binding['phase_path'], binding['phase_sha256'])
         wire = read_bound(binding['wire_path'], binding['wire_sha256'])
         start, end = phase_window(phase)
-        result = inspect_wire(wire, start, end, binding['cases'], binding['assembly'])
+        result = inspect_wire(wire, start, end, binding['cases'], binding['assembly'], test_filter)
         return {'status': 'PASS', 'credit': False, 'initial_cases_passed': True,
                 'phase_start': start.isoformat(), 'phase_end': end.isoformat(),
                 'phase_sha256': binding['phase_sha256'],

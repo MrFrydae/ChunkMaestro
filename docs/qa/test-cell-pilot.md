@@ -38,6 +38,8 @@ independent QA nor authorization to run a product mutation campaign.
   original EF exclusions, then positive selected region and negative child
   exclusions. This keeps every original file/catalogue identity in each report.
   Execution retains pinned default `perTest`; `off` is isolated to source index.
+  Each cell uses one inner runner for the bounded initial-event protocol; the
+  two independent workers still have matrix concurrency two.
 - `probe BUNDLE OUTPUT --group 0|1`: reopens both seals, full raw TRX, original
   report, command ledgers/configs and SDK/compiler/source/dependency/tool evidence
   using existing trusted provenance helpers before private execution. Runs locked
@@ -92,18 +94,24 @@ The new contract supports only the pinned VsTest representation: raw report
 selected method definitions must have precisely the planned case multiplicities,
 with byte-bound test sources and every `killedBy` ID within those definitions.
 The exact execution configuration must set `break-on-initial-test-failure` to
-true; missing or false values are refused. Pinned Stryker defaults this option to
-false and can otherwise continue after initial test failures. The raw log must
-report exactly the selected case count at initial-test start, then enter
-`CoverageBasedTest` coverage and reach final mutation score in a completed
-successful command. Explicit initial failure/continuation diagnostics are always
-refused, even if later markers exist. The option, exact config, completed command
-and pinned control flow must agree; markers alone do not establish success.
-Extra/all discovery
-definitions, differing Theory representation, missing markers or other adapters
+true; missing or false values are refused. This option alone does not reject
+skipped or incomplete initial outcomes. The collector now additionally requires
+affirmative per-case evidence from the existing VSTest diagnostic file, with
+`--diag --log-to-file --verbosity trace` and one inner runner. Its source-bound
+initial-phase window must contain one matching assembly/filter/session, the
+exact selected FQN/display set with every outcome Passed, consistent cumulative
+statistics, and completion without cancel/abort/error or unfinished cases.
+Missing, partial, skipped, duplicate, ambiguous or unsupported evidence refuses
+both collection and final accounting. Raw logs and reconstructed summary hashes
+are retained; a summary cannot replace them. See
+[initial event protocol and filtered proof](initial-test-events.md).
+
+The stdout start/coverage/final markers and explicit failure checks remain
+additional consistency checks. They never substitute for actual initial outcomes.
+Extra/all discovery definitions, differing Theory representation, missing markers or other adapters
 are unsupported and yield `UNRESOLVED`. This representation does not provide
 per-case initial-run TRX; its exact FQN filter, full-case partition, multiplicity
-and pinned successful control flow are the version 1 integration assumption
+and affirmative diagnostic-event predicate are the bounded integration contract
 requiring independent review. No generic log parser or count-only substitute for
 report attribution is accepted.
 
@@ -157,12 +165,12 @@ that incomplete 53-mutant probe earned no credit. The old byte-identical backup
 membership refusal was corrected in parent 59e, not retroactively qualified.
 macOS jobs lacked runner admission; no Mac code-failure/speedup claim follows.
 
-Local validation is Python-only on macOS. Sixteen new tests cover public contract
+Local integration validation is Python-only on macOS. Tests cover public contract
 success and tamper/denial paths: all cells mandatory, duplicates, omissions,
 rehashed group overlap, extra options, unbound kills, source bytes, compile mask,
 foreign roots, raw ledgers, deadlines, full restoration and backup evidence,
 prepared-plan reconstruction, and workflow structure/Action pins. The storage
-suite totals **146 passing tests**; specification validation passes. Ruby Psych
+suite totals **163 passing tests**; specification validation passes. Ruby Psych
 parsed the YAML successfully (its YAML 1.1 parser treats `on` as boolean; Actions
 uses its own workflow schema). No actionlint installation was available.
 
@@ -182,18 +190,27 @@ omitted/disabled-option regressions are also denied. The `1a17384` pilot was
 cancelled after this finding; none of its partial results establish acceptance.
 Fresh independent review and a corrected hosted execution remain outstanding.
 
-Offline, the new initial-run representation parser accepted both immutable logs
+Fresh reviews at `9120734` then established skipped and partial-initial-result
+gaps despite the break option. The new affirmative event predicate addresses
+these separately; the prior FAIL originals remain historical. The secure-backup
+fixture correction at `909557a` subsequently passed both hosted storage jobs and
+all three managed jobs. The new event integration still needs exact-head review
+and hosted execution. The pilot remains paused.
+
+Historically, the stdout consistency parser accepted both immutable logs
 from `cm-test-group-proof-zdfiu90c`, with selected counts 1/5 and unchanged SHA256
 `78fd2598b0b5874da1ff21ab7beac4e5eb00d727cf7d5354c00ec655eee092f8` /
 `70240026c301820a5313eb01cd11e7266f70ff1fc19b9032aab4943b136ccab3`.
 That existing fixture has 26 identities, 2 CompileError, denominator 24, 22 actual
 kill union and six full cases with atomic Theory rows. This read-only parser check
 does **not** establish the new source-region/product/Windows collector end to end.
-Original evidence was not rewritten or given new kill credit.
+Original evidence was not rewritten or given new kill credit. Stdout consistency
+alone no longer suffices: actual initial events are additionally mandatory.
 
-No product mutation, hosted workflow, Windows runtime, C#/project/package change,
-product build/format, speedup measurement, native/volume/recovery acceptance,
-push, label edit, approval, independent QA or watch was performed. Hosted artifact
+The event integration runs no product mutation or hosted pilot and changes no
+product C#, projects, packages or qualification gates. Earlier storage runtime
+and build checks are reused only for unchanged C# inputs. Product speedup and
+native/volume/recovery acceptance remain unproven. Hosted event artifact
 relocation, Windows paths/compiler matching, full control duration, report Theory
 multiplicities and admission of both concurrent workers remain unexecuted gaps.
 A 180-second private bound may still be insufficient; return UNRESOLVED rather
