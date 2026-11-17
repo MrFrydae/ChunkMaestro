@@ -134,7 +134,7 @@ internal sealed class FleetDbContext(DbContextOptions<FleetDbContext> options) :
         {
             e.ToTable("Endpoints", table =>
             {
-                table.HasCheckConstraint("CK_Endpoints_Port", "\"Port\" BETWEEN 1 AND 65535");
+                table.HasCheckConstraint("CK_Endpoints_Port", "typeof(\"Port\") = 'integer' AND \"Port\" BETWEEN 1 AND 65535");
                 table.HasCheckConstraint("CK_Endpoints_Edition", "\"Edition\" IN (0, 1)");
             });
             e.HasKey(x => new

@@ -37,6 +37,15 @@ internal static class SupportedSchema
         }
         if (migration != null)
         {
+            // INTEGER affinity permits fractional REAL values. Refuse before upgrade
+            // backup or provider materialization can truncate a persisted reservation.
+            // Keep historical integer range failures on the existing migration path.
+            command.CommandText = "SELECT 1 FROM Endpoints WHERE typeof(Port)<>'integer' LIMIT 1";
+            if (await command.ExecuteScalarAsync(token) is not null)
+            {
+                throw new FleetStorageException(StorageFailure.CorruptDatabase,
+                    "Database contains invalid endpoint ports. Preserve files for reviewed recovery.");
+            }
             await VerifyIdentitiesAsync(actual, token);
             command.CommandText = "SELECT 1 FROM Hosts WHERE typeof(RegisteredAt)<>'integer' " +
                 "OR RegisteredAt<$minimum OR RegisteredAt>$maximum " +

@@ -34,7 +34,7 @@ public sealed class PopulatedUpgradeTests(ITestOutputHelper output) : IDisposabl
         {
             await using FleetDbContext context = Context(connection);
             versions = context.Database.GetMigrations().ToArray();
-            Assert.Equal(2, versions.Length);
+            Assert.Equal(3, versions.Length);
             Assert.Equal(Initial, versions[0]);
             await SupportedSchema.VerifyAsync(connection, Initial, default);
         }
@@ -54,11 +54,11 @@ public sealed class PopulatedUpgradeTests(ITestOutputHelper output) : IDisposabl
         await using (SqliteConnection connection = await ConnectAsync(source))
         {
             Assert.Equal(before, await MetadataAsync(connection));
-            await SupportedSchema.VerifyAsync(connection, versions[1], default);
+            await SupportedSchema.VerifyAsync(connection, versions[^1], default);
             await using FleetDbContext context = Context(connection);
             Assert.Equal(versions, await context.Database.GetAppliedMigrationsAsync());
             Assert.False(context.Database.HasPendingModelChanges());
-            Assert.Throws<NotSupportedException>(() => context.GetService<IMigrator>().GenerateScript(versions[1], Initial));
+            Assert.Throws<NotSupportedException>(() => context.GetService<IMigrator>().GenerateScript(versions[^1], Initial));
             foreach (int port in new int[]
         {
             0, 65536
@@ -72,7 +72,7 @@ public sealed class PopulatedUpgradeTests(ITestOutputHelper output) : IDisposabl
             Assert.Equal(before, await MetadataAsync(connection));
         }
         await VerifyOldCopyAsync(backup, before);
-        output.WriteLine($"Upgrade {versions[0]} -> {versions[1]}: all row values preserved; backup verified as InitialFleet; CHECK failures use SQLITE_CONSTRAINT_CHECK (275).");
+        output.WriteLine($"Upgrade {versions[0]} -> {versions[^1]}: all row values preserved; backup verified as InitialFleet; CHECK failures use SQLITE_CONSTRAINT_CHECK (275).");
         string recovered = await CopyBackupAsync(backup);
         await using (LocalFleetStore recovery = await LocalFleetStore.OpenAsync(StorageLocation.ForTests(recovered)))
         {

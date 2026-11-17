@@ -317,3 +317,26 @@ partial. No automatic downgrade, restore or disruptive replay is introduced.
 See [safety qualification](../qa/storage-safety.md) for current evidence and
 limitations. Normal local validation passes 133 tests; combined safety thresholds,
 Windows/Intel qualification and independent exact-head QA remain incomplete.
+
+### Integer endpoint port encoding
+
+The third migration, `20261117171405_EnforceIntegerEndpointPorts`, requires
+`typeof("Port") = 'integer' AND "Port" BETWEEN 1 AND 65535`. SQLite INTEGER
+affinity alone accepts fractional REAL values; provider conversion could truncate
+those values and undermine host/transport/port reservation uniqueness.
+
+Startup refuses any stored non-integer port as sanitized `CorruptDatabase`
+before a migration backup, upgrade or usable inventory, including InitialFleet
+and EnforceEndpointInvariants databases. It preserves the original values,
+history and existing completed backups. Historical out-of-range **integer**
+values retain the existing migration-failure/backup behavior. Whole REAL literals
+and numeric text that SQLite normalizes to stored integers are valid.
+
+Do not delete rows, bypass CHECK constraints, truncate values or retry blindly.
+Preserve the database, sidecars and completed backups. Review the actual stored
+type/value and intended reservation; perform any approved correction only in a
+separate secure recovery copy, check for reservation collisions, then validate
+and upgrade that copy with a compatible application. Keep the original evidence.
+Blind downgrade remains disabled. The transactional rebuild assumes Endpoints
+remains a leaf table with no incoming foreign keys; revisit the migration strategy
+if that model changes. See [integer port evidence](../qa/integer-endpoint-ports.md).
