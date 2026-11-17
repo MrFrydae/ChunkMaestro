@@ -161,6 +161,14 @@ suite totals **144 passing tests**; specification validation passes. Ruby Psych
 parsed the YAML successfully (its YAML 1.1 parser treats `on` as boolean; Actions
 uses its own workflow schema). No actionlint installation was available.
 
+The first hosted Windows tooling run at `5d55469` refused all twelve standalone
+group fixtures before runtime coverage: default text writes translated their
+declared LF source into CRLF bytes. The strict source validator correctly denied
+that mismatch. Fixtures now write explicit bytes; the validator is unchanged.
+An emulated Windows text-write run reproduced all twelve setup errors before
+the correction and passed all twelve contracts afterward. This local translation
+probe does not replace hosted Windows execution; the original failure is retained.
+
 Offline, the new initial-run representation parser accepted both immutable logs
 from `cm-test-group-proof-zdfiu90c`, with selected counts 1/5 and unchanged SHA256
 `78fd2598b0b5874da1ff21ab7beac4e5eb00d727cf7d5354c00ec655eee092f8` /

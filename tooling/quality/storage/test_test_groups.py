@@ -16,8 +16,8 @@ class TestGroups(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        (self.root / 'Code.cs').write_text('abcdef\n')
-        (self.root / 'Tests.cs').write_text('test bytes')
+        (self.root / 'Code.cs').write_bytes(b'abcdef\n')
+        (self.root / 'Tests.cs').write_bytes(b'test bytes')
         self.cases = [{'method': 'Tests.Class.A', 'display': 'A(1)'},
                       {'method': 'Tests.Class.A', 'display': 'A(2)'},
                       {'method': 'Tests.Class.B', 'display': 'B'}]
