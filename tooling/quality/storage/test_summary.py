@@ -25,3 +25,4 @@ class SummaryTests(unittest.TestCase):
             self.assertNotIn('**PASS**', text)
             self.assertIn('not full safety qualification', text)
             self.assertIn('storage-qualify', text)
+            self.assertIn('No runtime evidence produced', text)

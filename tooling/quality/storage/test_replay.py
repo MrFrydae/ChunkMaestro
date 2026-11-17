@@ -8,6 +8,7 @@ import unittest
 import contextlib
 import io
 import subprocess
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -52,7 +53,8 @@ class ReplayContracts(unittest.TestCase):
         output = io.StringIO()
         with patch.object(replay.time, 'monotonic', side_effect=lambda: clock[0]), \
                 patch.object(replay.subprocess, 'Popen', return_value=proc), \
-                patch.object(replay.os, 'killpg', side_effect=lambda *a: proc.kill()), \
+                patch.object(replay, 'os', SimpleNamespace(name='posix',
+                    killpg=lambda *a: proc.kill(), fsync=replay.os.fsync)), \
                 contextlib.redirect_stdout(output):
             result = replay.command(args or ['fixture', '--output', root / 'mutation'],
                                     root, root, label, {}, deadline)
