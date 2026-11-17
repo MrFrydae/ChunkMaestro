@@ -84,7 +84,8 @@ class Cells(unittest.TestCase):
                     mutant.update(status='Ignored', statusReason=shards.FILTER_REASON)
         (folder / 'mutation').mkdir()
         replay.write(folder / 'mutation/mutation-report.json', raw)
-        sdk, binary = '/sdk/dotnet', '/input/source/private/' + 'stryker-net-' + replay.COMMIT + '/src/Stryker.CLI/Stryker.CLI/bin/Release/Stryker.CLI.dll'
+        sdk = '/sdk/dotnet'
+        binary = str(self.root / '.artifacts/cell-input/source/private' / self.bundle['private_binary_relative'])
         commands = [[sdk, 'restore', str(self.root / shard_ci.TEST_PROJECT), '--locked-mode']]
         labels = ['restore']
         for label in ('baseline', 'restored'):
@@ -110,7 +111,7 @@ class Cells(unittest.TestCase):
         value['derived_group_view'] = {'status': 'DERIVED', 'cases': selected,
             'baseline_trx_sha256': cell.trx(folder / 'baseline')['trx_sha256'],
             'restored_trx_sha256': cell.trx(folder / 'restored')['trx_sha256']}
-        value['inventory'] = shard_ci.inventory(folder)
+        value['inventory'] = cell.cell_inventory(folder)
         replay.write(folder / 'cell.json', value)
         return folder
 
@@ -121,8 +122,7 @@ class Cells(unittest.TestCase):
         folder = self.folders[0]
         value = cell.load(folder / 'cell.json')
         change(folder, value)
-        actual = shard_ci.inventory(folder)
-        actual.pop('cell.json')
+        actual = cell.cell_inventory(folder)
         value['inventory'] = actual
         replay.write(folder / 'cell.json', value)
 
@@ -136,6 +136,22 @@ class Cells(unittest.TestCase):
     def test_raw_tamper_denied(self):
         (self.folders[0] / 'private.log').write_text('tampered')
         with self.assertRaisesRegex(ValueError, 'evidence'):
+            self.validate()
+
+    def test_root_bundle_artifact_not_silently_omitted(self):
+        (self.folders[0] / 'bundle.json').write_text('unexpected raw evidence', encoding='utf-8')
+        with self.assertRaisesRegex(ValueError, 'evidence'):
+            self.validate()
+
+    def test_coordinated_foreign_private_entry_point_denied(self):
+        def change(folder, value):
+            binary = str(self.root / 'foreign/source/private' / self.bundle['private_binary_relative'])
+            value['binary_path'] = binary
+            value['commands'][4]['args'][1] = binary
+            (folder / 'commands.jsonl').write_text(
+                ''.join(json.dumps(r) + '\n' for r in value['commands']), encoding='utf-8')
+        self.reseal(change)
+        with self.assertRaisesRegex(ValueError, 'entry point'):
             self.validate()
 
     def test_manifest_denials(self):
@@ -191,11 +207,11 @@ class Cells(unittest.TestCase):
         with patch.object(cell, 'windows_context', return_value=self.current), \
              patch.object(cell.source, 'sdk', return_value=(Path('/sdk/dotnet'), '10.0.404', 'b' * 64)), \
              patch.object(cell, 'preflight', return_value=(self.bundle, self.plan, Path('/tool'))):
-            result = cell.account(Path('/unused'), self.folders, self.root)
+            result = cell.account(self.root / '.artifacts/cell-input', self.folders, self.root)
             self.assertEqual('PARTIAL_DIAGNOSTIC', result['status'])
             self.assertEqual('NOT_EVALUATED', result['qualification'])
             for folders in ([], self.folders[:1], [self.folders[0], self.folders[0]]):
-                with self.assertRaises(ValueError): cell.account(Path('/unused'), folders, self.root)
+                with self.assertRaises(ValueError): cell.account(self.root / '.artifacts/cell-input', folders, self.root)
 
     def test_no_candidate_fallback_and_unsupported_log(self):
         (self.root / self.name).write_text('unsupported')

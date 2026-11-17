@@ -228,6 +228,7 @@ def probe(folder, output, group, root=ROOT):
             try:
                 require(control('restored', 0)['cases'] == initial, 'full restoration cases differ')
                 require(runtime is not None, 'baseline runtime inventory unavailable')
+                replay.write(output / 'restored-binaries.json', source.binaries(root))
                 result['retained_tool_backups'] = source.retain_tool_backups(root, output, runtime)
                 restored = source.binaries(root)
                 replay.write(output / 'restored-final-binaries.json', restored)
@@ -244,7 +245,7 @@ def probe(folder, output, group, root=ROOT):
             result['status'] = 'UNRESOLVED'
         result['commands'] = budget.records if budget else []
         result['elapsed_seconds'] = time.monotonic() - budget.started if budget else 0
-        result['inventory'] = source.inventory(output)
+        result['inventory'] = cell_inventory(output)
         replay.write(output / 'cell.json', result)
     return 0 if result['status'] == 'CELL_COMPLETE' else 1
 
@@ -255,7 +256,18 @@ def relocated(folder, name, prefix):
     return replay_gate.child(folder, name[len(prefix):])
 
 
-def validate_cell(folder, plan, bundle, current, root):
+def cell_inventory(folder):
+    result = {}
+    for path in sorted(folder.rglob('*')):
+        require(not path.is_symlink(), 'symlink cell artifact')
+        if path.is_file() and path != folder / 'cell.json':
+            relative = path.relative_to(folder).as_posix()
+            replay_gate.child(folder, relative)
+            result[relative] = replay.digest(path.read_bytes())
+    return result
+
+
+def validate_cell(folder, plan, bundle, current, root, prepared_relative=Path('.artifacts/cell-input')):
     value = load(folder / 'cell.json')
     require(value['schema_version'] == 1 and value['scope'] == SCOPE and value['status'] == 'CELL_COMPLETE' and
             value['qualification'] == 'NOT_EVALUATED' and value['inputs_preserved'] is True and
@@ -264,16 +276,15 @@ def validate_cell(folder, plan, bundle, current, root):
         require(value[key] == current[key], 'foreign cell ' + key)
     require(value['inputs'] == bundle['inputs'] and value['source_bundle_sha256'] == bundle['bundle_sha256'] and
             value['plan_sha256'] == plan['plan_sha256'], 'foreign plan/input binding')
-    require(value['sdk_path'] == bundle['sdk_path'] and
-            value['binary_path'].replace('\\', '/').endswith('/source/private/' + bundle['private_binary_relative']),
+    replay_gate.child(root, prepared_relative.as_posix())
+    expected_binary = Path(value['workspace_root']) / prepared_relative / 'source/private' / bundle['private_binary_relative']
+    require(value['sdk_path'] == bundle['sdk_path'] and value['binary_path'] == str(expected_binary),
             'SDK/private execution entry point differs')
     group = value['group']
     require(type(group) is int and group in (0, 1), 'unknown cell')
-    # The manifest is excluded from its own inventory; source.inventory excludes bundle.json only.
-    actual = source.inventory(folder)
-    actual.pop('cell.json', None)
+    actual = cell_inventory(folder)
     require(actual == value['inventory'], 'changed/missing/extra cell evidence')
-    records = [json.loads(line) for line in (folder / 'commands.jsonl').read_text().splitlines()]
+    records = [json.loads(line) for line in (folder / 'commands.jsonl').read_text(encoding='utf-8').splitlines()]
     require(records == value['commands'] and len(records) == 8, 'raw cell ledger differs')
     output, workspace, dotnet = Path(value['output_root']), Path(value['workspace_root']), value['sdk_path']
     expected = [[dotnet, 'restore', str(workspace / source.TEST_PROJECT), '--locked-mode']]
@@ -319,7 +330,8 @@ def account(folder, cells, root=ROOT):
         dotnet, version, sdk_hash = source.sdk(root, env)
         bundle, plan, _ = preflight(folder, root, current, dotnet, version, sdk_hash)
     require(len(cells) == 2, 'both expected cells mandatory')
-    results = [validate_cell(cell, plan, bundle, current, root) for cell in cells]
+    prepared_relative = folder.resolve().relative_to(root.resolve())
+    results = [validate_cell(cell, plan, bundle, current, root, prepared_relative) for cell in cells]
     require(sorted(g for g, _ in results) == [0, 1], 'missing/overlapping cells')
     return {'schema_version': 1, 'scope': SCOPE, 'status': 'PARTIAL_DIAGNOSTIC', 'qualification': 'NOT_EVALUATED',
         'plan_sha256': plan['plan_sha256'], 'selected_owner_union': plan['region']['owners'],

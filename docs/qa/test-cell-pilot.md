@@ -55,7 +55,11 @@ independent QA nor authorization to run a product mutation campaign.
   bytes, full report identities/source bytes/CompileError mask and provenance
   bindings. Successful exit must be integer 0/2, agree with raw Stryker threshold
   semantics, and remain within the command bound. Raw threshold consistency may
-  count Timeout as Stryker does; diagnostic kill accounting does not.
+  count Timeout as Stryker does; diagnostic kill accounting does not. Only
+  `cell.json` is excluded from its own inventory; even an unexpected root
+  `bundle.json` is detected. The private entry point must be the exact prepared
+  bundle path relative to the producer workspace, rather than a matching suffix.
+  The pre-cleanup restored inventory is retained separately from the final one.
 - `account BUNDLE OUTPUT CELL0 CELL1`: revalidates preparation and both cell
   contracts against current authenticated context. Requires group IDs exactly
   `[0, 1]`. Emits selected owner union, unique attributed actual kills,
@@ -148,12 +152,12 @@ that incomplete 53-mutant probe earned no credit. The old byte-identical backup
 membership refusal was corrected in parent 59e, not retroactively qualified.
 macOS jobs lacked runner admission; no Mac code-failure/speedup claim follows.
 
-Local validation is Python-only on macOS. Twelve new tests cover public contract
+Local validation is Python-only on macOS. Fourteen new tests cover public contract
 success and tamper/denial paths: all cells mandatory, duplicates, omissions,
 rehashed group overlap, extra options, unbound kills, source bytes, compile mask,
 foreign roots, raw ledgers, deadlines, full restoration and backup evidence,
 prepared-plan reconstruction, and workflow structure/Action pins. The storage
-suite totals **142 passing tests**; specification validation passes. Ruby Psych
+suite totals **144 passing tests**; specification validation passes. Ruby Psych
 parsed the YAML successfully (its YAML 1.1 parser treats `on` as boolean; Actions
 uses its own workflow schema). No actionlint installation was available.
 
