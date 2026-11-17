@@ -132,6 +132,7 @@ class Cells(unittest.TestCase):
         self.assertEqual([shards.CATALOGUE_KEEPALIVE, *shards.EXCLUSIONS],
                          cell.configuration(self.plan, 0)['stryker-config']['mutate'][:3])
         self.assertEqual(2, self.plan['sources']['original_denominator'])
+        self.assertIs(True, cell.configuration(self.plan, 0)['stryker-config']['break-on-initial-test-failure'])
 
     def test_raw_tamper_denied(self):
         (self.folders[0] / 'private.log').write_text('tampered')
@@ -142,6 +143,32 @@ class Cells(unittest.TestCase):
         (self.folders[0] / 'bundle.json').write_text('unexpected raw evidence', encoding='utf-8')
         with self.assertRaisesRegex(ValueError, 'evidence'):
             self.validate()
+
+    def test_initial_failure_continuation_denied_by_complete_validator(self):
+        def change(folder, value):
+            log = folder / 'private.log'
+            text = log.read_text(encoding='utf-8').replace(
+                "Capture mutant coverage", "1 tests are failing. Stryker will continue but outcome will be impacted.\nCapture mutant coverage")
+            log.write_bytes(text.encode('utf-8'))
+            value['commands'][4]['log_sha256'] = replay.digest(log.read_bytes())
+            (folder / 'commands.jsonl').write_bytes(
+                ''.join(json.dumps(r) + '\n' for r in value['commands']).encode('utf-8'))
+        self.reseal(change)
+        with self.assertRaisesRegex(ValueError, 'successful initial-run'):
+            self.validate()
+
+    def test_initial_failure_break_cannot_be_omitted_or_disabled(self):
+        for omitted in (False, True):
+            def change(folder, value):
+                config = cell.load(folder / 'cell-config.json')
+                if omitted:
+                    config['stryker-config'].pop('break-on-initial-test-failure')
+                else:
+                    config['stryker-config']['break-on-initial-test-failure'] = False
+                replay.write(folder / 'cell-config.json', config)
+            self.reseal(change)
+            with self.assertRaisesRegex(ValueError, 'config'):
+                self.validate()
 
     def test_coordinated_foreign_private_entry_point_denied(self):
         def change(folder, value):

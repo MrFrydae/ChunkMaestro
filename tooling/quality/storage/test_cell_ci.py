@@ -72,6 +72,7 @@ def configuration(plan, group):
     region = plan['region']
     config['stryker-config']['mutate'] = [shards.CATALOGUE_KEEPALIVE, *shards.EXCLUSIONS,
         shards.pattern(region['root']), *(shards.pattern(n, True) for n in region['exclusions'])]
+    config['stryker-config']['break-on-initial-test-failure'] = True
     require(config['stryker-config'].get('coverage-analysis', 'perTest') == 'perTest', 'execution coverage policy differs')
     return config
 
@@ -162,13 +163,16 @@ def verify_report(report, plan, group, root, host_root):
 
 
 def selection_log(text, count):
-    # Pinned VsTest flow: initial starts with exactly selected definitions;
-    # subsequent coverage + completed final score cannot follow failed initial tests.
+    # The exact cell config enforces BreakOnInitialTestFailure. Without that
+    # option pinned Stryker can continue with failing tests; markers alone do not
+    # establish success. Explicit failure diagnostics always refuse accounting.
     counts = re.findall(r'Number of tests found: (\d+) for project .+\. Initial test run started\.', text)
     coverage = text.find("Capture mutant coverage using 'CoverageBasedTest' mode.")
     initial = text.find('Initial test run started.')
     final = text.find('The final mutation score is ')
-    require(counts == [str(count)] and 0 <= initial < coverage < final, 'UNRESOLVED: unsupported/missing successful initial-run representation')
+    failures = re.search(r'\b\d+ tests are failing\.|Initial testrun has (?:more than 50% )?failing tests\.', text)
+    require(not failures and counts == [str(count)] and 0 <= initial < coverage < final,
+            'UNRESOLVED: unsupported/missing successful initial-run representation')
 
 
 def probe(folder, output, group, root=ROOT):

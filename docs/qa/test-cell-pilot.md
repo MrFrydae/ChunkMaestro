@@ -33,7 +33,8 @@ independent QA nor authorization to run a product mutation campaign.
   Original full source/test unions, all catalogue identities, CompileError mask,
   UTF-16 span, rationale, owners, plan hashes and workspace inputs remain frozen.
 - `configuration(plan, group)`: baseline config plus only exact FQN test filter
-  and canonical region mutate patterns. Patterns start with `**/*.cs{0..1}` and
+  and canonical region mutate patterns, with the additional safety requirement
+  `break-on-initial-test-failure: true`. Patterns start with `**/*.cs{0..1}` and
   original EF exclusions, then positive selected region and negative child
   exclusions. This keeps every original file/catalogue identity in each report.
   Execution retains pinned default `perTest`; `off` is isolated to source index.
@@ -90,11 +91,15 @@ selected TRX and is deliberately never called or fed fabricated TRX here.
 The new contract supports only the pinned VsTest representation: raw report
 selected method definitions must have precisely the planned case multiplicities,
 with byte-bound test sources and every `killedBy` ID within those definitions.
-The raw log must report exactly the selected case count at initial-test start,
-then enter `CoverageBasedTest` coverage and reach final mutation score in a
-completed successful command. In the pinned implementation coverage follows a
-successful initial run; those later markers plus completed exit establish that
-control flow. Merely seeing a start message is insufficient. Extra/all discovery
+The exact execution configuration must set `break-on-initial-test-failure` to
+true; missing or false values are refused. Pinned Stryker defaults this option to
+false and can otherwise continue after initial test failures. The raw log must
+report exactly the selected case count at initial-test start, then enter
+`CoverageBasedTest` coverage and reach final mutation score in a completed
+successful command. Explicit initial failure/continuation diagnostics are always
+refused, even if later markers exist. The option, exact config, completed command
+and pinned control flow must agree; markers alone do not establish success.
+Extra/all discovery
 definitions, differing Theory representation, missing markers or other adapters
 are unsupported and yield `UNRESOLVED`. This representation does not provide
 per-case initial-run TRX; its exact FQN filter, full-case partition, multiplicity
@@ -152,12 +157,12 @@ that incomplete 53-mutant probe earned no credit. The old byte-identical backup
 membership refusal was corrected in parent 59e, not retroactively qualified.
 macOS jobs lacked runner admission; no Mac code-failure/speedup claim follows.
 
-Local validation is Python-only on macOS. Fourteen new tests cover public contract
+Local validation is Python-only on macOS. Sixteen new tests cover public contract
 success and tamper/denial paths: all cells mandatory, duplicates, omissions,
 rehashed group overlap, extra options, unbound kills, source bytes, compile mask,
 foreign roots, raw ledgers, deadlines, full restoration and backup evidence,
 prepared-plan reconstruction, and workflow structure/Action pins. The storage
-suite totals **144 passing tests**; specification validation passes. Ruby Psych
+suite totals **146 passing tests**; specification validation passes. Ruby Psych
 parsed the YAML successfully (its YAML 1.1 parser treats `on` as boolean; Actions
 uses its own workflow schema). No actionlint installation was available.
 
@@ -168,6 +173,14 @@ that mismatch. Fixtures now write explicit bytes; the validator is unchanged.
 An emulated Windows text-write run reproduced all twelve setup errors before
 the correction and passed all twelve contracts afterward. This local translation
 probe does not replace hosted Windows execution; the original failure is retained.
+
+All three independent bounded reviews at `5d55469` also found that the original
+marker-only check accepted Stryker's failed-initial-run continuation path. A new
+complete-validator regression fails against that original implementation. The
+corrected contract requires the break option and rejects the explicit warning;
+omitted/disabled-option regressions are also denied. The `1a17384` pilot was
+cancelled after this finding; none of its partial results establish acceptance.
+Fresh independent review and a corrected hosted execution remain outstanding.
 
 Offline, the new initial-run representation parser accepted both immutable logs
 from `cm-test-group-proof-zdfiu90c`, with selected counts 1/5 and unchanged SHA256
