@@ -125,6 +125,17 @@ class PilotContracts(unittest.TestCase):
         with self.assertRaises(ValueError):
             shard_ci.bind_tests(self.report, self.root, self.cases * 2)
 
+    def test_only_planning_skips_coverage_capture(self):
+        for system in ('Windows', 'Darwin'):
+            path = shard_ci.ROOT / replay_ci.replay_configuration(system)
+            original = path.read_bytes()
+            expected = json.loads(original)
+            expected['stryker-config']['coverage-analysis'] = 'off'
+            self.assertEqual(expected, shard_ci.index_configuration(shard_ci.ROOT, system))
+            self.assertEqual(original, path.read_bytes())
+        execution = shards.batch_configuration(self.plan, self.packed, 0)
+        self.assertNotIn('coverage-analysis', execution['stryker-config'])
+
     def test_transferred_stryker_compile_include_test_paths_bind_without_raw_rewrite(self):
         for producer in ('/Users/runner/work/repo', 'D:/a/repo'):
             with self.subTest(producer=producer):
@@ -242,8 +253,10 @@ class PilotContracts(unittest.TestCase):
         build = record('private-build', replay.private_build_command(self.dotnet, private_source),
                        private_source, self.folder / 'private')
         self.json(self.folder / 'private/provenance.json', {'binary': str(private), 'build': build})
+        self.json(self.root / replay_ci.replay_configuration('Darwin'), self.config)
+        self.json(self.folder / 'index-config.json', shard_ci.index_configuration(self.root, 'Darwin'))
         for label, tool in (('official-index', bundle['official_tool_path']),):
-            args = [self.dotnet, tool, '--config-file', self.root / replay_ci.replay_configuration('Darwin'),
+            args = [self.dotnet, tool, '--config-file', self.folder / 'index-config.json',
                     '--mutate', '**/*.cs{0..1}']
             for exclusion in shards.EXCLUSIONS: args.extend(['--mutate', exclusion])
             args.extend(['--output', self.folder / label, '--log-to-file'])
@@ -256,6 +269,13 @@ class PilotContracts(unittest.TestCase):
             self.write(self.folder / 'private/commands.jsonl', json.dumps(build) + '\n')
         ledgers()
         shard_ci.validate_commands(self.folder, bundle, self.root)
+        index_config = shard_ci.index_configuration(self.root, 'Darwin')
+        changed_config = deepcopy(index_config)
+        changed_config['stryker-config']['mutate'] = ['**/*.cs']
+        self.json(self.folder / 'index-config.json', changed_config)
+        with self.assertRaisesRegex(ValueError, 'configuration changed'):
+            shard_ci.validate_commands(self.folder, bundle, self.root)
+        self.json(self.folder / 'index-config.json', index_config)
         original_build = deepcopy(build)
         for change in ('compiler', 'flags', 'project', 'cwd'):
             if change == 'compiler': build['args'][0] = '/unapproved/compiler'

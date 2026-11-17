@@ -37,6 +37,13 @@ def load(path):
     return json.loads(path.read_bytes())
 
 
+def index_configuration(root, system):
+    """Only planning skips coverage capture; actual shards keep the base policy."""
+    config = load(root / replay_ci.replay_configuration(system))
+    config['stryker-config']['coverage-analysis'] = 'off'
+    return config
+
+
 def inventory(folder):
     result = {}
     for path in sorted(folder.rglob('*')):
@@ -252,8 +259,10 @@ def validate_commands(folder, bundle, root):
             and by_label['private-build']['cwd'] == str(source), 'private build command differs from pinned policy')
     private_original = str(Path(bundle['original_bundle_root']) / 'private' / bundle['private_binary_relative'])
     require(provenance['binary'] == private_original, 'private entry point differs from original build')
+    require(load(folder / 'index-config.json') == index_configuration(root, bundle['platform']),
+            'planning index configuration changed')
     for label, tool in (('official-index', bundle['official_tool_path']),):
-        args = [dotnet, tool, '--config-file', str(workspace / replay_ci.replay_configuration(bundle['platform'])),
+        args = [dotnet, tool, '--config-file', str(Path(bundle['original_bundle_root']) / 'index-config.json'),
                 '--mutate', '**/*.cs{0..1}']
         for pattern in shards.EXCLUSIONS:
             args.extend(['--mutate', pattern])
@@ -351,7 +360,8 @@ def prepare(output, max_batches, root=ROOT):
                           private_binary_relative=binary.relative_to(output / 'private').as_posix(),
                           private_tool_sha256=replay.digest(binary.read_bytes()),
                           official_tool_sha256=replay.digest(official.read_bytes()), official_tool_path=str(official))
-            args = [dotnet, official, '--config-file', root / replay_ci.replay_configuration(current['platform']),
+            replay.write(output / 'index-config.json', index_configuration(root, current['platform']))
+            args = [dotnet, official, '--config-file', output / 'index-config.json',
                     '--mutate', '**/*.cs{0..1}']
             for pattern in shards.EXCLUSIONS:
                 args.extend(['--mutate', pattern])

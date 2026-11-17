@@ -286,6 +286,36 @@ The next signed candidate must regenerate its own index and obtain fresh hosted
 timing; neither this historical replan nor the bounded role PASS at `cbe546a`
 accepts the newer local optimization or timestamp correction.
 
+## Planning-only coverage capture
+
+At `2555cb6`, the Windows official index completed its initial tests and compiler
+work but hit the 180-second command deadline during coverage capture. It had not
+started selected mutation tests. The bound and raw failure evidence remain intact.
+
+The pilot now writes a sealed `index-config.json` copied from the exact base
+configuration with only `coverage-analysis: off`. This applies solely to the
+planning invocation, whose nonempty keepalive selector must execute no mutant.
+Actual mutation-shard configurations still derive from the unchanged base
+configuration and retain coverage-based test selection. Runtime Coverlet coverage,
+full initial tests, catalogue/source/test binding, original compile eligibility,
+raw-command validation, restored baseline and all full premerge gates remain
+required. Transfer validation checks the entire planning config, not just its
+flag, and refuses scope/configuration tampering.
+
+A bounded official-tool proof at `e390815` ran both planning configurations and
+retained all **840 identities**, identical **28 CompileError** entries, all
+**222 test-case bindings**, unchanged source inputs and passing baseline/restored
+222-case suites. No selected mutation executed; this is not a mutation score or
+hosted Windows speedup. Raw configurations, commands, reports, times and result:
+`/var/folders/8p/klwq9s9n3jg2hm6pqx99hc3w0000gn/T/cm-index-config-proof-wrxiw10p`.
+An earlier unsupported CLI-option attempt is retained separately at
+`cm-index-coverage-proof-b1ru4zig`; Stryker 5.0.0 accepts this setting through its
+configuration file. No audit, signature, threshold or timeout suppression was used.
+
+The corrected tooling suite passed **117 tests**, including full-config tamper
+refusal and proof that execution configs retain their original policy. A fresh
+hosted pilot and independent review remain necessary.
+
 ## Evidence and reproduction
 
 Prior verified research (read before implementation):
