@@ -42,6 +42,10 @@ native qualification and the aggregate gate. Normal synchronize events do not
 start or cancel these long runs. A result for an outdated SHA cannot qualify a
 newer commit.
 
+Requested qualification and unrelated label events have separate concurrency
+groups, even at the same SHA. Adding a documentation/triage label cannot cancel
+the long requested run. Repeated genuine requests for the same SHA still deduplicate.
+
 The workflow also supports `workflow_dispatch` once available on the default
 branch; select the candidate branch. The label route supports initial PR setup
 before that workflow has reached main. Optional profiling/concurrency diagnostics
