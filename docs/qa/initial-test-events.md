@@ -79,8 +79,10 @@ inside that timestamp window, consistent process and canonical clock ordering,
 no retry, no collector or session timeout, and completed all-Passed results.
 The expected TestCaseFilter must match the exact sealed method-group filter
 (or null for the original unfiltered toy); it is never derived from the events.
-Phase offsets and original marker lines are retained. Result instants must fall
-between session start and their message reception. Edge ambiguity fails closed.
+Phase offsets and original marker lines are retained. Timezone-aware result
+instants must be ordered within the initial phase: session_start <= first <=
+last < phase_end. Host result and console receipt clocks are not treated as
+causally ordered. Edge ambiguity fails closed.
 
 Only canonical console receive records count. Host traces and other log sites
 contain legitimate copies, but are separate inputs and are never deduplicated

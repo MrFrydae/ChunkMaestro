@@ -124,7 +124,7 @@ def replay_configuration(system):
     return 'tooling/quality/storage/replay/persistence-windows.json' if system == 'Windows' else 'tooling/quality/storage/replay/persistence.json'
 
 
-def collect(output):
+def collect(output, local=False):
     output = output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
@@ -133,8 +133,17 @@ def collect(output):
     temporary = None
     try:
         head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
-        event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_bytes())
-        result['trust'] = trusted_context(os.environ, event, head)
+        if local:
+            if os.environ.get('GITHUB_ACTIONS') == 'true':
+                raise ValueError('Local collection cannot run inside GitHub Actions')
+            owner = json.loads(subprocess.check_output(['gh', 'api', 'user'], text=True))
+            if owner.get('id') != OWNER_ID:
+                raise ValueError('Local private collection requires repository owner identity')
+            result['trust'] = {'repository': REPOSITORY, 'actor_id': OWNER_ID,
+                               'event': 'local', 'head': head}
+        else:
+            event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_bytes())
+            result['trust'] = trusted_context(os.environ, event, head)
         if platform.system() not in ('Darwin', 'Windows'):
             raise ValueError('Unsupported controller platform')
         if subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=normal'], cwd=ROOT, text=True).strip():
@@ -201,4 +210,6 @@ def collect(output):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('output', type=Path)
-    sys.exit(collect(parser.parse_args().output))
+    parser.add_argument('--local', action='store_true')
+    args = parser.parse_args()
+    sys.exit(collect(args.output, local=args.local))

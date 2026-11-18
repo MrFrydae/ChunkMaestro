@@ -1,5 +1,10 @@
 # Test-method partition mechanism (PR 6 / issue 3, Q190–195)
 
+Current owner decision: hosted storage workflows are retired. Use
+[local storage qualification](local-storage-qualification.md). Scheduling and
+workflow examples below are historical; do not dispatch them.
+
+
 This standalone experiment does not integrate with collectors, workflows, replay
 or qualification gates. Full pre-merge mutation qualification remains mandatory:
 90% line, 85% branch, 80% actual kills; no Timeout kill credit, denominator change,

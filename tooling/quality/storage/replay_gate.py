@@ -158,7 +158,7 @@ def validate(folder, manifest, root):
             'collection incomplete or wrong platform')
     trust = collection['trust']
     require(trust['head'] == manifest['head'] and trust['repository'] == replay_ci.REPOSITORY
-            and trust['actor_id'] == replay_ci.OWNER_ID and trust['event'] in ('pull_request', 'workflow_dispatch'),
+            and trust['actor_id'] == replay_ci.OWNER_ID and trust['event'] in ('pull_request', 'workflow_dispatch', 'local'),
             'untrusted or stale collection')
     allowed = set(replay_ci.child_environment({})) | replay_ci.ENV_KEYS
     require(set(collection['environment_keys']) <= allowed, 'credential-capable environment key')

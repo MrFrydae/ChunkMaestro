@@ -30,13 +30,13 @@ def describe(folder):
                 lines.append(f'  - Stopped: `{record.get("timeout_reason", "process-error")}`; '
                              f'exit `{record.get("exit_code")}`; elapsed `{record.get("seconds", "unknown")}` seconds; '
                              f'last observed log update `{record.get("last_log_update_age_seconds", "unknown")}` seconds ago.')
-                lines.append(f'  - Retained raw log: `{log}` in the uploaded platform artifact. No timeout kill credit.')
+                lines.append(f'  - Retained raw log: `{log}` in the retained platform evidence. No timeout kill credit.')
     if not found:
         lines.append('**No runtime evidence produced.** Check the preceding setup/tooling step; no test success is claimed.')
     if (folder / 'bundle.json').is_file() or (folder / 'probe.json').is_file():
         lines.append('**Shard pilot only:** catalogue planning or a partial diagnostic cannot satisfy full qualification.')
-    lines.extend(['', 'If qualification was not requested, add `storage-qualify` to the final candidate PR.',
-                  'After another push, remove/re-add that label for the new head. Full evidence and independent QA still block merge.'])
+    lines.extend(['', 'Storage qualification runs locally; see docs/qa/local-storage-qualification.md.',
+                  'Retain raw evidence and obtain exact-head lead attestation before merge.'])
     return '\n'.join(lines) + '\n'
 
 

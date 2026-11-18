@@ -1,5 +1,10 @@
 # Issue 3 storage safety qualification
 
+Current owner decision: hosted storage workflows are retired. Use
+[local storage qualification](local-storage-qualification.md). Scheduling and
+workflow examples below are historical; do not dispatch them.
+
+
 Current scheduling and hang diagnostics: [Storage CI](storage-ci.md). Full
 qualification is explicitly requested for a candidate; ordinary pushes run coverage/tests.
 
@@ -22,8 +27,8 @@ Use a fresh, nonexistent output directory per run:
 python3 tooling/build/build.py verify
 python3 -m unittest discover -s tooling/quality/storage -p 'test_*.py' -v
 python3 tooling/quality/storage/qualify.py run .artifacts/storage/macos
-# Hosted trusted context only; see mutation-replay.md for local collection.
-python3 tooling/quality/storage/replay_ci.py .artifacts/storage/macos
+# Explicit local owner-verified private collection.
+python3 tooling/quality/storage/replay_ci.py .artifacts/storage/macos --local
 python3 tooling/quality/storage/volume.py .artifacts/storage/macos/volume
 python3 tooling/quality/storage/native.py .artifacts/storage/macos/native
 ```

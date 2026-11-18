@@ -1,5 +1,10 @@
 # Bounded Windows two-cell diagnostic (issue 3 / PR 6, Q190–195)
 
+Current owner decision: hosted storage workflows are retired. Use
+[local storage qualification](local-storage-qualification.md). Scheduling and
+workflow examples below are historical; do not dispatch them.
+
+
 This is a new version 1 diagnostic contract, separate from source-only `shard_ci`
 and standalone `test_groups.validate`. Neither existing validator is relaxed.
 There is no full mutation score or qualification PASS. All candidate manifests

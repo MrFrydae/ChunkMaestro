@@ -41,5 +41,5 @@ class SummaryTests(unittest.TestCase):
             text = describe(Path(temporary))
             self.assertNotIn('**PASS**', text)
             self.assertIn('not full safety qualification', text)
-            self.assertIn('storage-qualify', text)
+            self.assertIn('runs locally', text)
             self.assertIn('No runtime evidence produced', text)

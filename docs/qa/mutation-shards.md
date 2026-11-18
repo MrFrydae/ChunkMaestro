@@ -1,5 +1,10 @@
 # Source mutation regions: planner and accounting contract
 
+Current owner decision: hosted storage workflows are retired. Use
+[local storage qualification](local-storage-qualification.md). Scheduling and
+workflow examples below are historical; do not dispatch them.
+
+
 Issue 3 / PR 6, Q190–195. The planning/accounting layer does not run qualification,
 change the 90/85/80 thresholds, or publish global PASS. Full mutation qualification,
 native, volume, recovery and independent review gates remain required before the

@@ -15,22 +15,8 @@ from qualify import ROOT, canonical, coverage, gate, mutation_key, native_eviden
 
 
 class GateTests(unittest.TestCase):
-    def test_unrequested_label_cannot_share_requested_qualification_concurrency(self):
-        # Configuration contract only; never induce cancellation of a hosted run.
-        workflow = (ROOT / '.github/workflows/storage-safety.yml').read_text(encoding='utf-8')
-        group = next(line.strip()[len('group: '):] for line in workflow.splitlines() if line.strip().startswith('group: '))
-        head = '${{ github.event.pull_request.head.sha || github.sha }}'
-        requested = "${{ github.event_name == 'workflow_dispatch' || github.event.label.name == 'storage-qualify' }}"
-        self.assertEqual(group.count(head), 1)
-        self.assertEqual(group.count(requested), 1)
-        def key(event, label, sha):
-            eligible = event == 'workflow_dispatch' or label == 'storage-qualify'
-            return group.replace(head, sha).replace(requested, str(eligible).lower())
-        candidate = key('pull_request', 'storage-qualify', 'a' * 40)
-        self.assertEqual(candidate, key('workflow_dispatch', '', 'a' * 40))
-        for label in ('bug', 'documentation', ''):
-            self.assertNotEqual(candidate, key('pull_request', label, 'a' * 40))
-        self.assertNotEqual(candidate, key('pull_request', 'storage-qualify', 'b' * 40))
+    def test_storage_campaigns_are_not_github_workflows(self):
+        self.assertFalse(list((ROOT / '.github/workflows').glob('storage-*.yml')))
 
     def test_fast_check_has_full_tests_but_no_tool_restore_mutations_or_qualification_manifest(self):
         with tempfile.TemporaryDirectory() as temporary:

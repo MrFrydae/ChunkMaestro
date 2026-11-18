@@ -18,7 +18,8 @@ MARKER = '<!-- chunkmaestro-qa-v1 -->'
 LEAD_ID = 38875853
 RISK_PREFIXES = ('src/ChunkMaestro.Agent/', 'src/ChunkMaestro.Transport/',
                  'src/ChunkMaestro.PrivilegedHelper/', 'src/ChunkMaestro.Persistence/',
-                 'src/ChunkMaestro.Backups/', 'src/ChunkMaestro.Deployments/', 'packaging/')
+                 'src/ChunkMaestro.Backups/', 'src/ChunkMaestro.Deployments/', 'packaging/',
+                 'tooling/build/storage_attestation.py')
 RISK_WORDS = ('enrollment', 'credential', 'secret', 'certificate', 'schedule',
               'restore', 'authorization', 'updater')
 STORAGE_PREFIXES = ('src/ChunkMaestro.Persistence/', 'src/ChunkMaestro.Domain/',
@@ -27,7 +28,7 @@ STORAGE_PREFIXES = ('src/ChunkMaestro.Persistence/', 'src/ChunkMaestro.Domain/',
 STORAGE_INPUTS = {'global.json', 'NuGet.Config', 'Directory.Build.props', 'Directory.Build.targets',
                   'Directory.Packages.props', '.editorconfig', '.config/dotnet-tools.json',
                   '.github/workflows/storage-safety.yml', '.github/workflows/storage-checks.yml',
-                  'tooling/build/qa_ci.py'}
+                  'tooling/build/qa_ci.py', 'tooling/build/storage_attestation.py'}
 
 
 def high_risk(files, labels):
@@ -71,26 +72,13 @@ def api(path, pages=False):
     return [item for page in data for item in page] if pages else data
 
 
-def storage_qualification(prefix, head, files):
-    """Fast checks cannot replace the trusted complete qualification for this SHA."""
+def storage_qualification(prefix, head, files, comments=None):
+    """Validate an owner-attested local receipt; never query or run Actions."""
     if not any(name.startswith(STORAGE_PREFIXES) or name in STORAGE_INPUTS for name in files):
         return None
-    if re.fullmatch(r'[0-9a-f]{40}', head) is None:
-        raise ValueError('Invalid storage qualification head.')
-    runs = api(f'{prefix}/actions/workflows/storage-safety.yml/runs?head_sha={head}&per_page=100')['workflow_runs']
-    candidates = [run for run in runs if run.get('head_sha') == head
-                  and run.get('display_title') == 'Storage qualification'
-                  and run.get('event') in ('pull_request', 'workflow_dispatch')]
-    if not candidates:
-        raise ValueError('Full storage qualification not requested for this head. Add storage-qualify to the final candidate PR; merge blocked.')
-    latest = max(candidates, key=lambda run: run['id'])
-    if latest.get('status') != 'completed' or latest.get('conclusion') != 'success':
-        raise ValueError('Full storage qualification pending or failed for this head; merge blocked. See ' + latest['html_url'])
-    jobs = api(latest['jobs_url'] + '?per_page=100')['jobs']
-    required = ('measure (windows-2025)', 'measure (macos-15)', 'gate')
-    if any(len([job for job in jobs if job['name'] == name and job['conclusion'] == 'success']) != 1 for name in required):
-        raise ValueError('Full storage qualification lacks successful Windows/macOS measurements and aggregate gate; merge blocked.')
-    return {'head': head, 'run_id': latest['id'], 'url': latest['html_url']}
+    from storage_attestation import assess as assess_storage
+    return assess_storage(comments if comments is not None else
+                          api(f'{prefix}/issues/{os.environ["REVIEW_PR"]}/comments', pages=True), head)
 
 
 def main():
@@ -111,7 +99,7 @@ def main():
         comments = api(f'{prefix}/issues/{number}/comments', pages=True)
         files = [item['filename'] for item in api(f'{prefix}/pulls/{number}/files', pages=True)]
         labels = [item['name'] for item in pr['labels']]
-        result['storage_qualification'] = storage_qualification(prefix, head, files)
+        result['storage_qualification'] = storage_qualification(prefix, head, files, comments)
         result.update(assess(comments, head, files, labels))
         result['verdict'] = 'PASS'
     except (KeyError, ValueError, TypeError, subprocess.CalledProcessError) as error:

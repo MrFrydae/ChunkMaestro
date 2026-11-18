@@ -1,5 +1,10 @@
 # Storage CI: fast feedback and explicit qualification
 
+Current owner decision: hosted storage workflows are retired. Use
+[local storage qualification](local-storage-qualification.md). Scheduling and
+workflow examples below are historical; do not dispatch them.
+
+
 Issue 3; Q189–195. Routine pushes should not start hours of mutation testing.
 The owner's 90% line, 85% branch and 80% actual mutation requirements still apply
 before accepting safety-critical storage changes.

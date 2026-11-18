@@ -373,21 +373,6 @@ class Cells(unittest.TestCase):
             if phase == 'restoration':
                 self.assertIn('backup mismatch', value['restoration_error'])
 
-    def test_pipeline_contract(self):
-        text = (cell.ROOT / '.github/workflows/storage-test-cell-pilot.yml').read_text()
-        self.assertNotIn('synchronize', text)
-        self.assertNotIn('pull_request_target', text)
-        self.assertIn('types: [labeled]', text)
-        self.assertIn('max-parallel: 2', text)
-        self.assertIn('group: [0, 1]', text)
-        self.assertEqual(3, text.count('timeout-minutes: 10'))
-        self.assertEqual(3, text.count('runs-on: windows-2025'))
-        self.assertIn('needs: [prepare, probe]', text)
-        self.assertIn('always() &&', text)
-        self.assertIn('contents: read', text)
-        self.assertNotIn('run-id:', text)
-        existing = (cell.ROOT / '.github/workflows/storage-shard-pilot.yml').read_text()
-        for action in re_find_actions(text): self.assertIn(action, existing)
 
 
 def re_find_actions(text):
