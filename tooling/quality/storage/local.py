@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import os
 import platform
 from pathlib import Path
 import subprocess
@@ -15,7 +16,18 @@ import native
 import volume
 
 
+def require_local():
+    if os.environ.get('GITHUB_ACTIONS', '').lower() == 'true':
+        raise ValueError('Local storage commands cannot run inside GitHub Actions; no stage started.')
+
+
+def check(output):
+    require_local()
+    return qualify.run(output, coverage_only=True)
+
+
 def collect(output):
+    require_local()
     if platform.system() not in ('Windows', 'Darwin'):
         raise ValueError('Collect on a real Windows or macOS machine, never substitute Linux evidence.')
     if subprocess.check_output(['git', 'status', '--porcelain'], cwd=qualify.ROOT, text=True).strip():
@@ -51,6 +63,7 @@ def collect(output):
 
 
 def receipt(windows, macos, output):
+    require_local()
     sys.path.insert(0, str(qualify.ROOT / 'tooling/build'))
     import storage_attestation
     folders = [windows.resolve(), macos.resolve()]
@@ -94,7 +107,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     try:
         sys.exit(receipt(args.windows, args.macos, args.output) if args.mode == 'receipt' else
-                 qualify.run(args.output, coverage_only=True) if args.mode == 'check' else collect(args.output))
+                 check(args.output) if args.mode == 'check' else collect(args.output))
     except (ValueError, OSError, KeyError) as error:
         print('[storage-local] BLOCKED: ' + str(error), file=sys.stderr)
         sys.exit(1)

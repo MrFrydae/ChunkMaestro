@@ -16,7 +16,9 @@ Commit changes first, use Python 3.13+ and the pinned SDK, and use a new ignored
 output directory. Run only one collector per checkout. Private tool collection
 checks the owner's authenticated `gh api user` identity before building/running
 it; credentials are removed from the child process environment. Local mode is
-explicit and refuses execution inside GitHub Actions.
+explicit. All local command entry points refuse GitHub Actions before any stage,
+checkout subprocess, output directory creation or evidence gate begins. The
+private replay collector retains its own additional guard.
 
 Quick runtime/coverage feedback, without mutation:
 
