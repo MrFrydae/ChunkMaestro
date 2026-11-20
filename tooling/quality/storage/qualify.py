@@ -27,11 +27,18 @@ def source_hashes():
 
 
 def mutation_configuration(module, system):
-    return {'stryker-config': {'project': 'ChunkMaestro.' + module + '.csproj', 'configuration': 'Release',
+    config = {'stryker-config': {'project': 'ChunkMaestro.' + module + '.csproj', 'configuration': 'Release',
             'test-projects': ['MutationTests.csproj'], 'reporters': ['dots', 'json', 'html'],
             'thresholds': {'high': 90, 'low': 80, 'break': 80},
             'mutate': ['**/*.cs', '!**/Migrations/*.Designer.cs', '!**/Migrations/*ModelSnapshot.cs'],
             'concurrency': 4}}
+    # Application is interface-only today. Avoid a second full-suite coverage
+    # run, but retain Stryker's build, initial tests and complete source report.
+    # If candidates are added later, 'off' tests each against the entire suite;
+    # it never excludes candidates. Domain/Persistence keep coverage selection.
+    if module == 'Application':
+        config['stryker-config']['coverage-analysis'] = 'off'
+    return config
 
 
 def run(output, coverage_only=False):

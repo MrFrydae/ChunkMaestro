@@ -82,7 +82,9 @@ class HostedWindowsTests(unittest.TestCase):
 
     def test_success_is_collection_only_and_budget_is_fixed(self):
         self.assertEqual(hosted.TOTAL_SECONDS, sum(seconds for _, seconds in hosted.STAGES))
-        self.assertLessEqual(hosted.TOTAL_SECONDS, 3120)
+        self.assertEqual(2880, hosted.TOTAL_SECONDS)
+        self.assertEqual((('coverage-and-small-modules', 480), ('persistence-replay', 2220),
+                          ('full-volume', 180)), hosted.STAGES)
         with tempfile.TemporaryDirectory() as temporary, \
              patch.object(hosted, 'output_directory', return_value=(Path(temporary) / 'new').resolve()), \
              patch.object(hosted, 'context', return_value={}), \

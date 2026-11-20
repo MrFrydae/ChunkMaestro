@@ -168,3 +168,81 @@ standalone `volume.json` PASS cannot satisfy this requirement. Historical volume
 metadata without this execution binding is insufficient.
 On Windows, collection also verifies that the selected drive partition and volume
 GUID belong to the newly created image before the bounded exhaustion test writes.
+
+## Corrected Windows deadline failure and bounded correction (2026-11-20)
+
+Both owner-authorized Windows runs have now been consumed. Corrected run
+[44793283079, job 136486240441](https://github.com/MrFrydae/ChunkMaestro/actions/runs/44793283079/job/136486240441)
+measured `f74f144d9e1495f2d4be53e1e1b28fa5c37312c2`. Its retained
+`hosted-session.json` records an absolute stage timeout at 480.489 seconds
+(480.807 seconds including collector bookkeeping), not a 60-minute job timeout.
+The raw root is
+`/Users/derek/Projects/ChunkMaestro/.artifacts/qa/windows-corrected-authorized-once/raw`.
+The runtime TRX passed 279/279 cases; Domain completed with six actual Killed
+mutants. Application created zero mutants but was terminated during coverage
+capture, without a completed report. Persistence replay and full-volume never
+started. This remains UNRESOLVED and cannot supply a receipt.
+
+| Command/phase | Actual Windows seconds | Result |
+| --- | ---: | --- |
+| Runtime locked restore | 36.0 | exit 0 |
+| Tool restore | 6.3 | exit 0 |
+| Mutation fixture locked restore | 1.7 | exit 0 |
+| Full runtime with coverage | 113.5 | 279/279 passed |
+| Domain mutation command | 178.8 | complete report |
+| Domain initial-test start to mutant coverage start | 73 | console timestamps 18:33:02–18:34:15 |
+| Domain coverage start to selection summary | 82 | console timestamps 18:34:15–18:35:37 |
+| Application start to coverage start | 83.54 | debug timestamps 18:35:43.433–18:37:06.975; no completion |
+
+Only Application now sets JSON `coverage-analysis: off`. The pinned official
+Stryker 5.0.0 source archive at commit
+`6e77a3451bac4793e9c839c3ff4055c1b30ca3af` was downloaded and SHA256-verified
+against the existing replay pin
+`80702658bac0989e9416e43239ee9d0ca971cea79628bed2b7b1917edd07b269`.
+`CoverageAnalysisInput.cs` maps this supported JSON option to `OptimizationModes.None`;
+`CoverageAnalyser.DetermineTestCoverage` then assigns every test to each mutant
+and returns before `CaptureCoverage`. `InitialisationProcess.GetMutationTestInputsAsync`
+still runs initial tests. No initial-test skip exists here. `MutationTestProcess`
+disables mixing without coverage selection, so applying this to the larger
+Domain/Persistence campaigns could greatly increase execution work; their
+configuration is unchanged. Future Application mutants would each run against
+the complete test suite and remain subject to the existing absolute deadlines.
+
+This preserves the separate full runtime/coverage baseline, Stryker build and
+initial tests, all source candidates and required completed Application report.
+The existing source-bound report validator still requires the complete frozen
+Application inventory and successful non-timeout exit for measured N/A; a missing
+report never establishes zero mutants. No scoring exclusions, eligibility,
+actual-Killed accounting, thresholds, platform/native/volume/recovery requirements,
+source/head checks, credential isolation or independent merge gates change.
+
+| Budget | Before seconds | After seconds |
+| --- | ---: | ---: |
+| Coverage / Domain / Application | 480 | 480 |
+| Persistence official/private replay | 2220 | 2220 |
+| Full-volume | 180 | 180 |
+| Collector total | 2880 | 2880 |
+| Overall hosted job cap | 3600 | 3600 |
+
+Local macOS arm64 validation used SDK 10.0.404. A disposable one-interface,
+one-test fixture ran the official pinned Stryker with default coverage and with
+coverage off: 4.4 and 4.2 seconds respectively. Both performed initial tests and
+produced genuine complete source-bound zero-mutant reports accepted by the
+unchanged validator. The off log omits coverage capture. These tiny timings
+validate behavior, not Windows throughput. The new regression rejects the prior
+Application configuration; collection scheduling tests still require both complete
+module reports and the full unfiltered coverage baseline. Hosted budget tests pin
+the unchanged stage allocations. Validation artifacts, commands, source hashes,
+first fixture setup errors and machine evidence are under
+`.artifacts/qa/application-coverage-fix/` in the implementation checkout.
+
+Guaranteed by pinned tool behavior: Application's redundant mutation-coverage pass
+is removed. Unproven: the new Windows first-stage duration, complete Persistence
+replay duration, and completion within 60 minutes. The observed Application
+coverage start was approximately 420 seconds into collection; bypassing that pass
+leaves roughly 60 seconds of the existing stage allowance for report finalization
+if earlier timings repeat. This is an estimate, not an executed Windows result.
+The parent must review/integrate the signed patch, obtain independent reviews at
+the final head, and request fresh explicit run authority before any further
+Windows dispatch. Final-head Windows and macOS raw qualification and the full
+receipt gate remain required. No campaign or hosted run was executed for this fix.

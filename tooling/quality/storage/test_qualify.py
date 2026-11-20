@@ -78,6 +78,18 @@ class GateTests(unittest.TestCase):
             self.assertFalse(result['runtime_tests_passed'])
             self.assertIn('360-second', result['error'])
 
+    def test_only_application_skips_redundant_mutant_coverage_not_initial_tests_or_candidates(self):
+        for system in ('Windows', 'Darwin'):
+            application = qualify.mutation_configuration('Application', system)['stryker-config']
+            self.assertEqual('off', application['coverage-analysis'])
+            for module in ('Domain', 'Persistence'):
+                expected = qualify.mutation_configuration(module, system)['stryker-config']
+                self.assertNotIn('coverage-analysis', expected)
+                # Every other setting, including the full source/test inventory,
+                # is identical. No initial-test skip/filter/baseline substitution.
+                expected['project'] = application['project']
+                self.assertEqual(dict(expected, **{'coverage-analysis': 'off'}), application)
+
     def test_initial_collection_runs_full_coverage_without_repeating_persistence_mutations(self):
         # Fake commands prove scheduling only, never runtime acceptance.
         for system in ('Windows', 'Darwin'):
@@ -90,11 +102,15 @@ class GateTests(unittest.TestCase):
                 with patch.object(qualify.platform, 'system', return_value=system), \
                         patch.object(replay, 'command', side_effect=command), \
                         patch.object(qualify, 'runtime_cases'), \
-                        patch('replay_ci.complete_report', return_value={'status': 'collected'}):
+                        patch('replay_ci.complete_report', return_value={'status': 'collected'}) as complete:
                     self.assertEqual(qualify.run(folder), 0)
                 manifests = json.loads((folder / 'manifest.json').read_bytes())
                 self.assertEqual(manifests['schema_version'], 2)
                 self.assertEqual(manifests['mutation_reports'], qualify.MUTATION_REPORTS)
+                self.assertEqual(2, complete.call_count)
+                self.assertEqual(['Domain', 'Application'], [c.kwargs['module'] for c in complete.call_args_list])
+                application = json.loads((folder / 'Application.json').read_bytes())['stryker-config']
+                self.assertEqual('off', application['coverage-analysis'])
                 mutation_calls = [c for c in calls if c[1] == 'stryker']
                 self.assertEqual([Path(c[c.index('--config-file') + 1]).stem for c in mutation_calls],
                                  ['Domain', 'Application'])
