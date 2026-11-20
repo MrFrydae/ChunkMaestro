@@ -237,10 +237,11 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
             InstanceRow[] instances = await db.Instances.AsNoTracking().OrderBy(x => x.Id).ToArrayAsync(cancellationToken);
             EndpointRow[] endpoints = await db.Endpoints.AsNoTracking().ToArrayAsync(cancellationToken);
             identity.Verify();
+            ILookup<Guid, EndpointRow> endpointsByInstance = endpoints.ToLookup(e => e.InstanceId);
             return new(fleets.Select(x => new Fleet(new(x.Id), x.Name)).ToArray(),
                 hosts.Select(x => new Host(new(x.Id), new(x.FleetId), x.Name, x.Address, DateTimeOffset.FromUnixTimeMilliseconds(x.RegisteredAt), Observation.Unknown)).ToArray(),
                 instances.Select(x => new Instance(new(x.Id), new(x.HostId), x.Name, x.ServiceName, DateTimeOffset.FromUnixTimeMilliseconds(x.RegisteredAt),
-                    Observation.Unknown, endpoints.Where(e => e.InstanceId == x.Id).OrderBy(e => e.Edition).ThenBy(e => e.Port)
+                    Observation.Unknown, endpointsByInstance[x.Id].OrderBy(e => e.Edition).ThenBy(e => e.Port)
                         .Select(e => new Endpoint((EndpointEdition) e.Edition, e.Address, e.Port)).ToArray())).ToArray(), DateTimeOffset.UtcNow);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
