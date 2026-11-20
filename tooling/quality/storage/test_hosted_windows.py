@@ -13,6 +13,20 @@ import replay_ci
 
 
 class HostedWindowsTests(unittest.TestCase):
+    def test_shared_workspace_output_is_rejected_before_any_child_or_creation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            env = {'LOCALAPPDATA': str(root / 'profile'), 'GITHUB_RUN_ID': '123'}
+            with patch.dict(os.environ, env, clear=True), \
+                 patch.object(hosted, 'context', return_value={'run_id': '123'}), \
+                 patch.object(hosted.replay, 'command') as execute:
+                expected = hosted.output_directory()
+                self.assertEqual(root / 'profile/ChunkMaestroQualification/storage-windows-123', expected)
+                with self.assertRaises(ValueError):
+                    hosted.collect(root / 'shared-runner-temp', 'a' * 40, hosted.AUTHORIZATION)
+                execute.assert_not_called()
+                self.assertFalse((root / 'shared-runner-temp').exists())
+
     def environment(self, root):
         head = 'a' * 40
         event = root / 'event.json'
@@ -55,6 +69,7 @@ class HostedWindowsTests(unittest.TestCase):
                 (Path(env['TMP']) / 'partial.log').write_text('retained partial raw output')
                 return records.pop(0)
             with patch.object(hosted, 'context', return_value={'run_id': '123'}), \
+                 patch.object(hosted, 'output_directory', return_value=output.resolve()), \
                  patch.object(hosted.replay, 'command', side_effect=command) as execute, \
                  patch.dict(os.environ, {'GITHUB_ACTIONS': 'true'}):
                 self.assertEqual(1, hosted.collect(output, 'a' * 40, hosted.AUTHORIZATION))
@@ -69,6 +84,7 @@ class HostedWindowsTests(unittest.TestCase):
         self.assertEqual(hosted.TOTAL_SECONDS, sum(seconds for _, seconds in hosted.STAGES))
         self.assertLessEqual(hosted.TOTAL_SECONDS, 3120)
         with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(hosted, 'output_directory', return_value=(Path(temporary) / 'new').resolve()), \
              patch.object(hosted, 'context', return_value={}), \
              patch.object(hosted.replay, 'command', return_value={'exit_code': 0, 'timeout': False}):
             output = Path(temporary) / 'new'
@@ -140,6 +156,7 @@ class HostedWindowsTests(unittest.TestCase):
 
     def test_total_deadline_refuses_next_stage(self):
         with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(hosted, 'output_directory', return_value=(Path(temporary) / 'new').resolve()), \
              patch.object(hosted, 'context', return_value={}), \
              patch.object(hosted.time, 'monotonic', side_effect=[0, hosted.TOTAL_SECONDS + 1, hosted.TOTAL_SECONDS + 1]), \
              patch.object(hosted.replay, 'command') as command:

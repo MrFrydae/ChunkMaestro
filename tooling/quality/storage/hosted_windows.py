@@ -20,6 +20,14 @@ TOTAL_SECONDS = 2880
 STAGES = (('coverage-and-small-modules', 480), ('persistence-replay', 2220), ('full-volume', 180))
 
 
+def output_directory():
+    base = Path(os.environ['LOCALAPPDATA'])
+    run_id = os.environ.get('GITHUB_RUN_ID', '')
+    if not base.is_absolute() or re.fullmatch('[1-9][0-9]*', run_id) is None:
+        raise ValueError('Requires an absolute user-local application-data directory and run identity')
+    return (base / 'ChunkMaestroQualification' / ('storage-windows-' + run_id)).resolve()
+
+
 def context(head, authorization):
     env = os.environ
     event = json.loads(Path(env['GITHUB_EVENT_PATH']).read_bytes())
@@ -61,6 +69,8 @@ def stage(name, output, trust):
 def collect(output, head, authorization):
     trust = context(head, authorization)
     output = output.resolve()
+    if output != output_directory():
+        raise ValueError('Evidence and temporary files must remain under the owned user-local run directory')
     output.mkdir(parents=True, exist_ok=False)
     # All temporary tool builds/replay trees remain uploadable even if taskkill
     # prevents the child's finally/relocation logic from executing.

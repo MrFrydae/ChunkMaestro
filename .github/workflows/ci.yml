@@ -150,17 +150,21 @@ jobs:
         with:
           python-version: '3.13'
       - name: Bounded exact-head collection (never qualification PASS)
+        id: collect
         env:
           AUTHORIZED_HEAD: ${{ inputs.head }}
           OWNER_AUTHORIZATION: ${{ inputs.authorization }}
-        run: python -u tooling/quality/storage/hosted_windows.py "$env:RUNNER_TEMP/storage-windows-$env:GITHUB_RUN_ID" --head "$env:AUTHORIZED_HEAD" --authorization "$env:OWNER_AUTHORIZATION"
+        run: |
+          $evidence = Join-Path $env:LOCALAPPDATA "ChunkMaestroQualification/storage-windows-$env:GITHUB_RUN_ID"
+          "evidence=$evidence" >> $env:GITHUB_OUTPUT
+          python -u tooling/quality/storage/hosted_windows.py "$evidence" --head "$env:AUTHORIZED_HEAD" --authorization "$env:OWNER_AUTHORIZATION"
       - name: Retain raw and incomplete evidence without retry
         timeout-minutes: 4
-        if: always()
+        if: always() && steps.collect.outputs.evidence != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: storage-windows-${{ github.sha }}-${{ github.run_id }}
-          path: ${{ runner.temp }}/storage-windows-${{ github.run_id }}/
+          path: ${{ steps.collect.outputs.evidence }}/
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 14

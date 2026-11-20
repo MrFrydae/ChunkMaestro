@@ -26,6 +26,8 @@ class GateTests(unittest.TestCase):
         self.assertIn('github.run_attempt == 1', exception)
         self.assertIn("inputs.authorization == 'PR6-one-Windows-run'", exception)
         self.assertIn('timeout-minutes: 60', exception)
+        self.assertIn("steps.collect.outputs.evidence != ''", exception)
+        self.assertNotIn('$env:RUNNER_TEMP', exception)
         for job in ('managed', 'secret-scan'):
             self.assertIn(f"  {job}:\n    if: github.event_name != 'workflow_dispatch'", workflow)
         for label in ('ordinary managed', 'secret scan', 'QA metadata'):

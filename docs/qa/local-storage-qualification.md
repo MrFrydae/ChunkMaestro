@@ -113,6 +113,15 @@ bounded attempt, not an assurance genuine qualification fits within an hour.
 Failure or deadline exhaustion leaves `UNRESOLVED`, never PASS or credited kills.
 Do not dispatch again without a new owner decision.
 
+The authorized run44780501245 stopped during runtime coverage: its temporary
+fixture directory was beneath the shared runner workspace and correctly failed
+ancestor-authority validation. Its partial artifacts are retained, with no
+qualification credit. The corrected collector requires its evidence and scratch
+root under `LOCALAPPDATA/ChunkMaestroQualification/storage-windows-<run-id>`;
+the workflow uploads that same root even on failure. It never weakens production
+ancestor checks or repairs shared runner directories. This correction does not
+authorize a second dispatch.
+
 The collector verifies GitHub-hosted Windows, repository/owner sender and actor,
 manual event, authorization input, checkout/workflow/head equality, clean checkout
 and first run attempt. It never calls local collection or alters `GITHUB_ACTIONS`
