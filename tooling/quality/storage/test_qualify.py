@@ -16,7 +16,18 @@ from qualify import ROOT, canonical, coverage, gate, mutation_key, native_eviden
 
 class GateTests(unittest.TestCase):
     def test_storage_campaigns_are_not_github_workflows(self):
-        self.assertFalse(list((ROOT / '.github/workflows').glob('storage-*.yml')))
+        workflows = list((ROOT / '.github/workflows').glob('storage-*.yml'))
+        self.assertEqual(workflows, [])
+        workflow = (ROOT / '.github/workflows/ci.yml').read_text()
+        self.assertIn('  workflow_dispatch:', workflow)
+        exception = workflow.split('  owner-windows-qualification:\n', 1)[1]
+        self.assertIn("github.event_name == 'workflow_dispatch'", exception)
+        self.assertIn("github.actor_id == '38875853'", exception)
+        self.assertIn('github.run_attempt == 1', exception)
+        self.assertIn("inputs.authorization == 'PR6-one-Windows-run'", exception)
+        self.assertIn('timeout-minutes: 60', exception)
+        for job in ('managed', 'secret-scan'):
+            self.assertIn(f"  {job}:\n    if: github.event_name != 'workflow_dispatch'", workflow)
 
     def test_fast_check_has_full_tests_but_no_tool_restore_mutations_or_qualification_manifest(self):
         with tempfile.TemporaryDirectory() as temporary:

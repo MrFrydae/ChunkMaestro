@@ -48,3 +48,28 @@ class LocalAttestationTests(unittest.TestCase):
             lambda r: r['metrics']['Persistence']['mutation'].update(killed=0, applicable=0, percent=None)):
             report = deepcopy(self.report); change(report)
             with self.assertRaises(ValueError): storage.validate(report, self.head)
+
+    def test_hosted_windows_exception_preserves_threshold_and_owner_run_binding(self):
+        report = deepcopy(self.report)
+        report['collection'] = 'local-macos-hosted-windows'
+        windows = report['artifacts'][0]
+        windows.update(session_sha256='c' * 64, session_location='/retained/session.json', hosted={
+            'repository': 'MrFrydae/ChunkMaestro', 'actor_id': storage.LEAD_ID,
+            'event': 'workflow_dispatch', 'head': self.head, 'workflow_sha': self.head,
+            'execution': 'github-hosted', 'authorization': 'PR6-one-Windows-run',
+            'workflow': '.github/workflows/ci.yml', 'run_id': '123', 'run_attempt': 1,
+            'run_url': 'https://github.com/MrFrydae/ChunkMaestro/actions/runs/123'})
+        storage.validate(report, self.head)
+        for field, value in [('actor_id', 1), ('head', 'b' * 40), ('workflow_sha', 'b' * 40),
+            ('run_id', ''), ('run_attempt', 2), ('event', 'pull_request'), ('execution', 'local'),
+            ('authorization', 'wrong'), ('run_url', 'https://example.test')]:
+            changed = deepcopy(report)
+            changed['artifacts'][0]['hosted'][field] = value
+            with self.assertRaises(ValueError): storage.validate(changed, self.head)
+        changed = deepcopy(report)
+        changed['metrics']['Persistence']['mutation'].update(killed=79, percent=79)
+        with self.assertRaises(ValueError): storage.validate(changed, self.head)
+        changed = deepcopy(report); changed['collection'] = 'local'
+        with self.assertRaises(ValueError): storage.validate(changed, self.head)
+        changed = deepcopy(report); del changed['artifacts'][0]['session_sha256']
+        with self.assertRaises(ValueError): storage.validate(changed, self.head)
