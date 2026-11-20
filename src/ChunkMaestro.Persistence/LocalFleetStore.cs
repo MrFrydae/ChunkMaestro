@@ -289,7 +289,7 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
             Id = id.Value,
             FleetId = fleetId.Value,
             Name = Label(name),
-            Address = Address(address),
+            Address = CanonicalAddress(address),
             RegisteredAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
         };
         return WriteAsync(db =>
@@ -329,7 +329,7 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
                 InstanceId = id.Value,
                 HostId = hostId.Value,
                 Edition = (int) e.Edition,
-                Address = Address(e.Address),
+                Address = CanonicalAddress(e.Address),
                 Port = e.Port
             };
         }).ToArray();
@@ -405,7 +405,7 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
 
         return value.Trim();
     }
-    private static string Address(string value)
+    internal static string CanonicalAddress(string value)
     {
         if (string.IsNullOrWhiteSpace(value) || value.Length > 253 || value != value.Trim())
         {

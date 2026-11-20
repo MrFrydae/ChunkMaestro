@@ -47,6 +47,7 @@ internal static class SupportedSchema
                     "Database contains invalid endpoint ports. Preserve files for reviewed recovery.");
             }
             await VerifyIdentitiesAsync(actual, token);
+            await VerifyAddressesAsync(actual, token);
             command.CommandText = "SELECT 1 FROM Hosts WHERE typeof(RegisteredAt)<>'integer' " +
                 "OR RegisteredAt<$minimum OR RegisteredAt>$maximum " +
                 "UNION ALL SELECT 1 FROM Instances WHERE typeof(RegisteredAt)<>'integer' " +
@@ -68,6 +69,30 @@ internal static class SupportedSchema
                 throw new FleetStorageException(StorageFailure.CorruptDatabase,
                     "Database contains inconsistent endpoint ownership. Preserve files for reviewed recovery.");
             }
+        }
+    }
+
+    private static async Task VerifyAddressesAsync(SqliteConnection connection, CancellationToken token)
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT Address FROM Hosts UNION ALL SELECT Address FROM Endpoints";
+        using SqliteDataReader reader = await command.ExecuteReaderAsync(token);
+        while (await reader.ReadAsync(token))
+        {
+            try
+            {
+                if (reader.GetValue(0) is string address &&
+                    string.Equals(address, LocalFleetStore.CanonicalAddress(address), StringComparison.Ordinal))
+                {
+                    continue;
+                }
+            }
+            catch (FleetStorageException error) when (error.Failure == StorageFailure.InvalidRegistration)
+            {
+
+            }
+            throw new FleetStorageException(StorageFailure.CorruptDatabase,
+                "Database contains invalid host or endpoint addresses. Preserve files for reviewed recovery.");
         }
     }
 

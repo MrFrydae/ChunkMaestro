@@ -29,6 +29,14 @@ credentials, commands or filesystem paths. DNS matching is lowercase with traili
 dot removed; IP literals are normalized without lookup. Aliases resolving to the
 same machine cannot yet be detected.
 
+Startup requires persisted host and endpoint addresses to match the same canonical
+representation produced by registration. Alternate DNS casing/trailing dots,
+alternate IP spellings and invalid addresses are refused as corrupt metadata
+before upgrade backup or writable inventory. Startup never normalizes rejected
+rows: preserve the database, sidecars and completed backups, then review recovery
+in a separate secure copy. This prevents a literal SQLite uniqueness index from
+accepting two representations of the same registered target within a fleet.
+
 Service names are bounded syntactic metadata, not helper authorization.
 The same fleet cannot register a canonical host address twice; different fleets
 may describe the same address. Each host/service pair is unique. Endpoint conflicts
