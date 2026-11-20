@@ -1,11 +1,20 @@
 """Trust, head binding and risk escalation checks for CI QA publication."""
 import json
 import unittest
+from unittest.mock import patch
 
 import qa_ci
 
 
 class QaCiTests(unittest.TestCase):
+    def test_storage_requires_local_receipt_without_actions_api(self):
+        with patch.object(qa_ci, 'api') as api:
+            with self.assertRaisesRegex(ValueError, 'local storage'):
+                qa_ci.storage_qualification('repos/o/r', 'a' * 40,
+                    ['src/ChunkMaestro.Persistence/Store.cs'], [])
+            self.assertIsNone(qa_ci.storage_qualification('repos/o/r', 'a' * 40, ['docs/readme.md'], []))
+            api.assert_not_called()
+
     def setUp(self):
         self.head = 'a' * 40
         self.report = {'head': self.head, 'implementers': ['implementation-agent', 'lead'],

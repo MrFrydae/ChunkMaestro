@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><GenerateDocumentationFile>true</GenerateDocumentationFile></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../ChunkMaestro.Domain/ChunkMaestro.Domain.csproj" />
+    <ProjectReference Include="../ChunkMaestro.Application/ChunkMaestro.Application.csproj" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+    <Content Include="$(IntermediateOutputPath)libchunkmaestro_storage.dylib" Link="libchunkmaestro_storage.dylib" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="BuildStorageNative" BeforeTargets="PrepareForBuild" Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+    <MakeDir Directories="$(IntermediateOutputPath)" />
+    <Exec Command="xcrun clang -Wall -Wextra -Werror -dynamiclib &quot;$(MSBuildProjectDirectory)/Native/storage.c&quot; -o &quot;$(IntermediateOutputPath)libchunkmaestro_storage.dylib&quot;" />
+  </Target>
+</Project>
