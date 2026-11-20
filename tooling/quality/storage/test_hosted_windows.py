@@ -81,9 +81,8 @@ class HostedWindowsTests(unittest.TestCase):
             self.assertTrue((output / 'scratch/partial.log').exists())
 
     def test_success_is_collection_only_and_budget_is_fixed(self):
-        self.assertEqual(hosted.TOTAL_SECONDS, sum(seconds for _, seconds in hosted.STAGES))
         self.assertEqual(2880, hosted.TOTAL_SECONDS)
-        self.assertEqual((('coverage-and-small-modules', 480), ('persistence-replay', 2220),
+        self.assertEqual((('coverage-and-small-modules', 2880), ('persistence-replay', 2880),
                           ('full-volume', 180)), hosted.STAGES)
         with tempfile.TemporaryDirectory() as temporary, \
              patch.object(hosted, 'output_directory', return_value=(Path(temporary) / 'new').resolve()), \
@@ -92,6 +91,23 @@ class HostedWindowsTests(unittest.TestCase):
             output = Path(temporary) / 'new'
             self.assertEqual(0, hosted.collect(output, 'a' * 40, hosted.AUTHORIZATION))
             session = json.loads((output / 'hosted-session.json').read_bytes())
+            self.assertEqual('COLLECTED', session['status'])
+            self.assertEqual('NOT_EVALUATED', session['qualification'])
+
+    def test_slow_initial_stage_borrows_unused_budget_without_extending_total(self):
+        # Synthetic elapsed times, not Windows execution: an initial stage over
+        # eight minutes must not be stopped while collection time remains.
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(hosted, 'output_directory', return_value=(Path(temporary) / 'new').resolve()), \
+             patch.object(hosted, 'context', return_value={}), \
+             patch.object(hosted.time, 'monotonic', side_effect=[0, 0, 600, 2700, 2760]), \
+             patch.object(hosted.replay, 'command', return_value={'exit_code': 0, 'timeout': False}) as command:
+            output = Path(temporary) / 'new'
+            self.assertEqual(0, hosted.collect(output, 'a' * 40, hosted.AUTHORIZATION))
+            self.assertEqual([2880, 2280, 180], [call.args[-1] for call in command.call_args_list])
+            session = json.loads((output / 'hosted-session.json').read_bytes())
+            self.assertEqual(2760, session['seconds'])
+            self.assertEqual([2880, 2280, 180], [stage['deadline_seconds'] for stage in session['stages']])
             self.assertEqual('COLLECTED', session['status'])
             self.assertEqual('NOT_EVALUATED', session['qualification'])
 

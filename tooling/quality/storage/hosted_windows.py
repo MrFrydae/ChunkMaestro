@@ -17,7 +17,11 @@ import volume
 AUTHORIZATION = 'PR6-one-Windows-run'
 WORKFLOW = '.github/workflows/ci.yml'
 TOTAL_SECONDS = 2880
-STAGES = (('coverage-and-small-modules', 480), ('persistence-replay', 2220), ('full-volume', 180))
+# Coverage/small modules and replay share one wall-clock collection budget.
+# Fixed subdivisions previously killed initial tests while most of that budget
+# remained unused. Per-command deadlines/watchdogs and the total cap still apply.
+STAGES = (('coverage-and-small-modules', TOTAL_SECONDS),
+          ('persistence-replay', TOTAL_SECONDS), ('full-volume', 180))
 
 
 def output_directory():
@@ -91,10 +95,13 @@ def collect(output, head, authorization):
             remaining = TOTAL_SECONDS - (time.monotonic() - started)
             if remaining <= 0:
                 raise ValueError('Total collection deadline exhausted')
+            allowed = min(deadline, remaining)
+            print(f'[storage-hosted] START {name}; remaining_collection_seconds={remaining:.1f}; '
+                  f'stage_deadline_seconds={allowed:.1f}', flush=True)
             record = replay.command([sys.executable, '-u', str(Path(__file__).resolve()), str(evidence),
                                      '--head', head, '--authorization', authorization, '--stage', name],
-                                    qualify.ROOT, output, name, env, min(deadline, remaining))
-            session['stages'].append(dict(record, stage=name, deadline_seconds=deadline))
+                                    qualify.ROOT, output, name, env, allowed)
+            session['stages'].append(dict(record, stage=name, deadline_seconds=allowed))
             replay.write(path, session)
             replay.require(record)
         session['status'] = 'COLLECTED'
@@ -103,6 +110,10 @@ def collect(output, head, authorization):
     finally:
         session['seconds'] = time.monotonic() - started
         replay.write(path, session)
+        print(f'[storage-hosted] {session["status"]}; phase={session.get("phase", "not-started")}; '
+              f'elapsed_seconds={session["seconds"]:.1f}; '
+              f'reason={session.get("error", "all collection stages completed; qualification not evaluated")}; '
+              f'evidence={path}; no automatic retry', flush=True)
     return 0 if session['status'] == 'COLLECTED' else 1
 
 

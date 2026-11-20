@@ -98,8 +98,9 @@ distinct names during manual dispatch so they cannot replace required PR check
 contexts with skipped results.
 
 The fixed budget is 60 minutes total: three setup steps capped at two minutes
-each, 48 minutes of collection (8 minutes coverage/Domain/Application, 37 minutes
-complete official/private Persistence replay, 3 minutes full-volume), up to two
+each, 48 minutes of collection shared by coverage/Domain/Application and complete
+official/private Persistence replay (full-volume additionally caps itself at
+3 minutes within that same remaining budget), up to two
 minutes for bounded process-tree termination/overhead, and four minutes artifact
 upload. Collection emits 30-second heartbeats using the existing command runner;
 raw child diagnostics stream to artifact log files. No stage or upload is retried
@@ -231,8 +232,9 @@ produced genuine complete source-bound zero-mutant reports accepted by the
 unchanged validator. The off log omits coverage capture. These tiny timings
 validate behavior, not Windows throughput. The new regression rejects the prior
 Application configuration; collection scheduling tests still require both complete
-module reports and the full unfiltered coverage baseline. Hosted budget tests pin
-the unchanged stage allocations. Validation artifacts, commands, source hashes,
+module reports and the full unfiltered coverage baseline. At this historical
+correction, hosted budget tests pinned the stage allocations; the later
+shared-budget correction below supersedes those allocations. Validation artifacts, commands, source hashes,
 first fixture setup errors and machine evidence are under
 `.artifacts/qa/application-coverage-fix/` in the implementation checkout.
 
@@ -246,3 +248,30 @@ The parent must review/integrate the signed patch, obtain independent reviews at
 the final head, and request fresh explicit run authority before any further
 Windows dispatch. Final-head Windows and macOS raw qualification and the full
 receipt gate remain required. No campaign or hosted run was executed for this fix.
+
+## Shared collection deadline after run 44807864834
+
+The third separately authorized Windows attempt at `7ee5574` also failed at the
+480-second first-stage cutoff. Its 1,268 retained raw files show successful runtime
+tests and completed Domain mutation, followed by Application's initial tests when
+the wrapper killed the process tree. Persistence and full-volume never started.
+Removing Application's second coverage pass was insufficient: the fixed first
+stage allocation itself prevented using the remaining collection budget.
+
+Coverage/small modules and Persistence now share the existing 2,880-second
+wall-clock collection deadline. Each child receives at most the time remaining;
+time already spent is subtracted before starting the next stage. Full-volume
+keeps its additional 180-second cap within that remaining time. This does not
+grant each stage a fresh 48 minutes. All command deadlines and mutation inactivity
+watchdogs remain; exhaustion or any child failure stops collection without retry.
+The overall 3,600-second job limit, setup/upload allowances, credential isolation,
+raw-evidence requirements, initial tests and qualification thresholds are unchanged.
+The collector logs each effective stage budget and its terminal phase/error.
+
+A deterministic scheduler regression proves an initial phase lasting ten minutes
+can continue into replay while later stages receive only the remaining total.
+It is a synthetic scheduling proof, not Windows execution or a speedup claim.
+Windows completion and the complete cross-platform qualification remain unproven.
+The third single-run authorization is consumed; this correction does not authorize
+another dispatch or rerun. Existing exact-head macOS evidence remains historical
+for any new correction commit. Never relabel it or manufacture a PASS receipt.
