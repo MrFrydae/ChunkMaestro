@@ -110,9 +110,13 @@ def collect(output, head, authorization):
     finally:
         session['seconds'] = time.monotonic() - started
         replay.write(path, session)
+        reason = session.get('error')
+        if reason is None:
+            reason = ('all collection stages completed; qualification not evaluated'
+                      if session['status'] == 'COLLECTED' else 'collection interrupted or incomplete')
         print(f'[storage-hosted] {session["status"]}; phase={session.get("phase", "not-started")}; '
               f'elapsed_seconds={session["seconds"]:.1f}; '
-              f'reason={session.get("error", "all collection stages completed; qualification not evaluated")}; '
+              f'reason={reason}; '
               f'evidence={path}; no automatic retry', flush=True)
     return 0 if session['status'] == 'COLLECTED' else 1
 

@@ -1,4 +1,6 @@
 """Synthetic dispatch/deadline regressions; never Windows qualification."""
+from contextlib import redirect_stdout
+import io
 import json
 import os
 from pathlib import Path
@@ -110,6 +112,23 @@ class HostedWindowsTests(unittest.TestCase):
             self.assertEqual([2880, 2280, 180], [stage['deadline_seconds'] for stage in session['stages']])
             self.assertEqual('COLLECTED', session['status'])
             self.assertEqual('NOT_EVALUATED', session['qualification'])
+
+    def test_interrupt_retains_incomplete_status_and_truthful_terminal_reason(self):
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(hosted, 'output_directory', return_value=(Path(temporary) / 'new').resolve()), \
+             patch.object(hosted, 'context', return_value={}), \
+             patch.object(hosted.replay, 'command', side_effect=KeyboardInterrupt) as command:
+            output = Path(temporary) / 'new'
+            console = io.StringIO()
+            with redirect_stdout(console), self.assertRaises(KeyboardInterrupt):
+                hosted.collect(output, 'a' * 40, hosted.AUTHORIZATION)
+            command.assert_called_once()
+            session = json.loads((output / 'hosted-session.json').read_bytes())
+            self.assertEqual('UNRESOLVED', session['status'])
+            self.assertEqual('NOT_EVALUATED', session['qualification'])
+            self.assertEqual([], session['stages'])
+            self.assertIn('collection interrupted or incomplete', console.getvalue())
+            self.assertNotIn('all collection stages completed', console.getvalue())
 
     def test_unresolved_session_refuses_receipt_before_raw_gate(self):
         with tempfile.TemporaryDirectory() as temporary, \
