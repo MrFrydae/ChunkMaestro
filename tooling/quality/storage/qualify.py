@@ -200,6 +200,11 @@ def coverage(folder):
     return lines, branches
 
 
+def volume_evidence(folder, manifest):
+    import volume
+    return volume.validate_evidence(folder / 'volume', manifest['head'], manifest['platform'], ROOT)
+
+
 def gate(folders, output):
     import replay_gate
     failures, manifests, all_lines, all_branches = [], [], {}, {}
@@ -223,9 +228,7 @@ def gate(folders, output):
             for target, incoming in ((all_lines, lines), (all_branches, branches)):
                 for key, hit in incoming.items():
                     target[key] = target.get(key, False) or hit
-            volume = json.loads((folder / 'volume' / 'volume.json').read_text(encoding='utf-8'))
-            if volume['status'] != 'PASS' or volume['head'] != manifest['head'] or volume['platform'] != manifest['platform']:
-                failures.append(str(folder) + ': full-volume evidence failed or mismatched')
+            volume_evidence(folder, manifest)
             if manifest['platform'] == 'Darwin':
                 native_evidence(folder / 'native', manifest)
             # Validate the full official/private pair before its official report

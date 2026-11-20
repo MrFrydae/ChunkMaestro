@@ -28,6 +28,8 @@ class GateTests(unittest.TestCase):
         self.assertIn('timeout-minutes: 60', exception)
         for job in ('managed', 'secret-scan'):
             self.assertIn(f"  {job}:\n    if: github.event_name != 'workflow_dispatch'", workflow)
+        for label in ('ordinary managed', 'secret scan', 'QA metadata'):
+            self.assertIn(f"github.event_name == 'workflow_dispatch' && 'manual / {label} not requested'", workflow)
 
     def test_fast_check_has_full_tests_but_no_tool_restore_mutations_or_qualification_manifest(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -140,6 +142,7 @@ class GateTests(unittest.TestCase):
                         for i in range(6)]
                 with patch.object(qualify, 'ROOT', root), patch.object(qualify, 'source_hashes', return_value={}), \
                         patch.object(qualify, 'runtime_cases'), patch.object(qualify, 'native_evidence'), \
+                        patch.object(qualify, 'volume_evidence'), \
                         patch.object(qualify, 'coverage', return_value=(lines, {})), \
                         patch.object(qualify.subprocess, 'check_output', return_value=head), \
                         patch.object(replay_gate, 'validate', return_value=[] if defect == 'empty' else rows,

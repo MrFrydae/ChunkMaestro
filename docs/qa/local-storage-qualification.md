@@ -93,7 +93,9 @@ The manual exception lives in the existing CI workflow so it can be dispatched
 against the reviewed feature ref without merging the storage PR first. Ordinary
 managed/secret-scan jobs are excluded from manual dispatch; the qualification job
 is excluded from ordinary CI. Manual runs have unique concurrency keys so another
-event cannot silently cancel this evidence collection.
+event cannot silently cancel this evidence collection. Skipped ordinary jobs use
+distinct names during manual dispatch so they cannot replace required PR check
+contexts with skipped results.
 
 The fixed budget is 60 minutes total: three setup steps capped at two minutes
 each, 48 minutes of collection (8 minutes coverage/Domain/Application, 37 minutes
@@ -146,3 +148,14 @@ execution independently. Both-local receipt support and all local hosted-refusal
 guards remain. Current/historical coverage-only or old mutation measurements
 cannot supply final-head qualification credit. Collection is never qualification
 PASS, and a mixed receipt does not replace independent QA.
+
+Full-volume tools receive the same explicit noncredential environment allowlist
+as mutation tools. Only the owned disposable-volume path is added for the test.
+Success requires a retained bounded TRX containing exactly the intended executed
+full-volume case, with one passed result and no failures or skips. The collector
+records its raw digest and fixture/tool input digests; receipt gating independently
+rechecks the raw result, identity and hashes. A successful process exit or a
+standalone `volume.json` PASS cannot satisfy this requirement. Historical volume
+metadata without this execution binding is insufficient.
+On Windows, collection also verifies that the selected drive partition and volume
+GUID belong to the newly created image before the bounded exhaustion test writes.
