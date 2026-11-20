@@ -8,6 +8,10 @@
     <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
   </ItemGroup>
   <!-- Compile an explicit contract suite on unsupported build hosts; no runtime tests are skipped. -->
+  <!-- Kernel descriptor inspection is a macOS suite, not skipped Windows acceptance. -->
+  <ItemGroup Condition="!$([MSBuild]::IsOSPlatform('OSX'))">
+    <Compile Remove="StorageIdentityLifetimeTests.cs" />
+  </ItemGroup>
   <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows')) Or $([MSBuild]::IsOSPlatform('OSX'))">
     <Compile Remove="UnsupportedPlatformTests.cs" />
   </ItemGroup>
