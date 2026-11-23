@@ -98,6 +98,16 @@ def versions(h):
         f.event('package-' + name, value)
 
 
+def failure_name(error):
+    if isinstance(error, f.Failure) and re.fullmatch(r'[a-z0-9-]{1,80}', str(error)):
+        return str(error)
+    return 'setup-internal'
+
+
+def record_failure(phase, error):
+    f.event('setup-' + phase + '-' + failure_name(error), 'failed')
+
+
 def setup():
     runner_guard()
     # Never rely on package installation to create or broaden KVM access.
@@ -109,18 +119,34 @@ def setup():
     f.event('ubuntu-keyring-sha256', hashlib.sha256(Path(KEYRING).read_bytes()).hexdigest())
     root = Path(tempfile.mkdtemp(prefix='cm-runner-setup-', dir='/tmp'))
     h = SetupHarness(root)
+    primary = None
     try:
         (root / 'ubuntu.sources').write_bytes(data)
         (root / 'lists').mkdir()
         for args, phase, seconds in apt_commands(root):
             h.run(args, phase, seconds)
+    except BaseException as error:
+        primary = error
+        record_failure('primary', error)
     finally:
         try:
             versions(h)
+        except BaseException as error:
+            record_failure('inventory', error)
+            if primary is None:
+                primary = error
         finally:
-            h.cleanup()
-            # APT's private indexes may be root-owned. Never add privileged cleanup.
-            f.event('setup-workspace', 'retained-for-ephemeral-runner-destruction')
+            try:
+                h.cleanup()
+            except BaseException as error:
+                record_failure('cleanup', error)
+                if primary is None:
+                    primary = error
+            finally:
+                # APT's private indexes may be root-owned. Never add privileged cleanup.
+                f.event('setup-workspace', 'retained-for-ephemeral-runner-destruction')
+    if primary is not None:
+        raise primary
 
 
 class FixedParser(argparse.ArgumentParser):
@@ -137,11 +163,19 @@ def main():
     elif args.phase == 'check':
         f.prerequisites()
     else:
+        primary = None
         try:
             setup()
-        finally:
-            # Even failed source validation or APT retains every named status.
+        except BaseException as error:
+            primary = error
+        try:
             f.inventory()
+        except BaseException as error:
+            record_failure('final-inventory', error)
+            if primary is None:
+                primary = error
+        if primary is not None:
+            raise primary
 
 
 if __name__ == '__main__':
@@ -152,7 +186,7 @@ if __name__ == '__main__':
     try:
         main()
     except f.Failure as exc:
-        f.event(str(exc), 'failed')
+        f.event(failure_name(exc), 'failed')
         raise SystemExit(1)
     except Exception:
         f.event('setup-internal', 'failed-details-suppressed')

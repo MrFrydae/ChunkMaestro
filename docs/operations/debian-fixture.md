@@ -279,3 +279,23 @@ patch itself grants no new activation authority. Actual APT resolution, KVM acce
 guest boot, real SSH trust behavior and teardown remain unexecuted for this patch.
 Prior security and functional reports remain immutable historical evidence, not
 independent review of this change or product acceptance.
+
+### Primary failure preservation
+
+The independent `f127575` correction preflight found SR-CORR-01: inventory or
+cleanup exceptions could replace the original APT error in sanitized evidence.
+Setup now records the first error immediately, emits fixed separate statuses for
+inventory/cleanup failures, always records retained workspace responsibility,
+and rethrows the first error. A final inventory failure cannot hide it. If only
+a secondary phase fails, that phase still makes setup fail; no VM is started.
+Exception details are never included in events, and no cleanup privilege is added.
+
+Local correction proof: 28 tests passed, one Linux-only skip. The new preservation
+tests reject historical source; the independent success-path secondary-failure
+guard still passes it. Original review evidence remains unchanged. An initial
+regression-fixture keyring mismatch was retained, corrected, and followed by an
+actual historical-source negative control. YAML/actionlint, syntax, whitespace
+and specification checks pass. Logs are retained under
+`.artifacts/debian-15-integration/prerequisites-correction/`. This is offline
+diagnostics proof, not hosted APT, KVM, VM or product acceptance. A new independent
+correction review remains required before another bounded activation.

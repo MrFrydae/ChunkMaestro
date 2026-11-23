@@ -22,6 +22,49 @@ Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
 
 
 class RunnerContracts(unittest.TestCase):
+    def test_primary_apt_failure_survives_compound_inventory_and_cleanup_failures(self):
+        for secondary in (f.Failure('package-inventory-output-limit'), PermissionError('PRIVATE_DETAIL')):
+            with self.subTest(secondary=type(secondary).__name__), tempfile.TemporaryDirectory() as d:
+                root = Path(d)
+                source = root / 'sources'
+                source.write_bytes(SOURCE)
+                key = root / 'keyring'
+                key.write_bytes(b'synthetic')
+                (root / 'setup').mkdir()
+                with patch.object(r, 'runner_guard'), patch.object(r, 'SOURCES', source), \
+                     patch.object(r, 'KEYRING', str(key)), \
+                     patch.object(r, 'validate_sources'), \
+                     patch.object(f, 'inventory', return_value={'kvm': 'ready'}), \
+                     patch.object(r.tempfile, 'mkdtemp', return_value=str(root / 'setup')), \
+                     patch.object(r.SetupHarness, 'run', side_effect=f.Failure('apt-update-output-limit')), \
+                     patch.object(r, 'versions', side_effect=secondary), \
+                     patch.object(r.SetupHarness, 'cleanup', side_effect=PermissionError('PRIVATE_DETAIL')), \
+                     contextlib.redirect_stdout(io.StringIO()) as output:
+                    with self.assertRaisesRegex(f.Failure, '^apt-update-output-limit$'):
+                        r.setup()
+                events = [json.loads(line) for line in output.getvalue().splitlines()]
+                self.assertIn({'phase': 'setup-primary-apt-update-output-limit', 'status': 'failed'}, events)
+                self.assertIn({'phase': 'setup-workspace', 'status': 'retained-for-ephemeral-runner-destruction'}, events)
+                self.assertTrue(any(e['phase'].startswith('setup-inventory-') for e in events))
+                self.assertTrue(any(e['phase'].startswith('setup-cleanup-') for e in events))
+                self.assertNotIn('PRIVATE_DETAIL', output.getvalue())
+
+    def test_final_inventory_failure_cannot_replace_setup_failure(self):
+        with patch.object(sys, 'argv', ['runner_setup.py', 'setup']), \
+             patch.object(r, 'setup', side_effect=f.Failure('apt-install-exit')), \
+             patch.object(f, 'inventory', side_effect=PermissionError('PRIVATE_DETAIL')), \
+             contextlib.redirect_stdout(io.StringIO()) as output:
+            with self.assertRaisesRegex(f.Failure, '^apt-install-exit$'):
+                r.main()
+        self.assertIn('setup-final-inventory-setup-internal', output.getvalue())
+        self.assertNotIn('PRIVATE_DETAIL', output.getvalue())
+
+    def test_final_inventory_failure_after_success_still_fails(self):
+        with patch.object(sys, 'argv', ['runner_setup.py', 'setup']), \
+             patch.object(r, 'setup'), patch.object(f, 'inventory', side_effect=f.Failure('inventory-refused')):
+            with self.assertRaisesRegex(f.Failure, '^inventory-refused$'):
+                r.main()
+
     def test_all_missing_command_combinations_named_without_paths(self):
         for bits in itertools.product((False, True), repeat=len(f.TOOLS)):
             present = dict(zip(f.TOOLS, bits))
