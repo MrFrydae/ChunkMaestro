@@ -1,5 +1,5 @@
 <Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
- xmlns:p="using:ChunkMaestro.Presentation" xmlns:d="using:ChunkMaestro.Domain"
+ xmlns:p="using:ChunkMaestro.Presentation" xmlns:d="using:ChunkMaestro.Domain" xmlns:local="using:ChunkMaestro.Desktop"
  x:Class="ChunkMaestro.Desktop.MainWindow" x:DataType="p:FleetViewModel"
  Title="ChunkMaestro — Fleet" Width="1120" Height="820" MinWidth="720" MinHeight="520"
  Background="{DynamicResource ShellSurface}">
@@ -41,16 +41,16 @@
       <TextBox Name="FleetNameInput" Text="{Binding FleetName}" PlaceholderText="Fleet name" AutomationProperties.Name="Fleet name" />
       <Button Content="Register _fleet" Click="FleetClick" />
       <TextBlock Text="Parent fleet" />
-      <ComboBox Name="FleetSelector" ItemsSource="{Binding Fleets}" SelectedItem="{Binding SelectedFleet}" AutomationProperties.Name="Parent fleet" HorizontalAlignment="Stretch">
+      <local:MetadataSelector Name="FleetSelector" ItemsSource="{Binding Fleets}" SelectedItem="{Binding SelectedFleet}" AutomationProperties.Name="Parent fleet" HorizontalAlignment="Stretch">
        <ComboBox.ItemTemplate><DataTemplate x:DataType="d:Fleet"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
-      </ComboBox>
+      </local:MetadataSelector>
       <TextBox Name="HostNameInput" Text="{Binding HostName}" PlaceholderText="Host name" AutomationProperties.Name="Host name" />
       <TextBox Name="HostAddressInput" Text="{Binding HostAddress}" PlaceholderText="Host IP address or DNS name" AutomationProperties.Name="Host address" />
       <Button Content="Register _host" Click="HostClick" />
       <TextBlock Text="Parent host" />
-      <ComboBox Name="HostSelector" ItemsSource="{Binding Hosts}" SelectedItem="{Binding SelectedHost}" AutomationProperties.Name="Parent host" HorizontalAlignment="Stretch">
+      <local:MetadataSelector Name="HostSelector" ItemsSource="{Binding Hosts}" SelectedItem="{Binding SelectedHost}" AutomationProperties.Name="Parent host" HorizontalAlignment="Stretch">
        <ComboBox.ItemTemplate><DataTemplate x:DataType="d:Host"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
-      </ComboBox>
+      </local:MetadataSelector>
       <TextBox Name="InstanceNameInput" Text="{Binding InstanceName}" PlaceholderText="Instance name" AutomationProperties.Name="Instance name" />
       <TextBox Text="{Binding ServiceName}" PlaceholderText="systemd service name" AutomationProperties.Name="Service metadata name" />
       <TextBox Name="JavaPortInput" Text="{Binding JavaPort}" PlaceholderText="Java TCP port (blank to omit)" AutomationProperties.Name="Java TCP port" />

@@ -58,8 +58,11 @@ sidecars and completed before-migration backups and follow fleet-storage.md for
 reviewed recovery. A failed reload retains the prior displayed snapshot, marks
 it potentially stale and blocks registration until reload succeeds. If a write
 succeeded but reload failed, reload before retrying to avoid duplicate attempts.
-Closing waits for an in-flight local action and disposes the store to release
-controller locks. No tray/background process or automatic live host commands run.
+An ambiguous local write failure retains the displayed rows and blocks further
+registration until a manual reload succeeds. Validation errors remain correctable
+without that recovery gate; no write is automatically replayed. Closing waits for
+an in-flight local action and disposes the acquired store once, including
+overlapping close requests, to release controller locks. No tray/background process or automatic live host commands run.
 
 ## Appearance and accessibility subset
 
@@ -85,8 +88,33 @@ macOS and Linux after building it. Tests have live output, raw TRX retention, a
 This is separate from the accepted storage gate; fake-service headless contracts
 do not establish native desktop-to-SQLite or operating-system interactions.
 The restack cold locked restore, normal Release build, syntax and formatting
-passed. All 7 headless and 270 macOS storage tests passed (277 total, zero
-failures/skips). Native interactions, real composition, current-head hosted
+passed. Combined verification now executes 24 headless/composition/lifecycle
+cases and 270 macOS storage cases: 294 passed, zero failures/skips. Four
+composition cases use real disposable SQLite with public window/viewmodel/store
+operations; twelve lifecycle cases use explicitly injected service faults.
+The original lifecycle implementation failed ten of those twelve cases.
+
+Native macOS inspection used a development-only launch bundle and the real
+application/window. Consent and keyboard focus gates, scrolling, disabled remote
+actions and unknown/unavailable labels were observed without opening the normal
+user store. A separate native harness supplies the same App with a real-store
+opener targeting an owned `/private/tmp` fixture, with that actual path displayed
+before consent. Native buttons/keyboard registered fleet/host/instance metadata
+and separate TCP/UDP endpoints; after closing the process, read-only SQLite
+inspection found preserved identities, two endpoints and a passing integrity
+check. Only location selection uses the existing internal test seam; no storage
+security, schema or service operation is mocked. This does not prove the normal
+AppData opening path, Windows native behavior, screen readers or installers.
+
+The App opener/path injection is a composition boundary; the parameterless
+production constructor still uses the normal current-user storage location and
+explicit consent. Native application identity is ChunkMaestro. Parent selectors
+expose selected names through their automation peer instead of the underlying
+record representation, with a focused headless regression. The pinned upstream
+[collapsed selection behavior](https://github.com/AvaloniaUI/Avalonia/blob/12.1.6/src/Avalonia.Controls/Automation/Peers/ComboBoxAutomationPeer.cs)
+explains that boundary. Native proof and harness/source/binary hashes are retained
+under `.artifacts/native-preview/` and `.artifacts/native-composition/`; these are
+development evidence, not installer or release packages. Current-head hosted
 checks and independent desktop acceptance remain pending.
 
 ## Historical validation and integration evidence (2026-11-14)

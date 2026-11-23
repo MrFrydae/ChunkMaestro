@@ -7,11 +7,13 @@ using System.Runtime.CompilerServices;
 
 namespace ChunkMaestro.Presentation;
 
-public sealed class FleetViewModel(Func<bool, Task<IFleetInventory>> open) : INotifyPropertyChanged, IAsyncDisposable
+public sealed class FleetViewModel(Func<bool, Task<IFleetInventory>> open, string? storagePath = null) : INotifyPropertyChanged, IAsyncDisposable
 {
     private IFleetInventory? inventory;
     private bool busy;
     private bool closing;
+    private bool writeNeedsReload;
+    private Task? disposal;
     private TaskCompletionSource? idle;
     private bool confirmed;
     private string status = "Storage closed. Confirm local storage to begin.";
@@ -32,7 +34,7 @@ public sealed class FleetViewModel(Func<bool, Task<IFleetInventory>> open) : INo
     public string StoragePath
     {
         get;
-    } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ChunkMaestro", "Fleet");
+    } = storagePath ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ChunkMaestro", "Fleet");
     public bool LocalStorageConfirmed
     {
         get => confirmed; set
@@ -45,7 +47,7 @@ public sealed class FleetViewModel(Func<bool, Task<IFleetInventory>> open) : INo
     }
 
     public bool CanOpen => confirmed && inventory is null && !busy && !closing;
-    public bool CanRegister => inventory is not null && !busy && !closing && !HasReadFailure;
+    public bool CanRegister => inventory is not null && !busy && !closing && !HasReadFailure && !writeNeedsReload;
     public bool CanReload => inventory is not null && !busy && !closing;
     public bool CanOperate
     {
@@ -125,7 +127,10 @@ public sealed class FleetViewModel(Func<bool, Task<IFleetInventory>> open) : INo
         }
 
         inventory = await open(confirmed);
-        await ReadAsync();
+        if (!closing)
+        {
+            await ReadAsync();
+        }
     });
     public Task ReloadAsync() => RunAsync(ReadAsync);
     public Task RegisterFleetAsync() => RegisterAsync(store => store.RegisterFleetAsync(new FleetId(Guid.NewGuid()), FleetName));
@@ -153,8 +158,22 @@ public sealed class FleetViewModel(Func<bool, Task<IFleetInventory>> open) : INo
 
         return RunAsync(async () =>
 {
-    await write(inventory!);
-    await ReadAsync();
+    try
+    {
+        await write(inventory!);
+    }
+    catch (Exception exception) when (exception is not FleetStorageException storageException || storageException.Failure != StorageFailure.InvalidRegistration)
+    {
+        writeNeedsReload = true;
+        Status = "Cached metadata may be stale. Local registration outcome is unknown; previous display retained. This is not a host contact.";
+        Error = "Local registration outcome is unknown. Reload successfully to check saved metadata before another registration. Do not repeat the previous registration without checking. Preserve existing storage for recovery.";
+        return;
+    }
+
+    if (!closing)
+    {
+        await ReadAsync();
+    }
 });
     }
     private static void AddEndpoint(List<Endpoint> endpoints, EndpointEdition edition, string port, string address)
@@ -181,6 +200,10 @@ public sealed class FleetViewModel(Func<bool, Task<IFleetInventory>> open) : INo
         try
         {
             FleetInventory snapshot = await inventory.ReadAsync();
+            if (closing)
+            {
+                return;
+            }
             Fleets.Clear();
             Hosts.Clear();
             Rows.Clear();
@@ -204,6 +227,7 @@ public sealed class FleetViewModel(Func<bool, Task<IFleetInventory>> open) : INo
                 }
             }
             HasReadFailure = false;
+            writeNeedsReload = false;
             Status = $"Local cached metadata · Read {snapshot.RetrievedAt:O} · This is not a host contact.";
             Changed(nameof(IsEmpty));
         }
@@ -222,7 +246,7 @@ public sealed class FleetViewModel(Func<bool, Task<IFleetInventory>> open) : INo
         }
 
         busy = true;
-        idle = new TaskCompletionSource();
+        idle = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         NotifyGates();
         Error = "";
         try
@@ -262,18 +286,25 @@ public sealed class FleetViewModel(Func<bool, Task<IFleetInventory>> open) : INo
     }
 
     private void Changed([CallerMemberName] string? name = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
+    {
+        return new ValueTask(disposal ??= DisposeCoreAsync());
+    }
+
+    private async Task DisposeCoreAsync()
     {
         closing = true;
+        NotifyGates();
         if (busy && idle is not null)
         {
             await idle.Task;
         }
 
-        if (inventory is IAsyncDisposable disposable)
+        IFleetInventory? acquired = inventory;
+        inventory = null;
+        if (acquired is IAsyncDisposable disposable)
         {
             await disposable.DisposeAsync();
         }
-
     }
 }
