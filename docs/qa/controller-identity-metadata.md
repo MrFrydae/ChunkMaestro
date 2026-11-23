@@ -150,3 +150,29 @@ actionlint pass. Historical migrations and profile implementation bytes are
 unchanged. Windows/Intel execution of the metadata cases, current-head independent
 review and composed native lifecycle remain pending. A Ready metadata row still
 does not establish private-key possession or grant authority.
+
+## Hosted integration corrections
+
+Run `45239108716` at `a081e69` exposed two integration defects. Both disk-full
+jobs refused locked restore with NU1004: their standalone project lock lacked
+the new ControllerIdentity/Credentials project dependencies. The lock is now
+regenerated for that project. Existing NuGet versions, content hashes and package
+dependency records are unchanged; forced locked restore succeeds. The original
+failure was reproduced locally before this correction.
+
+Windows integrity executed the populated prior-schema upgrade and backup checks,
+then failed fixture deletion because the backup verification connection was
+pooled. That connection now disables pooling and is disposed before a new
+exclusive backup-file open proves release. The backup compatibility and populated
+row assertions remain required. No global pool clearing or cleanup suppression
+was added.
+
+Correction verification on macOS arm64: 451 repository tests, 46 CI tooling tests,
+and the genuine 64 MiB disk-full/recovery case pass with no failed or skipped
+cases. Repository build, syntax and formatting pass with zero warnings/errors.
+These are working-patch checks, not frozen-head platform qualification. Hosted
+Windows verification and final independent acceptance remain pending. Original
+hosted logs, digest-verified failure artifacts, local before/after restore logs,
+TRX and correction evidence are retained under
+`.artifacts/qa/pr18-a081e69-notification/`. The aggregate storage and QA failures
+correctly reflected the failed prerequisite jobs; neither gate was weakened.

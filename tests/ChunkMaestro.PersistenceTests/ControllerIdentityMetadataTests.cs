@@ -268,12 +268,22 @@ public sealed class ControllerIdentityMetadataTests : IDisposable
             await upgraded.BeginIdentityMetadataAsync(pending);
         }
         string backup = Assert.Single(Directory.GetFiles(directory, "before-migration-*.db"));
-        await using SqliteConnection copy = new("Data Source=" + backup);
-        await copy.OpenAsync();
-        await SupportedSchema.VerifyAsync(copy, prior, default);
-        using SqliteCommand count = copy.CreateCommand();
-        count.CommandText = "SELECT count(*) FROM Fleets";
-        Assert.Equal(1L, await count.ExecuteScalarAsync());
+        SqliteConnectionStringBuilder backupOptions = new()
+        {
+            DataSource = backup,
+            Pooling = false
+        };
+        await using (SqliteConnection copy = new(backupOptions.ToString()))
+        {
+            await copy.OpenAsync();
+            await SupportedSchema.VerifyAsync(copy, prior, default);
+            using SqliteCommand count = copy.CreateCommand();
+            count.CommandText = "SELECT count(*) FROM Fleets";
+            Assert.Equal(1L, await count.ExecuteScalarAsync());
+        }
+        // The verified backup must be released before fixture cleanup on Windows.
+        using FileStream releasedBackup = File.Open(backup, FileMode.Open, FileAccess.Read, FileShare.None);
+        Assert.True(releasedBackup.Length > 0);
     }
 
     [Theory]
