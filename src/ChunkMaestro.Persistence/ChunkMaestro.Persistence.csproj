@@ -1,6 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net10.0</TargetFramework><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><GenerateDocumentationFile>true</GenerateDocumentationFile></PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../ChunkMaestro.ControllerIdentity/ChunkMaestro.ControllerIdentity.csproj" />
+    <ProjectReference Include="../ChunkMaestro.Credentials/ChunkMaestro.Credentials.csproj" />
     <ProjectReference Include="../ChunkMaestro.Domain/ChunkMaestro.Domain.csproj" />
     <ProjectReference Include="../ChunkMaestro.Application/ChunkMaestro.Application.csproj" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />

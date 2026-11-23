@@ -502,6 +502,15 @@
           "ChunkMaestro.Domain": "[1.0.0, )"
         }
       },
+      "chunkmaestro.controlleridentity": {
+        "type": "Project"
+      },
+      "chunkmaestro.credentials": {
+        "type": "Project",
+        "dependencies": {
+          "ChunkMaestro.Domain": "[1.0.0, )"
+        }
+      },
       "chunkmaestro.desktop": {
         "type": "Project",
         "dependencies": {
@@ -518,6 +527,8 @@
         "type": "Project",
         "dependencies": {
           "ChunkMaestro.Application": "[1.0.0, )",
+          "ChunkMaestro.ControllerIdentity": "[1.0.0, )",
+          "ChunkMaestro.Credentials": "[1.0.0, )",
           "ChunkMaestro.Domain": "[1.0.0, )",
           "Microsoft.EntityFrameworkCore.Sqlite": "[10.0.15, )",
           "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.5, )"

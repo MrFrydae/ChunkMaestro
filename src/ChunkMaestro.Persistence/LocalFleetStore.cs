@@ -10,7 +10,7 @@ namespace ChunkMaestro.Persistence;
 
 /// <summary>One owner-scoped local controller session. Dispose to release OS locks. Never restores,
 /// deletes, downgrades, contacts hosts or stores credential values.</summary>
-public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
+public sealed partial class LocalFleetStore : IFleetInventory, IAsyncDisposable
 {
     private readonly FileStream controllerLock;
     private readonly StorageIdentity identity;
@@ -431,6 +431,19 @@ public sealed class LocalFleetStore : IFleetInventory, IAsyncDisposable
     public ValueTask DisposeAsync() => new(Task.Run(DisposeWorkerAsync));
 
     private async Task DisposeWorkerAsync()
+    {
+        await identityOperation.WaitAsync();
+        try
+        {
+            await DisposeUnderIdentityLeaseAsync();
+        }
+        finally
+        {
+            identityOperation.Release();
+        }
+    }
+
+    private async Task DisposeUnderIdentityLeaseAsync()
     {
         await gate.WaitAsync();
         try

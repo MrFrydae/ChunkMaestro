@@ -70,7 +70,7 @@ class AggregateTests(unittest.TestCase):
             artifacts(root)
             result = self.run_gate(root)
             self.assertEqual('PASS', result['status'])
-            self.assertEqual(549, result['passed'])
+            self.assertEqual(713, result['passed'])
             self.assertIsNone(result['metrics']['Application']['branch']['percent'])
 
     def test_stale_wrong_platform_failed_and_tampered_partition_refused(self):

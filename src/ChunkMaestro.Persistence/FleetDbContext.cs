@@ -100,8 +100,28 @@ internal sealed class FleetDbContext(DbContextOptions<FleetDbContext> options) :
     public DbSet<InstanceRow> Instances => Set<InstanceRow>();
     public DbSet<EndpointRow> Endpoints => Set<EndpointRow>();
 
+    public DbSet<ControllerIdentityRow> ControllerIdentities => Set<ControllerIdentityRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<ControllerIdentityRow>(e =>
+        {
+            e.ToTable("ControllerIdentities", table =>
+            {
+                table.HasCheckConstraint("CK_ControllerIdentity_Profile", "typeof(ProfileVersion) = 'integer' AND ProfileVersion = 1 AND Purpose = 'controller-root-v1'");
+                table.HasCheckConstraint("CK_ControllerIdentity_Material", "typeof(CertificateDer) = 'blob' AND length(CertificateDer) BETWEEN 1 AND 4096 AND typeof(CertificateHash) = 'blob' AND length(CertificateHash) = 32 AND typeof(SpkiHash) = 'blob' AND length(SpkiHash) = 32");
+                table.HasCheckConstraint("CK_ControllerIdentity_StateTime", "typeof(State) = 'integer' AND typeof(CreatedAt) = 'integer' AND CreatedAt BETWEEN -62135596800000 AND 253402300799999 AND ((State = 0 AND PublishedAt IS NULL) OR (State = 1 AND typeof(PublishedAt) = 'integer' AND PublishedAt BETWEEN CreatedAt AND 253402300799999))");
+                table.HasCheckConstraint("CK_ControllerIdentity_FleetId", "typeof(FleetId) = 'text' AND length(FleetId) = 36 AND FleetId <> '00000000-0000-0000-0000-000000000000' AND substr(FleetId,9,1) = '-' AND substr(FleetId,14,1) = '-' AND substr(FleetId,19,1) = '-' AND substr(FleetId,24,1) = '-' AND length(replace(FleetId,'-','')) = 32 AND replace(FleetId,'-','') NOT GLOB '*[^0-9A-F]*'");
+                table.HasCheckConstraint("CK_ControllerIdentity_ControllerId", "typeof(ControllerId) = 'text' AND length(ControllerId) = 36 AND ControllerId <> '00000000-0000-0000-0000-000000000000' AND substr(ControllerId,9,1) = '-' AND substr(ControllerId,14,1) = '-' AND substr(ControllerId,19,1) = '-' AND substr(ControllerId,24,1) = '-' AND length(replace(ControllerId,'-','')) = 32 AND replace(ControllerId,'-','') NOT GLOB '*[^0-9A-F]*'");
+                table.HasCheckConstraint("CK_ControllerIdentity_AttemptId", "typeof(AttemptId) = 'text' AND length(AttemptId) = 36 AND AttemptId <> '00000000-0000-0000-0000-000000000000' AND substr(AttemptId,9,1) = '-' AND substr(AttemptId,14,1) = '-' AND substr(AttemptId,19,1) = '-' AND substr(AttemptId,24,1) = '-' AND length(replace(AttemptId,'-','')) = 32 AND replace(AttemptId,'-','') NOT GLOB '*[^0-9A-F]*'");
+                table.HasCheckConstraint("CK_ControllerIdentity_CredentialId", "typeof(CredentialId) = 'text' AND length(CredentialId) = 36 AND CredentialId <> '00000000-0000-0000-0000-000000000000' AND substr(CredentialId,9,1) = '-' AND substr(CredentialId,14,1) = '-' AND substr(CredentialId,19,1) = '-' AND substr(CredentialId,24,1) = '-' AND length(replace(CredentialId,'-','')) = 32 AND replace(CredentialId,'-','') NOT GLOB '*[^0-9A-F]*'");
+            });
+            e.HasKey(x => x.FleetId);
+            e.HasOne<FleetRow>().WithMany().HasForeignKey(x => x.FleetId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => x.ControllerId).IsUnique();
+            e.HasIndex(x => x.AttemptId).IsUnique();
+            e.HasIndex(x => x.CredentialId).IsUnique();
+        });
         modelBuilder.Entity<FleetRow>(e =>
 {
     e.ToTable("Fleets");

@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net10.0</TargetFramework><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><GenerateProgramFile>false</GenerateProgramFile><IsTestProject>true</IsTestProject><OutputType>Exe</OutputType></PropertyGroup>
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows')) Or $([MSBuild]::IsOSPlatform('OSX'))"><DefineConstants>$(DefineConstants);IDENTITY_NATIVE_TESTS</DefineConstants></PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/ChunkMaestro.Persistence/ChunkMaestro.Persistence.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
@@ -20,6 +21,7 @@
   </ItemGroup>
   <ItemGroup Condition="!$([MSBuild]::IsOSPlatform('Windows')) And !$([MSBuild]::IsOSPlatform('OSX'))">
     <Compile Remove="*Tests.cs" />
+    <Compile Remove="OwnedIdentityKeychain.cs" />
     <Compile Include="UnsupportedPlatformTests.cs" />
   </ItemGroup>
 </Project>
