@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/ChunkMaestro.OwnerVerification/ChunkMaestro.OwnerVerification.csproj" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+    <PackageReference Include="coverlet.collector" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+    <Content Include="$(IntermediateOutputPath)owner-native-tests" Link="owner-native-tests" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="BuildOwnerNativeTests" BeforeTargets="PrepareForBuild" Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+    <MakeDir Directories="$(IntermediateOutputPath)" />
+    <Exec Command="xcrun clang -fobjc-arc -fblocks -Wall -Wextra -Werror -framework Foundation -framework LocalAuthentication -framework AppKit &quot;$(MSBuildProjectDirectory)/../../src/ChunkMaestro.OwnerVerification/Native/mac-owner.m&quot; &quot;$(MSBuildProjectDirectory)/native-tests.m&quot; -o &quot;$(IntermediateOutputPath)owner-native-tests&quot;" />
+  </Target>
+</Project>

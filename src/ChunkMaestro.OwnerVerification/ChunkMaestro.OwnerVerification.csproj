@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="ChunkMaestro.OwnerVerificationTests" />
+  </ItemGroup>
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+    <Content Include="$(IntermediateOutputPath)libchunkmaestro_owner.dylib" Link="libchunkmaestro_owner.dylib" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="BuildOwnerNative" BeforeTargets="PrepareForBuild" Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+    <MakeDir Directories="$(IntermediateOutputPath)" />
+    <Exec Command="xcrun clang -fobjc-arc -fblocks -Wall -Wextra -Werror -dynamiclib -framework Foundation -framework LocalAuthentication -framework AppKit &quot;$(MSBuildProjectDirectory)/Native/mac-owner.m&quot; -o &quot;$(IntermediateOutputPath)libchunkmaestro_owner.dylib&quot;" />
+  </Target>
+</Project>
