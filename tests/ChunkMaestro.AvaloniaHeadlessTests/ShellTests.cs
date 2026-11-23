@@ -182,13 +182,13 @@ public sealed class ShellTests
             Assert.Equal(ThemeVariant.Default, window.RequestedThemeVariant);
             window.RequestedThemeVariant = ThemeVariant.Light;
             window.Show();
-            Assert.Equal(Color.Parse("#FAFAF9"), ((ISolidColorBrush)window.Background!).Color);
+            Assert.Equal(Color.Parse("#FAFAF9"), ((ISolidColorBrush) window.Background!).Color);
             Assert.True(window.TryFindResource("ShellAccent", ThemeVariant.Light, out object? light));
-            Assert.Equal(Color.Parse("#2563EB"), ((ISolidColorBrush)light!).Color);
+            Assert.Equal(Color.Parse("#2563EB"), ((ISolidColorBrush) light!).Color);
             window.RequestedThemeVariant = ThemeVariant.Dark;
-            Assert.Equal(Color.Parse("#242427"), ((ISolidColorBrush)window.Background!).Color);
+            Assert.Equal(Color.Parse("#242427"), ((ISolidColorBrush) window.Background!).Color);
             Assert.True(window.TryFindResource("ShellAccent", ThemeVariant.Dark, out object? dark));
-            Assert.Equal(Color.Parse("#60A5FA"), ((ISolidColorBrush)dark!).Color);
+            Assert.Equal(Color.Parse("#60A5FA"), ((ISolidColorBrush) dark!).Color);
             window.Close();
         }
     }

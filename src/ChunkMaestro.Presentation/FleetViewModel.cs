@@ -1,9 +1,9 @@
+using ChunkMaestro.Application;
+using ChunkMaestro.Domain;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using System.Runtime.CompilerServices;
-using ChunkMaestro.Application;
-using ChunkMaestro.Domain;
 
 namespace ChunkMaestro.Presentation;
 

@@ -3,9 +3,10 @@
 Issue #2 implements a bounded subset of Q25, Q45, Q81, Q114–148,
 Q164, Q189 and Q191. It is not Phase 1 acceptance or a release.
 The engineering baseline (PR5) and requirements baseline (PR7) are merged.
-This draft remains stacked on PR6, `feat/3-local-fleet-storage`, currently
-`1bf9bd28594bfd079aff74233fbf9d73a57c5a7e`; storage independent QA is pending.
-The desktop diff adds its projects and documentation to that storage base.
+PR6 is merged into main as `4e155562d19a48c2d611a31a437ce5d926216ae1`.
+The desktop-only commits are rebased onto that accepted storage and direct-CI
+baseline. Historical validation below remains tied to its original date/source;
+current desktop acceptance requires fresh integration and native evidence.
 
 ## Run and local authority
 
@@ -76,7 +77,19 @@ multi-window or installers. System fonts are used. No animation is introduced.
 These selected v1.0 requirements remain open; do not advertise full accessibility,
 colorblind support or complete Q114–148 fulfillment.
 
-## Validation and integration evidence (2026-11-14)
+## Current integration (2026-11-23)
+
+The managed CI jobs now execute the desktop headless test project on Windows,
+macOS and Linux after building it. Tests have live output, raw TRX retention, a
+60-second test hang timeout and the direct command wrapper's 150-second limit.
+This is separate from the accepted storage gate; fake-service headless contracts
+do not establish native desktop-to-SQLite or operating-system interactions.
+The restack cold locked restore, normal Release build, syntax and formatting
+passed. All 7 headless and 270 macOS storage tests passed (277 total, zero
+failures/skips). Native interactions, real composition, current-head hosted
+checks and independent desktop acceptance remain pending.
+
+## Historical validation and integration evidence (2026-11-14)
 
 Local macOS arm64 validation uses SDK 10.0.404 and the normal repository policy:
 
