@@ -1,0 +1,15 @@
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat Code Coverage">
+        <Configuration>
+          <Format>opencover</Format>
+          <Include>[ChunkMaestro.Domain]*,[ChunkMaestro.Application]*,[ChunkMaestro.Persistence]*</Include>
+          <ExcludeByFile>**/Migrations/*.Designer.cs,**/Migrations/*ModelSnapshot.cs</ExcludeByFile>
+          <SingleHit>false</SingleHit>
+          <UseSourceLink>false</UseSourceLink>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

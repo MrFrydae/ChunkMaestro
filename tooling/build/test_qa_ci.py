@@ -1,11 +1,20 @@
 """Trust, head binding and risk escalation checks for CI QA publication."""
 import json
 import unittest
+from unittest.mock import patch
 
 import qa_ci
 
 
 class QaCiTests(unittest.TestCase):
+    def test_storage_requires_successful_same_workflow_execution(self):
+        with patch.object(qa_ci, 'api') as api:
+            for result in (None, '', 'failure', 'skipped', 'cancelled'):
+                with self.assertRaisesRegex(ValueError, 'Direct storage'):
+                    qa_ci.storage_execution(result)
+            self.assertEqual('PASS', qa_ci.storage_execution('success')['verdict'])
+            api.assert_not_called()
+
     def setUp(self):
         self.head = 'a' * 40
         self.report = {'head': self.head, 'implementers': ['implementation-agent', 'lead'],

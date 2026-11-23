@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><GenerateProgramFile>false</GenerateProgramFile><IsTestProject>true</IsTestProject><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/ChunkMaestro.Persistence/ChunkMaestro.Persistence.csproj" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="coverlet.collector" PrivateAssets="all" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+  </ItemGroup>
+  <!-- Compile an explicit contract suite on unsupported build hosts; no runtime tests are skipped. -->
+  <!-- Kernel descriptor inspection is a macOS suite, not skipped Windows acceptance. -->
+  <ItemGroup Condition="!$([MSBuild]::IsOSPlatform('OSX'))">
+    <Compile Remove="StorageIdentityLifetimeTests.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="!$([MSBuild]::IsOSPlatform('Windows'))">
+    <Compile Remove="WindowsAuthorityQualificationTests.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows')) Or $([MSBuild]::IsOSPlatform('OSX'))">
+    <Compile Remove="UnsupportedPlatformTests.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="!$([MSBuild]::IsOSPlatform('Windows')) And !$([MSBuild]::IsOSPlatform('OSX'))">
+    <Compile Remove="*Tests.cs" />
+    <Compile Include="UnsupportedPlatformTests.cs" />
+  </ItemGroup>
+</Project>

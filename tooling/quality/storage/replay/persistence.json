@@ -1,0 +1,25 @@
+{
+  "stryker-config": {
+    "project": "ChunkMaestro.Persistence.csproj",
+    "configuration": "Release",
+    "reporters": [
+      "dots",
+      "json",
+      "html"
+    ],
+    "thresholds": {
+      "high": 90,
+      "low": 80,
+      "break": 80
+    },
+    "mutate": [
+      "**/*.cs",
+      "!**/Migrations/*.Designer.cs",
+      "!**/Migrations/*ModelSnapshot.cs"
+    ],
+    "concurrency": 4,
+    "test-projects": [
+      "MutationTests.csproj"
+    ]
+  }
+}
