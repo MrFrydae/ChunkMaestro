@@ -15,6 +15,21 @@ internal sealed class RootMaterial : IDisposable
         this.certificate = certificate;
     }
 
+    // Callback input is borrowed only for the duration of the call; it must not be retained.
+    internal void WithPrivateKey(PrivateKeyConsumer consumer)
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        byte[] owned = key.ExportPkcs8PrivateKey();
+        try
+        {
+            consumer(owned);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(owned);
+        }
+    }
+
     internal byte[] GetPublicCertificate()
     {
         ObjectDisposedException.ThrowIf(disposed, this);
@@ -77,7 +92,7 @@ internal sealed class RootMaterial : IDisposable
             material.ValidatePossession(fleet, controller, certificateHash, spkiHash, now);
             return material;
         }
-        catch
+        catch (Exception error)
         {
             if (material is not null)
             {
@@ -86,6 +101,10 @@ internal sealed class RootMaterial : IDisposable
             else
             {
                 key.Dispose();
+            }
+            if (error is PlatformNotSupportedException)
+            {
+                throw new CryptographicException("Invalid private key profile.");
             }
             throw;
         }
@@ -142,3 +161,5 @@ internal sealed class RootMaterial : IDisposable
         }
     }
 }
+
+internal delegate void PrivateKeyConsumer(ReadOnlySpan<byte> pkcs8);

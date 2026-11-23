@@ -432,6 +432,19 @@ public sealed partial class LocalFleetStore : IFleetInventory, IAsyncDisposable
 
     private async Task DisposeWorkerAsync()
     {
+        await identityOperation.WaitAsync();
+        try
+        {
+            await DisposeUnderIdentityLeaseAsync();
+        }
+        finally
+        {
+            identityOperation.Release();
+        }
+    }
+
+    private async Task DisposeUnderIdentityLeaseAsync()
+    {
         await gate.WaitAsync();
         try
         {
