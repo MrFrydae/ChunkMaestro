@@ -8,6 +8,8 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ET
 
+from evidence import inventory, read_json
+
 ROOT = Path(__file__).resolve().parents[2]
 PLAN = Path(__file__).with_name('storage-plan.json')
 
@@ -27,7 +29,7 @@ def plan(system):
             for group, names in groups.items()}
 
 
-def read_trx(folder, classes, expected=None):
+def read_trx(folder, classes, expected=None, expected_names=None):
     files = list(folder.rglob('*.trx'))
     if len(files) != 1 or files[0].stat().st_size > 16 * 1024 * 1024:
         raise ValueError('Expected one bounded raw TRX')
@@ -55,9 +57,12 @@ def read_trx(folder, classes, expected=None):
         counts = Counter(definitions[row.attrib['testId']] for row in rows)
         if counts != expected:
             raise ValueError('Executed case counts differ; missing or unexpected test cases')
-    identities = [(row.attrib['testId'], row.attrib['testName']) for row in rows]
+    identities = [row.attrib['testName'] for row in rows]
     if len(identities) != len(set(identities)):
         raise ValueError('Duplicate test result')
+    if expected_names is not None and (len(expected_names) != len(set(expected_names)) or
+                                      set(identities) != set(expected_names)):
+        raise ValueError('Executed method/Theory identities differ from discovery')
     return len(rows)
 
 
@@ -80,7 +85,10 @@ def record(folder, group, system, head):
         if subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=no'], cwd=ROOT, text=True).strip():
             raise ValueError('Tracked inputs changed after checkout')
         counts = json.loads(PLAN.read_text())['expected_cases'][system]
-        report['passed'] = read_trx(folder, classes, {name: counts[name] for name in classes})
+        discovered = read_json(folder / 'case-inventory.json')
+        if any(discovered.get(key) != value for key, value in (('head', head), ('system', system), ('group', group))):
+            raise ValueError('Discovery source/platform/group mismatch')
+        report['passed'] = read_trx(folder, classes, {name: counts[name] for name in classes}, discovered['cases'])
         coverage = list(folder.rglob('coverage.opencover.xml'))
         if not coverage:
             raise ValueError('Missing raw coverage')
@@ -88,8 +96,10 @@ def record(folder, group, system, head):
     except (ValueError, KeyError, ET.ParseError, OSError) as error:
         report['error'] = str(error)
     folder.mkdir(parents=True, exist_ok=True)
-    report['files'] = {p.relative_to(folder).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
-                       for p in folder.rglob('*') if p.is_file() and p.name != 'result.json'}
+    try:
+        report['files'] = inventory(folder, exclude=('result.json',))
+    except (OSError, ValueError) as error:
+        report.update(status='FAIL', error=str(error), files={})
     (folder / 'result.json').write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps(report, indent=2), flush=True)
     return report['status'] != 'PASS'

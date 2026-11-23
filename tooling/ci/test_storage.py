@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 import xml.etree.ElementTree as ET
+from evidence import read_json, inventory, verify_inventory
 
 import command
 import gate
@@ -131,6 +132,15 @@ class DirectStorageTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'prerequisite'):
                 gate.evaluate(Path('/absent'), 'a' * 40, jobs)
 
+    def test_failed_prerequisite_message_names_jobs_and_artifacts(self):
+        with self.assertRaises(ValueError) as error:
+            gate.evaluate(Path('/absent'), 'a' * 40,
+                          {'storage': 'failure', 'native': 'success', 'volume': 'cancelled'})
+        self.assertIn('storage=failure', str(error.exception))
+        self.assertIn('volume=cancelled', str(error.exception))
+        self.assertNotIn('native=success', str(error.exception))
+        self.assertIn('artifacts', str(error.exception))
+
     def test_coverage_combines_source_identity_without_absolute_runner_prefix(self):
         def xml(path, visits):
             return ('<CoverageSession><Module><Files><File uid="1" fullPath="' + path + '" /></Files>'
@@ -175,11 +185,55 @@ class DirectStorageTests(unittest.TestCase):
                      'b' * 40 if defect == 'head' else 'a' * 40, ' M changed' if defect == 'dirty' else '']):
                 folder = Path(temporary)
                 trx(folder, {name: expected[name] for name in classes})
+                (folder / 'case-inventory.json').write_text(json.dumps({
+                    'head': 'a' * 40, 'group': 'inventory', 'system': 'Darwin',
+                    'cases': [name + '-' + str(i) for name in classes for i in range(expected[name])]}))
                 (folder / 'coverage.opencover.xml').write_text('<CoverageSession/>')
                 self.assertEqual(defect != 'none', storage.record(folder, 'inventory', 'Darwin', 'a' * 40))
                 report = json.loads((folder / 'result.json').read_text())
                 self.assertEqual('PASS' if defect == 'none' else 'FAIL', report['status'])
                 self.assertIn('tests.trx', report['files'])
+
+    def test_semantic_duplicate_with_a_distinct_id_cannot_hide_a_missing_case(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            trx(folder, {'ExampleTests': 2})
+            document = ET.parse(folder / 'tests.trx')
+            rows = document.findall('.//UnitTestResult')
+            rows[1].set('testName', rows[0].attrib['testName'])
+            document.write(folder / 'tests.trx')
+            with self.assertRaisesRegex(ValueError, 'Duplicate'):
+                storage.read_trx(folder, ['ExampleTests'], {'ExampleTests': 2})
+
+    def test_discovered_method_and_theory_case_set_is_required(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            trx(folder, {'ExampleTests': 2})
+            with self.assertRaisesRegex(ValueError, 'identities'):
+                storage.read_trx(folder, ['ExampleTests'], {'ExampleTests': 2},
+                                 ['ExampleTests-0', 'missing-case'])
+
+    def test_json_size_bound_and_extra_or_escaped_raw_files_refused(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            report = folder / 'report.json'
+            report.write_text(' ' * 65)
+            with self.assertRaisesRegex(ValueError, 'size bound'):
+                read_json(report, limit=64)
+            report.write_text('{}')
+            expected = inventory(folder)
+            (folder / 'unrecorded.json').write_text('{}')
+            with self.assertRaisesRegex(ValueError, 'unrecorded'):
+                verify_inventory(folder, expected)
+            (folder / 'unrecorded.json').unlink()
+            outside = folder.parent / (folder.name + '-outside')
+            outside.write_text('unread')
+            try:
+                (folder / 'link.json').symlink_to(outside)
+                with self.assertRaisesRegex(ValueError, 'escapes'):
+                    inventory(folder)
+            finally:
+                outside.unlink()
 
 
 if __name__ == '__main__':

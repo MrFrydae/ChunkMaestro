@@ -7,6 +7,7 @@ import sys
 
 from command import child_environment
 from storage import ROOT, digest_inputs
+from evidence import inventory
 
 
 def main(output):
@@ -41,6 +42,7 @@ def main(output):
     (output / 'execution.json').write_text(json.dumps({
         'head': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
         'inputs': digest_inputs(), 'system': 'Darwin',
+        'files': inventory(output, exclude=('execution.json',)),
         'scope': 'real filesystem plus separately labeled injected OS errors; no mutation score'}, indent=2) + '\n')
     return 0
 

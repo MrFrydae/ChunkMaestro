@@ -33,6 +33,10 @@ with no sampling, fail-open filters or repeated whole-suite initialization.
 case counts (270 macOS / 279 Windows for the current source). New classes, missing
 cases or changed Theory inventories require an explicit plan update. A failed,
 skipped, missing, duplicate, wrong-class or incomplete TRX fails validation.
+Before execution, VSTest discovers the exact method/Theory display identities
+for that partition without running its tests. The raw inventory is retained and
+hashed with execution results. Validation compares the discovered and executed
+sets and rejects duplicate semantic cases even when their opaque IDs differ.
 
 The jobs independently perform a locked restore and one storage-project build;
 they do not transfer executable binaries between runners or operating systems.
@@ -80,6 +84,11 @@ and operating systems, enforcing the retained 90% line / 85% branch floors. Miss
 or below-threshold evidence produces a failing JSON verdict and a job summary
 stating the actual missing artifact or metric. Zero branches in the current
 interface-only Application module are N/A, never invented 100% coverage.
+Inventories must exactly match their artifact directories before any TRX or
+coverage is consumed; extra coverage files are errors. Native execution binds
+all raw reports, profiles and libraries by digest, and assertions must match the
+committed `native-plan.json` identity sets. JSON readers are size bounded and
+malformed native coverage still produces the promised FAIL verdict and summary.
 
 Artifacts contain TRX, OpenCover, hang diagnostics and the small machine verdicts;
 they do not archive private mutation-tool source/build trees. Upload steps run on

@@ -12,6 +12,7 @@ import storage
 import test_storage
 import test_volume
 import volume
+from evidence import inventory
 
 HEAD = 'a' * 40
 
@@ -24,6 +25,9 @@ def artifacts(root):
             folder.mkdir()
             counts = {name: expected[system][name] for name in classes}
             test_storage.trx(folder, counts)
+            names = [name + '-' + str(i) for name, count in counts.items() for i in range(count)]
+            (folder / 'case-inventory.json').write_text(json.dumps({
+                'head': HEAD, 'system': system, 'group': group, 'cases': names}))
             modules = []
             for module in ('Domain', 'Application', 'Persistence'):
                 branch = ('' if module == 'Application' else '<BranchPoints><BranchPoint fileid="1" offset="0" path="0" offsetend="1" vc="1" /></BranchPoints>')
@@ -43,14 +47,16 @@ def artifacts(root):
             'execution': volume.executed_case(folder)}))
     native = root / 'native-Darwin'
     native.mkdir()
-    (native / 'execution.json').write_text(json.dumps({'head': HEAD, 'system': 'Darwin', 'inputs': 'inputs'}))
+    native_plan = json.loads((storage.PLAN.parent / 'native-plan.json').read_text())
     for name, category, count in (('filesystem.json', 'real-filesystem', 42),
                                  ('injected.json', 'injected-OS-failure-or-metadata', 10)):
         (native / name).write_text(json.dumps({'category': category, 'cases': [
-            {'name': str(i), 'passed': True, 'actual': 1, 'expected': 1} for i in range(count)]}))
+            {'name': label, 'passed': True, 'actual': 1, 'expected': 1} for label in native_plan[name]]}))
     (native / 'coverage.json').write_text(json.dumps({'data': [{'files': [
         {'filename': '/fixture/src/ChunkMaestro.Persistence/Native/storage.c'}],
         'totals': {metric: {'count': 1, 'covered': 1} for metric in ('lines', 'branches')}}]}))
+    (native / 'execution.json').write_text(json.dumps({'head': HEAD, 'system': 'Darwin', 'inputs': 'inputs',
+        'files': inventory(native, exclude=('execution.json',))}))
 
 
 class AggregateTests(unittest.TestCase):
@@ -98,8 +104,63 @@ class AggregateTests(unittest.TestCase):
             root = Path(temporary)
             artifacts(root)
             (root / 'native-Darwin/filesystem.json').write_text(json.dumps({'category': 'real-filesystem', 'cases': []}))
+            self.rebind_native(root)
             with self.assertRaisesRegex(ValueError, 'Native fault'):
                 self.run_gate(root)
+
+    def rebind_native(self, root):
+        native = root / 'native-Darwin'
+        path = native / 'execution.json'
+        data = json.loads(path.read_text())
+        data['files'] = inventory(native, exclude=('execution.json',))
+        path.write_text(json.dumps(data))
+
+    def test_unrecorded_coverage_cannot_override_verified_reports(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            artifacts(root)
+            folder = root / 'storage-Windows-integrity'
+            extra = folder / 'unrecorded'
+            extra.mkdir()
+            (extra / 'coverage.opencover.xml').write_bytes((folder / 'coverage.opencover.xml').read_bytes())
+            with self.assertRaisesRegex(ValueError, 'unrecorded'):
+                self.run_gate(root)
+
+    def test_native_raw_changes_and_rebound_renamed_cases_refused(self):
+        for name in ('filesystem.json', 'injected.json', 'coverage.json'):
+            with tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                artifacts(root)
+                path = root / 'native-Darwin' / name
+                path.write_text(path.read_text() + ' ')
+                with self.assertRaisesRegex(ValueError, 'changed'):
+                    self.run_gate(root)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            artifacts(root)
+            path = root / 'native-Darwin/filesystem.json'
+            data = json.loads(path.read_text())
+            data['cases'][0]['name'] = 'unreviewed-case'
+            path.write_text(json.dumps(data))
+            self.rebind_native(root)
+            with self.assertRaisesRegex(ValueError, 'Native fault'):
+                self.run_gate(root)
+
+    def test_malformed_native_coverage_produces_machine_fail_report(self):
+        for malformed in ({'data': []}, {'data': [None]}, {'data': [{'files': None}]},
+                          {'data': [{'files': [{'filename': '/fixture/src/ChunkMaestro.Persistence/Native/storage.c'}],
+                                     'totals': {'lines': {'count': 0, 'covered': 0}}}]}):
+            with tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                artifacts(root)
+                (root / 'native-Darwin/coverage.json').write_text(json.dumps(malformed))
+                self.rebind_native(root)
+                result = root / 'verdict.json'
+                args = ['gate.py', str(root), '--head', HEAD, '--jobs', json.dumps({
+                    name: {'result': 'success'} for name in ('storage', 'volume', 'native')}), '--output', str(result)]
+                with patch.object(gate.sys, 'argv', args), patch.object(gate, 'digest_inputs', return_value='inputs'):
+                    self.assertEqual(1, gate.main())
+                self.assertEqual('FAIL', json.loads(result.read_text())['status'])
 
     def test_low_coverage_is_reported_as_real_failure_not_missing_attestation(self):
         with tempfile.TemporaryDirectory() as temporary:
