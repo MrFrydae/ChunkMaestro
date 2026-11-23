@@ -1,5 +1,10 @@
 """Trust, head binding and risk escalation checks for CI QA publication."""
 import json
+import io
+import os
+from contextlib import redirect_stdout
+from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -7,6 +12,40 @@ import qa_ci
 
 
 class QaCiTests(unittest.TestCase):
+    def test_native_failure_blocks_even_a_complete_attestation_and_green_storage(self):
+        self.report['reviews'].append(self.review('ux-accessibility-performance', 'reviewer-three'))
+
+        def api(path, pages=False):
+            if path.endswith('/comments'):
+                return [self.comment()]
+            if path.endswith('/files'):
+                return [{'filename': 'src/ChunkMaestro.Inspector.Native/metadata.c'}]
+            return {'head': {'sha': self.head}, 'labels': []}
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            for native in (None, '', 'failure', 'skipped', 'cancelled', 'in_progress', 'success'):
+                env = {'GITHUB_REPOSITORY': 'MrFrydae/ChunkMaestro', 'REVIEW_PR': '22',
+                       'REVIEW_HEAD': self.head, 'STORAGE_SAFETY_RESULT': 'success'}
+                if native is not None:
+                    env['INSPECTOR_METADATA_RESULT'] = native
+                with self.subTest(native=native), patch.dict(os.environ, env, clear=True), \
+                        patch.object(qa_ci, 'api', side_effect=api), \
+                        patch.object(qa_ci, 'Path', return_value=output), redirect_stdout(io.StringIO()):
+                    code = qa_ci.main()
+                    verdict = json.loads((output / 'verdict.json').read_text())
+                    self.assertEqual('PASS', verdict['storage_execution']['verdict'])
+                    if native == 'success':
+                        self.assertEqual(0, code)
+                        self.assertEqual('PASS', verdict['verdict'])
+                        self.assertEqual('PASS', verdict['inspector_execution']['verdict'])
+                        self.assertTrue(verdict['high_risk'])
+                        self.assertEqual(self.report, verdict['report'])
+                    else:
+                        self.assertEqual(1, code)
+                        self.assertEqual('FAIL', verdict['verdict'])
+                        self.assertIn('Linux inspector metadata', verdict['error'])
+
     def test_storage_requires_successful_same_workflow_execution(self):
         with patch.object(qa_ci, 'api') as api:
             for result in (None, '', 'failure', 'skipped', 'cancelled'):
@@ -62,6 +101,8 @@ class QaCiTests(unittest.TestCase):
     def test_high_risk_requires_third_independent_role(self):
         for files, labels in [(['src/ChunkMaestro.Persistence/Store.cs'], []),
                               (['src/ChunkMaestro.Contracts/InspectCodec.cs'], []),
+                              (['src/ChunkMaestro.Inspector.Native/metadata.c'], []),
+                              (['tests/ChunkMaestro.InspectorNativeTests/run.sh'], []),
                               (['src/ChunkMaestro.OwnerVerification/OwnerContext.cs'], []),
                               (['src/Core/Enrollment.cs'], []), ([], ['high-risk'])]:
             with self.subTest(files=files, labels=labels), self.assertRaisesRegex(ValueError, 'Missing required'):
