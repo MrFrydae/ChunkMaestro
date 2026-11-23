@@ -1,5 +1,11 @@
 # Local storage qualification
 
+**Historical procedure, retired by the owner on 2026-11-22.** The replacement is
+[direct CI safety checks](ci.md). Full storage mutation qualification and the
+manual storage receipt are no longer premerge requirements. Do not run this
+collector or its hosted exception as part of the replacement CI. Original results
+below retain their actual FAIL/UNRESOLVED status; they were not converted to PASS.
+
 Owner decision, 2026-11-17: stop using Storage safety GitHub Actions. All four
 dedicated storage workflows are disabled and removed, including both hosted
 pilots and the duplicate coverage workflow. Ordinary managed build/style/product

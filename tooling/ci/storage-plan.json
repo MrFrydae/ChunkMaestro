@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "groups": {
+    "inventory": [
+      "StorageTests",
+      "InventoryProjectionTests",
+      "ManagedStorageQualificationTests",
+      "RegistrationTimestampTests"
+    ],
+    "integrity": [
+      "CanonicalAddressTests",
+      "DatabaseConstraintContractTests",
+      "InitialEndpointConstraintTests",
+      "IntegerEndpointPortTests",
+      "PersistedIdentityTests",
+      "SchemaReferenceContractTests"
+    ],
+    "recovery": [
+      "BackupFailureQualificationTests",
+      "BackupMutationContractTests",
+      "BackupPublicationTests",
+      "BackupRecoveryBoundaryTests",
+      "MacStorageFailureQualificationTests",
+      "PopulatedUpgradeTests",
+      "StorageSafetyAcceptanceTests",
+      "StoreFailureMutationContractTests"
+    ],
+    "authority": [
+      "AuthorityMutationContractTests",
+      "ControllerLockFailureTests",
+      "PlatformSecurityTests",
+      "StorageIdentityLifetimeTests",
+      "WindowsAuthorityQualificationTests"
+    ]
+  },
+  "platform_only": {
+    "StorageIdentityLifetimeTests": "Darwin",
+    "WindowsAuthorityQualificationTests": "Windows"
+  },
+  "excluded": [
+    "UnsupportedPlatformTests"
+  ],
+  "expected_cases": {
+    "Darwin": {
+      "AuthorityMutationContractTests": 28,
+      "BackupFailureQualificationTests": 4,
+      "BackupMutationContractTests": 4,
+      "BackupPublicationTests": 9,
+      "BackupRecoveryBoundaryTests": 2,
+      "CanonicalAddressTests": 17,
+      "ControllerLockFailureTests": 14,
+      "DatabaseConstraintContractTests": 32,
+      "InitialEndpointConstraintTests": 9,
+      "IntegerEndpointPortTests": 5,
+      "InventoryProjectionTests": 2,
+      "MacStorageFailureQualificationTests": 2,
+      "ManagedStorageQualificationTests": 21,
+      "PersistedIdentityTests": 24,
+      "PlatformSecurityTests": 17,
+      "PopulatedUpgradeTests": 6,
+      "RegistrationTimestampTests": 15,
+      "SchemaReferenceContractTests": 1,
+      "StorageIdentityLifetimeTests": 4,
+      "StorageSafetyAcceptanceTests": 5,
+      "StorageTests": 43,
+      "StoreFailureMutationContractTests": 6
+    },
+    "Windows": {
+      "AuthorityMutationContractTests": 32,
+      "BackupFailureQualificationTests": 4,
+      "BackupMutationContractTests": 4,
+      "BackupPublicationTests": 9,
+      "BackupRecoveryBoundaryTests": 2,
+      "CanonicalAddressTests": 17,
+      "ControllerLockFailureTests": 14,
+      "DatabaseConstraintContractTests": 32,
+      "InitialEndpointConstraintTests": 9,
+      "IntegerEndpointPortTests": 5,
+      "InventoryProjectionTests": 2,
+      "MacStorageFailureQualificationTests": 2,
+      "ManagedStorageQualificationTests": 21,
+      "PersistedIdentityTests": 24,
+      "PlatformSecurityTests": 17,
+      "PopulatedUpgradeTests": 6,
+      "RegistrationTimestampTests": 15,
+      "SchemaReferenceContractTests": 1,
+      "StorageSafetyAcceptanceTests": 5,
+      "StorageTests": 43,
+      "StoreFailureMutationContractTests": 6,
+      "WindowsAuthorityQualificationTests": 9
+    }
+  }
+}

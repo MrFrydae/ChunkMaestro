@@ -7,12 +7,12 @@ import qa_ci
 
 
 class QaCiTests(unittest.TestCase):
-    def test_storage_requires_local_receipt_without_actions_api(self):
+    def test_storage_requires_successful_same_workflow_execution(self):
         with patch.object(qa_ci, 'api') as api:
-            with self.assertRaisesRegex(ValueError, 'local storage'):
-                qa_ci.storage_qualification('repos/o/r', 'a' * 40,
-                    ['src/ChunkMaestro.Persistence/Store.cs'], [])
-            self.assertIsNone(qa_ci.storage_qualification('repos/o/r', 'a' * 40, ['docs/readme.md'], []))
+            for result in (None, '', 'failure', 'skipped', 'cancelled'):
+                with self.assertRaisesRegex(ValueError, 'Direct storage'):
+                    qa_ci.storage_execution(result)
+            self.assertEqual('PASS', qa_ci.storage_execution('success')['verdict'])
             api.assert_not_called()
 
     def setUp(self):

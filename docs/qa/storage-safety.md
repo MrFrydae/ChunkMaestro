@@ -1,8 +1,8 @@
 # Issue 3 storage safety qualification
 
-Current owner decision: hosted storage workflows are retired. Use
-[local storage qualification](local-storage-qualification.md). Scheduling and
-workflow examples below are historical; do not dispatch them.
+Current owner decision, 2026-11-22: use [direct CI safety checks](ci.md).
+Storage mutation qualification and manual receipts are retired. The measurements,
+scheduling and workflow examples below are historical; they are not the active gate.
 
 
 Current scheduling and hang diagnostics: [Storage CI](storage-ci.md). Full

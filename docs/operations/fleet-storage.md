@@ -1,5 +1,11 @@
 # Local fleet storage, contract v1 (issue #3)
 
+**Current acceptance policy (owner decision, 2026-11-22):** [direct CI safety
+checks](../qa/ci.md) replace storage mutation qualification and manual storage
+receipts. The 90% line / 85% branch floors and independent QA remain. Earlier
+mutation measurements and qualification procedures below are historical; this
+decision does not change their original failing results.
+
 This bounded storage slice addresses Q14, Q22, Q25, Q45, Q149, Q153 and Q163–164.
 It is not completion of Q153, controller migration, Phase 1, or independent QA.
 

@@ -45,8 +45,12 @@ applicable. Empty initialization, injected exceptions and idle lock-holder death
 prove narrower cases; identify them accurately. Disposable fixtures must not
 touch production files, real disks or unrelated volumes.
 
-For safety modules, the directive's applicable minimums remain 90% line,
-85% branch and 80% mutation with measured artifacts. Account for native code and
+Use the [direct CI safety gate](../../../docs/qa/ci.md) for storage acceptance.
+The owner's 2026-11-22 decision replaces the storage mutation gate and manual
+qualification receipt with executed corruption, interruption, recovery,
+permission and disk-full tests. Preserve 90% line / 85% branch coverage and raw
+platform evidence. Historical mutation collectors are research only; their
+scores do not determine this storage gate. Account for native code and
 OS-specific branches explicitly; exclusion or an unsupported suite is not proof.
 Use [independent QA](../chunkmaestro-independent-qa/SKILL.md); storage/backup changes
 require all three roles. Report missing qualification as a merge blocker.

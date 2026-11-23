@@ -19,16 +19,10 @@ LEAD_ID = 38875853
 RISK_PREFIXES = ('src/ChunkMaestro.Agent/', 'src/ChunkMaestro.Transport/',
                  'src/ChunkMaestro.PrivilegedHelper/', 'src/ChunkMaestro.Persistence/',
                  'src/ChunkMaestro.Backups/', 'src/ChunkMaestro.Deployments/', 'packaging/',
-                 'tooling/build/storage_attestation.py')
+                 'tooling/build/storage_attestation.py', 'tooling/ci/', '.github/workflows/')
 RISK_WORDS = ('enrollment', 'credential', 'secret', 'certificate', 'schedule',
               'restore', 'authorization', 'updater')
-STORAGE_PREFIXES = ('src/ChunkMaestro.Persistence/', 'src/ChunkMaestro.Domain/',
-                    'src/ChunkMaestro.Application/', 'tests/ChunkMaestro.PersistenceTests/',
-                    'tooling/quality/storage/')
-STORAGE_INPUTS = {'global.json', 'NuGet.Config', 'Directory.Build.props', 'Directory.Build.targets',
-                  'Directory.Packages.props', '.editorconfig', '.config/dotnet-tools.json',
-                  '.github/workflows/storage-safety.yml', '.github/workflows/storage-checks.yml',
-                  'tooling/build/qa_ci.py', 'tooling/build/storage_attestation.py'}
+
 
 
 def high_risk(files, labels):
@@ -72,13 +66,11 @@ def api(path, pages=False):
     return [item for page in data for item in page] if pages else data
 
 
-def storage_qualification(prefix, head, files, comments=None):
-    """Validate an owner-attested local receipt; never query or run Actions."""
-    if not any(name.startswith(STORAGE_PREFIXES) or name in STORAGE_INPUTS for name in files):
-        return None
-    from storage_attestation import assess as assess_storage
-    return assess_storage(comments if comments is not None else
-                          api(f'{prefix}/issues/{os.environ["REVIEW_PR"]}/comments', pages=True), head)
+def storage_execution(result):
+    """Direct same-workflow safety results replace the owner mutation receipt."""
+    if result != 'success':
+        raise ValueError('Direct storage safety checks did not pass; inspect storage-safety artifacts and job summary.')
+    return {'verdict': 'PASS', 'source': 'same-workflow direct storage safety job'}
 
 
 def main():
@@ -99,7 +91,7 @@ def main():
         comments = api(f'{prefix}/issues/{number}/comments', pages=True)
         files = [item['filename'] for item in api(f'{prefix}/pulls/{number}/files', pages=True)]
         labels = [item['name'] for item in pr['labels']]
-        result['storage_qualification'] = storage_qualification(prefix, head, files, comments)
+        result['storage_execution'] = storage_execution(os.environ.get('STORAGE_SAFETY_RESULT'))
         result.update(assess(comments, head, files, labels))
         result['verdict'] = 'PASS'
     except (KeyError, ValueError, TypeError, subprocess.CalledProcessError) as error:
