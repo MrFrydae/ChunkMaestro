@@ -31,17 +31,33 @@ An owner requiring publisher signatures must leave this fixture unexecuted until
 an acceptable signed source is separately reviewed.
 
 [GitHub's runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
-lists standard `ubuntu-24.04` x64 runners and Linux hardware acceleration support.
-This supports choosing the standard ephemeral runner; it does not prove usable
-nested KVM/QEMU on a particular allocation. The harness requires Linux x86_64,
-non-root execution, an openable character `/dev/kvm` and all of `curl`,
-`qemu-system-x86_64`, `qemu-img`, `cloud-localds`, `ssh-keygen`, `ssh` in
-`/usr/bin:/bin`, plus Python 3.11+. The original delivery never installed tools or granted KVM access. The corrected
-runner-only APT setup is documented below; it still grants no KVM access.
-A missing tool after setup or KVM permission remains a hard failure.
-No udev rules, chmod, group edits, TCG, container substitution, self-hosted runner
-or paid larger pool is configured. A future
-runner-only ACL exception would require a separately reviewed bounded change.
+lists standard `ubuntu-24.04` x64 runners. This fixture uses one fixed software
+system-emulation backend: `-machine q35 -accel tcg,thread=multi -cpu qemu64`.
+It never probes or opens `/dev/kvm`, grants device access, or selects another
+accelerator after a failure. Inventory names all six required commands (`curl`,
+`qemu-system-x86_64`, `qemu-img`, `cloud-localds`, `ssh-keygen`, `ssh`), Linux
+x86_64, nonroot, Python 3.11+, and `execution-mode=tcg-system-qemu64-multi`.
+The selected-mode event records configuration, not successful guest execution.
+
+[QEMU's system introduction](https://www.qemu.org/docs/master/system/introduction.html)
+defines TCG as CPU emulation in a full machine model. The
+[official Noble QEMU manual](https://manpages.ubuntu.com/manpages/noble/man1/qemu-system-x86_64.1.html)
+identifies the 8.2.2 Ubuntu series and documents `-accel tcg` and `thread=multi`
+(one thread per vCPU). No icount/replay option is used. The
+[8.2.2 CPU definitions](https://github.com/qemu/qemu/blob/v8.2.2/target/i386/cpu.c)
+define `qemu64` with long mode, SSE2 and NX; it is an emulated baseline x86_64
+CPU, independent of the runner CPU. Debian 13's
+[amd64 baseline](https://www.debian.org/releases/trixie/amd64/ch02s01.en.html)
+is consistent with that choice for the pinned amd64 genericcloud image.
+This is source-level compatibility evidence; actual boot of that pinned disk
+remains unproven. The runner resolves signed Noble package versions, so actual
+versions remain evidence inputs rather than a new package pin.
+
+TCG remains a real disposable Debian/systemd guest for Q158. This changes an
+implementation choice, not the product architecture. Timing measures emulation
+only: no hardware acceleration, performance equivalence, production performance,
+privileged-helper or full issue acceptance is claimed. No access grants,
+new runner users, paid/self-hosted pool or local installation is introduced.
 
 The new workflow reuses the checkout v5 and upload-artifact v4 commit pins already
 in repository CI. Checkout credentials are not persisted. No new third-party
@@ -91,21 +107,30 @@ expected host key and an unprivileged fixture user without sudo, disables passwo
 and root login and key emission to console. OpenSSH uses a dedicated known_hosts,
 `StrictHostKeyChecking=yes`, Ed25519 only, no global configuration, no agent,
 no forwarding and one connection attempt. There is no `ssh-keyscan`, accept-new
-or verification bypass. Boot polls for the SSH banner; the authenticated probe
-runs once. A host-key mismatch fails that probe; it never rewrites trust.
+or verification bypass. Cloud-init's fixed `runcmd` executes once in the final scripts-user stage
+([module contract](https://docs.cloud-init.io/en/latest/reference/modules.html#runcmd)),
+after fixture-user/key/SSH configuration. It verifies the fixture user and a
+nonempty authorized_keys file, validates sshd configuration, restarts only the
+disposable guest's SSH service to apply the fixed policy, then writes a complete
+serial line containing a fresh 128-bit nonsecret nonce to `/dev/ttyS0`. These
+are narrowly scoped guest bootstrap effects, not product remote operations.
+Host boot supervision accepts only the exact current nonce line, within the
+existing 240 seconds; a banner or stale/partial marker cannot release the probe.
+The authenticated probe runs once after that marker. The marker proves only
+fixture bootstrap readiness, not cloud-init-wide success or acceptance. A host-key mismatch fails that probe; it never rewrites trust.
 
 | Resource/phase | Hard bound |
 | --- | --- |
 | Runner | Standard ubuntu-24.04; job 25 minutes |
 | Harness work | SIGALRM 1200 seconds; per-phase deadlines also enforced |
-| Guest | 2 vCPUs, 2048 MiB RAM, KVM only |
+| Guest | 2 vCPUs, 2048 MiB RAM, fixed TCG system emulation |
 | Disk | Base download ≤1 GiB; guest virtual disk/overlay ≤4 GiB; ≥10 GiB free required |
 | Child files | Each ≤4 GiB, core dumps disabled; command output over 1 MiB fails at next poll |
 | Child CPU | 900 CPU seconds per subprocess; VM wall clock bounded by harness |
 | Metadata | Checksums ≤64 KiB, metadata ≤128 KiB, each download 30 seconds |
 | Image download | 300 seconds, connect 20 seconds, HTTPS only, no retries/redirects |
 | Tools/probe | 30 seconds each; SSH connect 5 seconds, one attempt |
-| Boot readiness | 240 seconds, fixed 5-second banner polling, no reboot/retry |
+| Boot readiness | 240 seconds, fixed 5-second private serial polling, no reboot/retry |
 | Shutdown/cleanup | TERM, 1-second grace, KILL; direct waits ≤5 seconds each; adopted reaping ≤5 seconds |
 | Evidence retention | Only fixed sanitized status/hashes, 7 days |
 
@@ -126,7 +151,12 @@ machine cleanup promise. There are no automatic VM/probe/job retries.
 
 Phase events contain fixed identifiers, start/wait/failure states, with 10-second
 command heartbeats and 5-second boot heartbeats. Child stdout/stderr is private
-and never copied into evidence. Smoke checks Debian ID/version, fixture username,
+and never copied into evidence. QEMU serial uses that same private supervised
+stream (1 MiB polling cap, existing file-size limit and cleanup), read with
+`pread` so the writer offset is never moved. Only a SHA-256 of the bounded
+readiness snapshot and fixed status are emitted; neither raw console, nonce,
+user-data, keys nor images are uploaded. Output remains supervised during the
+probe and shutdown boundary. Smoke checks Debian ID/version, fixture username,
 `/proc/1/comm=systemd`, and a read-only `systemctl show --property=Version --value`.
 Only the exact fixed successful response is accepted. No helper or enrollment test
 is implied. Evidence contains input SHA-256 hashes and sanitized JSON events only;
@@ -141,13 +171,13 @@ actionlint .github/workflows/debian-fixture.yml
 git diff --check
 ```
 
-The offline suite checks opt-in/platform/tool/KVM denials, provenance tampering
+The offline suite checks opt-in/platform/tool denials and no-KVM emulation selection, provenance tampering
 and identity, child credential stripping, strict host-key options, seed trust,
 QEMU isolation arguments, timeout termination, sanitized failures, and Linux
 subreaper behavior (explicitly skipped on macOS). Mocks of QEMU are unit contract
 tests, not VM execution. The Linux offline test must run before a hosted smoke.
 Actual hosted QEMU boot, cloud-init behavior, host-key mismatch over real SSH,
-KVM availability/access, resource use and complete descendant teardown remain
+TCG boot timing, resource use and complete descendant teardown remain
 pending. A ready harness is not issue acceptance or product acceptance.
 
 Update procedure: read the official dated index and current Debian provenance
@@ -160,8 +190,8 @@ review the diff and rerun offline/YAML/actionlint checks; only then seek separat
 authorized owner execution of the reviewed ref. Never switch to `latest` or
 silently repin a failed download.
 
-Rollback: while uncommitted, remove only the three new owned paths after saving
-review evidence; after integration, use a reviewed revert. The original delivery installed no software. Corrected setup installs packages
+Rollback: while uncommitted, reverse only this reviewed patch after saving
+evidence; after integration, use a reviewed revert. The original delivery installed no software. Corrected setup installs packages
 only on an ephemeral runner; runner destruction is its rollback boundary.
 No production data is involved. Keep initial
 failure logs outside tracked source. Independent QA and hosted proof remain lead
@@ -186,7 +216,11 @@ proof for the new regression. Original review and failure logs remain retained.
 Runner tool/KVM availability, real boot/host-key behavior, QEMU teardown and final
 independent acceptance are still pending; no VM had been activated at that checkpoint.
 
-## Corrected runner prerequisites (issue #15, frozen source d9082b9)
+## Historical corrected KVM runner prerequisites (issue #15, frozen source d9082b9)
+
+The following records the superseded KVM-only implementation and its failures.
+Its KVM access prerequisite and proposed execution steps do not govern the TCG
+patch described above and below. Original failure evidence remains unchanged.
 
 The first owner-reviewed activation, [run 45236698337 job 137910330399](https://github.com/MrFrydae/ChunkMaestro/actions/runs/45236698337/job/137910330399),
 failed with `preflight-tools` before image download or VM creation. The old aggregate
@@ -299,3 +333,53 @@ and specification checks pass. Logs are retained under
 `.artifacts/debian-15-integration/prerequisites-correction/`. This is offline
 diagnostics proof, not hosted APT, KVM, VM or product acceptance. A new independent
 correction review remains required before another bounded activation.
+
+## Fixed TCG correction prepared from cd5721e
+
+The lead reports [corrected run 45245131572](https://github.com/MrFrydae/ChunkMaestro/actions/runs/45245131572)
+passed offline contracts, named missing QEMU/qemu-img/cloud-localds, and found
+KVM not openable. Setup refused before APT, image retrieval or VM creation.
+No successful VM proof exists. The lead retains digest-verified sanitized evidence
+at `.artifacts/debian-15-integration/corrected-run-45245131572`; that directory
+is absent in this implementation worktree, so its hashes were not independently
+recomputed here. Original f127 FAIL and cd preflight PASS assessments remain
+immutable in the lead's `/tmp/chunkmaestro-pr17-security-*` directories. Their
+primary-error preservation correction is retained and tested, not superseded.
+
+The setup now proceeds to its unchanged fixed APT commands after runner/source
+checks without requesting KVM access. URI validation accepts one optional trailing
+slash only for the existing exact official hosts and `/ubuntu` path; Ubuntu's
+[Noble deb822 examples](https://manpages.ubuntu.com/manpages/noble/man5/sources.list.5.html)
+use unslashed archive/security URIs. Original configured bytes are still hashed
+and copied, with no broad URL normalization, trust override or source mutation.
+Unknown formats/fields/hosts/path variants still fail closed.
+
+Revised one-run proof, for the lead after independent review of the patched exact
+head: require hosted Linux offline PASS (including descendant cleanup), review
+source/keyring hashes and named prerequisite inventory, then authorize one exact
+owner `38875853` same-repository `run-debian-fixture` label event. No push
+activation, retry, access grant or deadline extension is permitted. Retain all
+sanitized setup/post-check/status evidence on failure. Require fixed TCG mode,
+signed-source APT success and actual package inventory, pinned image verification,
+current serial nonce readiness within 240 seconds, one strict authenticated SSH
+probe proving Debian 13/fixture identity/systemd PID1/exact output, output caps,
+and complete process reaping before owned workspace deletion. Stop at the first
+failed prerequisite/provenance/boot/SSH/cleanup boundary; a timeout is a failed
+emulation attempt, not permission to increase bounds. A future real host-key
+mismatch test still needs separately reviewed execution; mocked denials are not
+real SSH trust proof.
+
+This preparation performs no APT/sudo/install, image retrieval, VM activation,
+commit/push, label or other GitHub mutation. One reviewed run remains pending;
+independent review and real guest evidence remain integration gates. Reversing
+this patch restores the prior KVM-refusal implementation; do not reactivate it
+without a lead decision. Disposable runner destruction remains the package/setup
+rollback boundary after a later authorized run.
+
+Local preparation validation: 36 offline tests discovered, 35 passed and one
+Linux-only descendant test skipped on macOS. In-memory Python syntax, Ruby YAML,
+existing cached actionlint 1.7.12, specification and whitespace checks passed.
+The workflow is byte-identical to frozen cd5721e except its TCG smoke step name.
+Two new backend contracts reject historical cd5721e (KVM preflight error and KVM
+argv assertion); those logs remain separate from passing patched-source results.
+No C# inputs changed, so .NET format/build checks do not apply to this patch.

@@ -67,7 +67,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 -B tooling/debian-fixture/runner_setup.py check | tee "$RUNNER_TEMP/debian-fixture-evidence/post-setup.jsonl"
-      - name: Synthetic VM smoke
+      - name: Fixed TCG Debian system-emulation smoke
         shell: bash
         run: |
           set -euo pipefail

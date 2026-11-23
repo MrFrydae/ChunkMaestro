@@ -34,7 +34,7 @@ class RunnerContracts(unittest.TestCase):
                 with patch.object(r, 'runner_guard'), patch.object(r, 'SOURCES', source), \
                      patch.object(r, 'KEYRING', str(key)), \
                      patch.object(r, 'validate_sources'), \
-                     patch.object(f, 'inventory', return_value={'kvm': 'ready'}), \
+                     patch.object(f, 'inventory', return_value={'execution-mode': 'tcg-system-qemu64-multi'}), \
                      patch.object(r.tempfile, 'mkdtemp', return_value=str(root / 'setup')), \
                      patch.object(r.SetupHarness, 'run', side_effect=f.Failure('apt-update-output-limit')), \
                      patch.object(r, 'versions', side_effect=secondary), \
@@ -70,14 +70,14 @@ class RunnerContracts(unittest.TestCase):
             present = dict(zip(f.TOOLS, bits))
             with self.subTest(bits=bits), contextlib.redirect_stdout(io.StringIO()) as log, \
                  patch.object(f.shutil, 'which', side_effect=lambda t, path: '/private/SECRET' if present[t] else None), \
-                 patch.object(f.os, 'stat', side_effect=PermissionError('/private/SECRET')):
+                 patch.object(f.os, 'open', side_effect=AssertionError('KVM must not be opened')):
                 result = f.inventory()
             events = [json.loads(line) for line in log.getvalue().splitlines()]
             for tool in f.TOOLS:
                 self.assertEqual(result[tool], 'ready' if present[tool] else 'missing')
             self.assertEqual(len(events), 10)
             self.assertNotIn('SECRET', log.getvalue())
-            self.assertEqual(result['kvm'], 'not-openable')
+            self.assertEqual(result['execution-mode'], 'tcg-system-qemu64-multi')
 
     def test_source_policy_denies_insecure_or_unreviewed_inputs(self):
         r.validate_sources(SOURCE)
@@ -127,17 +127,6 @@ class RunnerContracts(unittest.TestCase):
                 inventory.assert_called_once()
                 vm.assert_not_called()
 
-    def test_kvm_permission_refusal_even_with_all_tools(self):
-        with patch.object(f.platform, 'system', return_value='Linux'), \
-             patch.object(f.platform, 'machine', return_value='x86_64'), \
-             patch.object(f.os, 'geteuid', return_value=1000), \
-             patch.object(f.shutil, 'which', return_value='/usr/bin/tool'), \
-             patch.object(f.os, 'stat') as info, \
-             patch.object(f.os, 'open', side_effect=PermissionError('SECRET')):
-            info.return_value.st_mode = 0o020000
-            with self.assertRaisesRegex(f.Failure, 'preflight-kvm'):
-                f.prerequisites()
-
     def test_user_package_input_denied(self):
         with patch.object(sys, 'argv', ['runner_setup.py', 'setup', 'evil; id']), \
              contextlib.redirect_stderr(io.StringIO()), patch.object(r, 'setup') as setup:
@@ -155,7 +144,7 @@ class RunnerContracts(unittest.TestCase):
             with tempfile.TemporaryDirectory() as d, \
                  patch.object(r, 'runner_guard'), patch.object(r, 'SOURCES', Path(d) / 'sources'), \
                  patch.object(r, 'KEYRING', str(Path(d) / 'keyring')), \
-                 patch.object(r, 'validate_sources'), patch.object(f, 'inventory', return_value={'kvm': 'ready'}), \
+                 patch.object(r, 'validate_sources'), patch.object(f, 'inventory', return_value={'execution-mode': 'tcg-system-qemu64-multi'}), \
                  patch.object(r.SetupHarness, 'run', run), \
                  patch.object(r, 'versions') as versions, patch.object(r.SetupHarness, 'cleanup') as cleanup:
                 r.SOURCES.write_bytes(SOURCE)
@@ -166,10 +155,28 @@ class RunnerContracts(unittest.TestCase):
                 versions.assert_called_once()
                 cleanup.assert_called_once()
 
-    def test_setup_kvm_denial_before_apt_or_source_access(self):
-        for status in ('missing', 'not-openable', 'not-character-device'):
-            with patch.object(r, 'runner_guard'), patch.object(f, 'inventory', return_value={'kvm': status}), \
-                 patch.object(r.SetupHarness, 'start') as start:
-                with self.assertRaisesRegex(f.Failure, 'preflight-kvm'):
-                    r.setup()
-                start.assert_not_called()
+    def test_setup_reaches_fixed_apt_without_kvm(self):
+        with tempfile.TemporaryDirectory() as d, \
+             patch.object(r, 'runner_guard'), patch.object(r, 'SOURCES', Path(d) / 'sources'), \
+             patch.object(r, 'KEYRING', str(Path(d) / 'keyring')), \
+             patch.object(r, 'validate_sources'), \
+             patch.object(f, 'inventory', return_value={'execution-mode': 'tcg-system-qemu64-multi'}), \
+             patch.object(f.os, 'open', side_effect=AssertionError('must not open KVM')), \
+             patch.object(r.SetupHarness, 'run') as run, \
+             patch.object(r, 'versions'), patch.object(r.SetupHarness, 'cleanup'):
+            r.SOURCES.write_bytes(SOURCE)
+            Path(r.KEYRING).write_bytes(b'synthetic')
+            r.setup()
+            self.assertEqual([c.args[1] for c in run.call_args_list], ['apt-update', 'apt-install'])
+
+    def test_source_exact_optional_slash_only(self):
+        for host in ('archive', 'security', 'azure.archive'):
+            for scheme in ('http', 'https'):
+                for slash in ('', '/'):
+                    uri = f'{scheme}://{host}.ubuntu.com/ubuntu{slash}'.encode()
+                    r.validate_sources(SOURCE.replace(b'http://archive.ubuntu.com/ubuntu/', uri))
+        for uri in (b'http://archive.ubuntu.com/ubuntu//', b'http://archive.ubuntu.com/ubuntu/../',
+                    b'http://archive.ubuntu.com/ubuntu?evil', b'http://archive.ubuntu.com.evil/ubuntu',
+                    b'http://user@archive.ubuntu.com/ubuntu', b'http://archive.ubuntu.com:80/ubuntu'):
+            with self.subTest(uri=uri), self.assertRaises(f.Failure):
+                r.validate_sources(SOURCE.replace(b'http://archive.ubuntu.com/ubuntu/', uri))

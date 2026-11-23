@@ -39,7 +39,8 @@ def validate_sources(data):
                 or any(uri not in ('http://archive.ubuntu.com/ubuntu/', 'http://security.ubuntu.com/ubuntu/',
                                    'https://archive.ubuntu.com/ubuntu/', 'https://security.ubuntu.com/ubuntu/',
                                    'http://azure.archive.ubuntu.com/ubuntu/', 'https://azure.archive.ubuntu.com/ubuntu/')
-                       for uri in fields['URIs'].split())
+                       for uri in (value + '/' if not value.endswith('/') else value
+                                   for value in fields['URIs'].split()))
                 or not fields['Suites'].split()
                 or not set(fields['Suites'].split()) <= {'noble', 'noble-updates', 'noble-security', 'noble-backports'}
                 or not {'main', 'universe'} <= set(fields['Components'].split())
@@ -110,9 +111,8 @@ def record_failure(phase, error):
 
 def setup():
     runner_guard()
-    # Never rely on package installation to create or broaden KVM access.
-    if f.inventory()['kvm'] != 'ready':
-        raise f.Failure('preflight-kvm')
+    # Inventory selects fixed software emulation; never inspect/open /dev/kvm.
+    f.inventory()
     data = SOURCES.read_bytes()
     validate_sources(data)
     f.event('configured-ubuntu-source-sha256', hashlib.sha256(data).hexdigest())

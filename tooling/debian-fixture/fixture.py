@@ -11,7 +11,8 @@ import resource
 import shutil
 import signal
 import socket
-import stat
+import re
+import secrets
 import sys
 import subprocess
 import tempfile
@@ -60,18 +61,7 @@ def inventory():
     }
     for tool in TOOLS:
         statuses[tool] = 'ready' if shutil.which(tool, path='/usr/bin:/bin') else 'missing'
-    try:
-        mode = os.stat('/dev/kvm').st_mode
-        if not stat.S_ISCHR(mode):
-            statuses['kvm'] = 'not-character-device'
-        else:
-            fd = os.open('/dev/kvm', os.O_RDWR | os.O_CLOEXEC)
-            os.close(fd)
-            statuses['kvm'] = 'ready'
-    except FileNotFoundError:
-        statuses['kvm'] = 'missing'
-    except OSError:
-        statuses['kvm'] = 'not-openable'
+    statuses['execution-mode'] = 'tcg-system-qemu64-multi'
     for name, status in statuses.items():
         event('prerequisite-' + name, status)
     return statuses
@@ -84,8 +74,6 @@ def prerequisites():
             raise Failure('preflight-' + ('root' if name == 'nonroot' else name))
     if any(statuses[t] != 'ready' for t in TOOLS):
         raise Failure('preflight-tools')
-    if statuses['kvm'] != 'ready':
-        raise Failure('preflight-kvm')
 
 
 def validate_provenance(sums, metadata):
@@ -198,8 +186,41 @@ def ssh_args(root, port):
             '-o', 'ClearAllForwardings=yes', '-o', 'LogLevel=ERROR', 'fixture@127.0.0.1']
 
 
-def cloud_config(root):
+def readiness_marker(nonce):
+    if not re.fullmatch(r'[0-9a-f]{32}', nonce):
+        raise Failure('readiness-nonce')
+    return 'CM-FIXTURE-READY-' + nonce
+
+
+def wait_ready(h, vm, output, nonce):
+    marker = readiness_marker(nonce).encode()
+    end = min(time.monotonic() + 240, h.deadline)
+    event('boot', 'start')
+    while True:
+        h.check_output_limits('boot')
+        if vm.poll() is not None:
+            raise Failure('boot-qemu-exit')
+        if time.monotonic() >= end:
+            raise Failure('boot-timeout')
+        # pread does not move QEMU's shared stdout offset. Never emit console bytes.
+        data = os.pread(output.fileno(), 1024**2, 0)
+        if marker in [line.removesuffix(b'\r') for line in data.split(b'\n')[:-1]]:
+            event('boot', 'fixture-bootstrap-ready')
+            event('private-serial-sha256', hashlib.sha256(data).hexdigest())
+            return
+        event('boot', 'waiting')
+        time.sleep(min(5, max(0, end - time.monotonic())))
+
+
+def cloud_config(root, nonce):
     # JSON is valid YAML; no manual interpolation of secret key material.
+    marker = readiness_marker(nonce)
+    # Runs once in cloud-final's scripts-user stage, after users/SSH/write_files.
+    # Restart only this disposable guest's SSH service so the fixed policy is active.
+    ready = ('test "$(id -un fixture)" = fixture; '
+             'test -s /home/fixture/.ssh/authorized_keys; '
+             '/usr/sbin/sshd -t; systemctl restart ssh; '
+             'printf "\\n' + marker + '\\n" > /dev/ttyS0')
     return '#cloud-config\n' + json.dumps({
         'users': [{'name': 'fixture', 'lock_passwd': True, 'shell': '/bin/sh',
                    'sudo': False, 'ssh_authorized_keys': [(root / 'client.pub').read_text().strip()]}],
@@ -209,6 +230,7 @@ def cloud_config(root):
                      'ed25519_public': (root / 'host.pub').read_text().strip()},
         'write_files': [{'path': '/etc/ssh/sshd_config.d/00-fixture.conf',
                          'content': 'PasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin no\nAllowUsers fixture\nAllowTcpForwarding no\nX11Forwarding no\nAllowAgentForwarding no\n'}],
+        'runcmd': [['/bin/sh', '-ec', ready]],
         'package_update': False, 'package_upgrade': False})
 
 
@@ -231,7 +253,8 @@ def exercise(h):
     h.run(['qemu-img', 'create', '-f', 'qcow2', '-F', 'qcow2', '-b', str(base), 'overlay', '4G'], 'overlay')
     for key in ('client', 'host'):
         h.run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', 'synthetic-fixture', '-f', key], 'keys')
-    (r / 'user-data').write_text(cloud_config(r))
+    nonce = secrets.token_hex(16)
+    (r / 'user-data').write_text(cloud_config(r, nonce))
     (r / 'meta-data').write_text('instance-id: synthetic-fixture\nlocal-hostname: synthetic-fixture\n')
     h.run(['cloud-localds', 'seed.img', 'user-data', 'meta-data'], 'seed')
     with socket.socket() as s:
@@ -239,31 +262,15 @@ def exercise(h):
         port = s.getsockname()[1]
     # QEMU fails closed if another process wins the release/bind race.
     (r / 'known_hosts').write_text(f'[127.0.0.1]:{port} ' + (r / 'host.pub').read_text())
-    vm, output = h.start(['qemu-system-x86_64', '-machine', 'q35,accel=kvm',
-        '-cpu', 'host', '-smp', '2', '-m', '2048', '-display', 'none',
-        '-serial', 'none', '-monitor', 'none', '-no-reboot',
+    event('execution-mode', 'tcg-system-qemu64-multi')
+    vm, output = h.start(['qemu-system-x86_64', '-machine', 'q35',
+        '-accel', 'tcg,thread=multi', '-cpu', 'qemu64', '-smp', '2', '-m', '2048', '-display', 'none',
+        '-serial', 'stdio', '-monitor', 'none', '-no-reboot',
         '-drive', 'file=overlay,format=qcow2,if=virtio',
         '-drive', 'file=seed.img,format=raw,if=virtio,readonly=on',
         '-netdev', f'user,id=n,restrict=on,hostfwd=tcp:127.0.0.1:{port}-:22',
         '-device', 'virtio-net-pci,netdev=n'])
-    event('boot', 'start')
-    end = min(time.monotonic() + 240, h.deadline)
-    # Readiness polling is bounded, not a VM/SSH operation retry. SSH runs once.
-    while True:
-        h.check_output_limits('boot')
-        if vm.poll() is not None:
-            raise Failure('boot-qemu-exit')
-        if time.monotonic() >= end:
-            raise Failure('boot-timeout')
-        try:
-            with socket.create_connection(('127.0.0.1', port), timeout=1) as s:
-                s.settimeout(1)
-                if s.recv(128).startswith(b'SSH-2.0-'):
-                    break
-        except OSError:
-            pass
-        event('boot', 'waiting')
-        time.sleep(5)
+    wait_ready(h, vm, output, nonce)
     result = h.run(ssh_args(r, port) + [SMOKE], 'probe', 30)
     if result != EXPECTED:
         raise Failure('probe-identity')

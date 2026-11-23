@@ -36,14 +36,23 @@ class Contracts(unittest.TestCase):
             with self.assertRaisesRegex(f.Failure, 'preflight-tools'):
                 f.prerequisites()
 
-    def test_missing_kvm_denied(self):
+    def test_tcg_requires_no_kvm_access(self):
         with patch.object(f.platform, 'system', return_value='Linux'), \
              patch.object(f.platform, 'machine', return_value='x86_64'), \
              patch.object(f.os, 'geteuid', return_value=1000), \
              patch.object(f.shutil, 'which', return_value='/usr/bin/tool'), \
-             patch.object(f.os, 'stat', side_effect=FileNotFoundError):
-            with self.assertRaisesRegex(f.Failure, 'preflight-kvm'):
-                f.prerequisites()
+             patch.object(f.os, 'open', side_effect=AssertionError('must not open KVM')):
+            f.prerequisites()
+
+    def test_each_missing_tool_fails_preflight(self):
+        for missing in f.TOOLS:
+            with self.subTest(missing=missing), \
+                 patch.object(f.platform, 'system', return_value='Linux'), \
+                 patch.object(f.platform, 'machine', return_value='x86_64'), \
+                 patch.object(f.os, 'geteuid', return_value=1000), \
+                 patch.object(f.shutil, 'which', side_effect=lambda name, path: None if name == missing else '/usr/bin/tool'):
+                with self.assertRaisesRegex(f.Failure, '^preflight-tools$'):
+                    f.prerequisites()
 
     def test_credentials_stripped(self):
         with patch.dict(os.environ, {'GITHUB_TOKEN': 'sentinel', 'SSH_AUTH_SOCK': '/secret',
@@ -98,11 +107,17 @@ class Contracts(unittest.TestCase):
             root = Path(d)
             for name in ('client.pub', 'host', 'host.pub'):
                 (root / name).write_text('synthetic-' + name)
-            config = json.loads(f.cloud_config(root).split('\n', 1)[1])
+            config = json.loads(f.cloud_config(root, 'a' * 32).split('\n', 1)[1])
             self.assertEqual(config['ssh_keys']['ed25519_public'], 'synthetic-host.pub')
             self.assertFalse(config['users'][0]['sudo'])
             self.assertFalse(config['ssh_pwauth'])
             self.assertFalse(config['ssh']['emit_keys_to_console'])
+            command = config['runcmd'][0]
+            self.assertEqual(command[:2], ['/bin/sh', '-ec'])
+            self.assertIn('systemctl restart ssh; printf', command[2])
+            self.assertIn(f.readiness_marker('a' * 32), command[2])
+            self.assertIn('> /dev/ttyS0', command[2])
+            self.assertNotIn('sudo', command[2])
 
     def test_timeout_kills_child_before_workspace_deletion(self):
         with tempfile.TemporaryDirectory() as d:
@@ -214,12 +229,16 @@ class Contracts(unittest.TestCase):
                 with self.assertRaisesRegex(f.Failure, 'synthetic-stop'):
                     f.exercise(h)
             qemu = calls[-1]
-            self.assertIn('q35,accel=kvm', qemu)
+            self.assertEqual(qemu[qemu.index('-machine') + 1], 'q35')
+            self.assertEqual(qemu[qemu.index('-accel') + 1], 'tcg,thread=multi')
+            self.assertEqual(qemu[qemu.index('-cpu') + 1], 'qemu64')
+            self.assertEqual(qemu[qemu.index('-serial') + 1], 'stdio')
+            self.assertEqual(qemu.count('-accel'), 1)
             self.assertIn('2', qemu)
             self.assertIn('2048', qemu)
             network = qemu[qemu.index('-netdev') + 1]
             self.assertIn('restrict=on,hostfwd=tcp:127.0.0.1:', network)
-            for banned in ('tcg', 'virtfs', 'fsdev', '0.0.0.0', 'daemonize'):
+            for banned in ('kvm', 'accel=', 'virtfs', 'fsdev', '0.0.0.0', 'daemonize'):
                 self.assertNotIn(banned, ' '.join(qemu))
 
 
