@@ -32,7 +32,9 @@
       "ControllerLockFailureTests",
       "PlatformSecurityTests",
       "StorageIdentityLifetimeTests",
-      "WindowsAuthorityQualificationTests"
+      "WindowsAuthorityQualificationTests",
+      "OwnerIdentityBoundaryTests",
+      "OwnerAuthorizationOrderingTests"
     ]
   },
   "platform_only": {
@@ -67,7 +69,9 @@
       "StorageTests": 43,
       "StoreFailureMutationContractTests": 6,
       "ControllerIdentityMetadataTests": 59,
-      "ControllerIdentityLifecycleTests": 23
+      "ControllerIdentityLifecycleTests": 23,
+      "OwnerIdentityBoundaryTests": 10,
+      "OwnerAuthorizationOrderingTests": 30
     },
     "Windows": {
       "AuthorityMutationContractTests": 32,
@@ -93,7 +97,9 @@
       "StoreFailureMutationContractTests": 6,
       "WindowsAuthorityQualificationTests": 9,
       "ControllerIdentityMetadataTests": 59,
-      "ControllerIdentityLifecycleTests": 23
+      "ControllerIdentityLifecycleTests": 23,
+      "OwnerIdentityBoundaryTests": 10,
+      "OwnerAuthorizationOrderingTests": 30
     }
   }
 }
