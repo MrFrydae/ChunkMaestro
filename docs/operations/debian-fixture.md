@@ -128,7 +128,7 @@ fixture bootstrap readiness, not cloud-init-wide success or acceptance. A host-k
 | Child files | Each ≤4 GiB, core dumps disabled; command output over 1 MiB fails at next poll |
 | Child CPU | 900 CPU seconds per subprocess; VM wall clock bounded by harness |
 | Metadata | Checksums ≤64 KiB, metadata ≤128 KiB, each download 30 seconds |
-| Image download | 300 seconds, connect 20 seconds, HTTPS only, no retries/redirects |
+| Image download | 300 seconds, connect 20 seconds, HTTPS only including at most three redirects, no retries |
 | Tools/probe | 30 seconds each; SSH connect 5 seconds, one attempt |
 | Boot readiness | 240 seconds, fixed 5-second private serial polling, no reboot/retry |
 | Shutdown/cleanup | TERM, 1-second grace, KILL; direct waits ≤5 seconds each; adopted reaping ≤5 seconds |
