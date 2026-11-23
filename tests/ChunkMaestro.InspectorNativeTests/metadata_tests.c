@@ -1,9 +1,11 @@
 #define _GNU_SOURCE
 #include "metadata.h"
 #include <errno.h>
+#include <dirent.h>
 #include <fcntl.h>
 #include <linux/openat2.h>
 #include <stdint.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -72,6 +74,58 @@ static struct stat snapshot(int fd)
     struct stat value;
     REQUIRE(fstat(fd, &value) == 0);
     return value;
+}
+
+typedef struct
+{
+    size_t count;
+    int numbers[4096];
+} descriptor_snapshot;
+
+static int descriptor_order(const void *left, const void *right)
+{
+    int a = *(const int *)left;
+    int b = *(const int *)right;
+    return (a > b) - (a < b);
+}
+
+/* Harness-only enumeration of our own descriptors; never game directories. */
+static descriptor_snapshot descriptors(void)
+{
+    descriptor_snapshot value = {0};
+    DIR *directory = opendir("/proc/self/fd");
+    REQUIRE(directory != NULL);
+    int scan = dirfd(directory);
+    REQUIRE(scan >= 0);
+    struct dirent *entry;
+    errno = 0;
+    while ((entry = readdir(directory)) != NULL)
+    {
+        if (entry->d_name[0] == '.')
+        {
+            continue;
+        }
+        char *end = NULL;
+        errno = 0;
+        long number = strtol(entry->d_name, &end, 10);
+        REQUIRE(errno == 0 && *end == 0 && number >= 0 && number <= INT_MAX);
+        if ((int)number != scan)
+        {
+            REQUIRE(value.count < sizeof(value.numbers) / sizeof(value.numbers[0]));
+            value.numbers[value.count++] = (int)number;
+        }
+        errno = 0;
+    }
+    REQUIRE(errno == 0);
+    REQUIRE(closedir(directory) == 0);
+    qsort(value.numbers, value.count, sizeof(value.numbers[0]), descriptor_order);
+    return value;
+}
+
+static int same_descriptor_snapshot(const descriptor_snapshot *left, const descriptor_snapshot *right)
+{
+    return left->count == right->count &&
+        memcmp(left->numbers, right->numbers, left->count * sizeof(left->numbers[0])) == 0;
 }
 
 /* Little-endian Linux POSIX ACL xattr: version + owner/named-user/group/mask/other.
@@ -268,11 +322,22 @@ int main(void)
     puts("PASS injected syscall controls (separate test build; not kernel error proof)");
 #endif
     cm_directory_destroy(&child);
-    /* Sequential resource test without /proc enumeration: lowest free FD must
-     * be unchanged after repeated acquisition/check/disposal, including refusal. */
+    /* Keep the lowest-free check and independently compare the full descriptor
+     * set, so releasing a low slot cannot mask leaked higher parent duplicates. */
     int lowest = fcntl(root, F_DUPFD_CLOEXEC, 0);
     REQUIRE(lowest >= 0);
     close(lowest);
+    descriptor_snapshot before_fds = descriptors();
+    int high = fcntl(root, F_DUPFD_CLOEXEC, 128);
+    REQUIRE(high >= 128);
+    descriptor_snapshot with_high = descriptors();
+    int low_with_leak = fcntl(root, F_DUPFD_CLOEXEC, 0);
+    REQUIRE(low_with_leak == lowest); /* The original oracle misses this leak. */
+    close(low_with_leak);
+    REQUIRE(!same_descriptor_snapshot(&before_fds, &with_high));
+    close(high);
+    descriptor_snapshot restored_fds = descriptors();
+    REQUIRE(same_descriptor_snapshot(&before_fds, &restored_fds));
     for (int iteration = 0; iteration < 128; ++iteration)
     {
         child = bound(root, target_fd);
@@ -282,6 +347,8 @@ int main(void)
     int after = fcntl(root, F_DUPFD_CLOEXEC, 0);
     REQUIRE(after == lowest);
     close(after);
+    descriptor_snapshot after_fds = descriptors();
+    REQUIRE(same_descriptor_snapshot(&before_fds, &after_fds));
     /* Actual kernel ACL positive controls, no libacl/setfacl dependency. */
     const char *names[] = {"system.posix_acl_access", "system.posix_acl_default"};
     for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); ++i)

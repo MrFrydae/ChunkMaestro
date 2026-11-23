@@ -35,6 +35,21 @@ for instrumentation in plain sanitized; do
             "$build/$instrumentation-$mode"
     done
 done
+# One disposable ownership fault must be detected by the complete FD oracle.
+# This is regression sensitivity, not a mutation percentage or release score.
+test "$(grep -cF 'close(owned->parent_fd);' "$root/src/ChunkMaestro.Inspector.Native/metadata.c")" = 1
+sed 's/close(owned->parent_fd);/\/\* controlled missing-parent-close fault \*\//' \
+    "$root/src/ChunkMaestro.Inspector.Native/metadata.c" > "$build/leaking.c"
+"$compiler" -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic \
+    -I"$root/src/ChunkMaestro.Inspector.Native" \
+    "$build/leaking.c" "$root/tests/ChunkMaestro.InspectorNativeTests/metadata_tests.c" \
+    -o "$build/leaking"
+if "$build/leaking" > "$build/leaking.log" 2>&1; then
+    echo 'FAIL: controlled missing-parent-close fault escaped the descriptor oracle' >&2
+    exit 1
+fi
+grep -F 'same_descriptor_snapshot(&before_fds, &after_fds)' "$build/leaking.log"
+echo 'PASS: expected missing-parent-close failure was detected; production source unchanged'
 # Inspect a separately compiled production object, without the test definition.
 "$compiler" -std=c11 -Wall -Wextra -Werror -Wpedantic -c \
     "$root/src/ChunkMaestro.Inspector.Native/metadata.c" -o "$build/production.o"

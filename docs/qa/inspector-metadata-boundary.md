@@ -151,8 +151,38 @@ agent-tooling tests, pinned Release build, syntax/style, formatter verification,
 specification, Ruby YAML parsing and cached actionlint passed. Initial Python YAML
 parsing lacked PyYAML; built-in Ruby YAML plus actionlint supplied verification
 without installing dependencies. The native runner again exited 77 on macOS,
-so Linux compilation/kernel/sanitizer results remain pending hosted execution.
+so that local run supplied no Linux compilation/kernel/sanitizer evidence.
 The worker's original SDK/assets failures remain unchanged historical evidence.
 Logs, source bindings and original hashes are under
 `.artifacts/inspector-native-integration/`. No final independent implementation QA
 or Debian helper acceptance follows from these local checks.
+
+## First Linux execution and resource-oracle correction
+
+At head `3730972da615ee000d0a781d1e3194cc5df4931d`, standard Ubuntu job
+138082021608 in run 45285902033 passed. The uploaded raw log confirms GCC13.3,
+Linux x86_64, plain and ASan/UBSan kernel/control fixture runs, and the separate
+production import check. Artifact14872081043 SHA256 is
+`95b62ccd8115cab56804e2a51c1723d59fab7212fb963c68deb12a10dcd65397`;
+the original ZIP and extracted log were reopened and verified under
+`.artifacts/inspector-native-integration/hosted-45285902033/`.
+
+Independent preliminary review found no material production defect but identified
+R1: a lowest-free-FD check can miss leaked higher parent duplicates. The original
+report remains at
+`/tmp/chunkmaestro-22-security-preflight-8b52d20d-aa34-4b5a-8c16-0912bffe75ac/`.
+The existing assertion is retained and supplemented with complete sorted
+descriptor-number snapshots before/after repeated ownership cycles. A high-FD
+counterexample proves why the lower-slot assertion alone is insufficient.
+Only the test harness enumerates its own `/proc/self/fd`; production still does
+not enumerate directories or read game contents. A finite snapshot cap fails
+rather than ignoring descriptors. This is a serialized fixture oracle, not a
+concurrent whole-process resource guarantee.
+
+The runner also compiles one disposable missing-parent-close fault and requires
+its failure specifically at the full descriptor-set comparison. This is a
+regression sensitivity check, not a mutation percentage gate. Production sources
+are unchanged; fault output is retained in the job log. Updated Linux execution
+and new exact-head three-role final QA remain required. The first Ubuntu proof
+is historical for its exact head, not a pass claim for these new test assertions
+or for full Debian/helper/namespace/LSM qualification.
