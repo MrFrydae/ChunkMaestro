@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework><OutputType>Exe</OutputType><IsTestProject>true</IsTestProject></PropertyGroup><ItemGroup><ProjectReference Include="../../src/ChunkMaestro.Desktop/ChunkMaestro.Desktop.csproj" />
+<PackageReference Include="Avalonia.Headless.XUnit" /><PackageReference Include="xunit.v3" /><PackageReference Include="Microsoft.NET.Test.Sdk" /><PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" /></ItemGroup>
+<!-- Keep the fake-service headless suite on every OS; real local storage is Windows/macOS only. -->
+<ItemGroup Condition="!$([MSBuild]::IsOSPlatform('Windows')) And !$([MSBuild]::IsOSPlatform('OSX'))">
+  <Compile Remove="LocalStorageCompositionTests.cs" />
+</ItemGroup>
+</Project>

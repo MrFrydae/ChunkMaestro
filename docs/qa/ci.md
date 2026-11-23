@@ -17,7 +17,21 @@ tooling validation now share this workflow instead of a duplicate workflow.
 
 Managed jobs restore/build/style/format Windows, macOS and Linux. Linux executes
 the explicit unsupported-controller contract; it never supplies Windows/macOS
-storage acceptance. Storage has four independent jobs on each supported OS:
+storage acceptance.
+
+Hosted macOS jobs use the standard `macos-15-intel` image. GitHub repeatedly
+cancelled Apple Silicon jobs without assigning a runner on 2026-11-23, explicitly
+reporting arm64 capacity constraints. Intel is also a selected product target.
+The managed matrix keeps its `macos-15` check/artifact key stable while its
+separate runner field selects Intel hardware. Storage/native/volume check names,
+commands, test inventories, coverage floors and failure behavior are unchanged.
+See [GitHub's standard runner table](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
+Intel execution must pass on that runner; prior Apple Silicon proof does not
+establish Intel execution. Local native desktop and storage evidence remains
+bound to its recorded Apple Silicon host. This runner change does not establish
+both-architecture installers or release acceptance, nor guarantee queue latency.
+
+Storage has four independent jobs on each supported OS:
 
 | Group | Direct evidence |
 | --- | --- |

@@ -1,0 +1,74 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:p="using:ChunkMaestro.Presentation" xmlns:d="using:ChunkMaestro.Domain" xmlns:local="using:ChunkMaestro.Desktop"
+ x:Class="ChunkMaestro.Desktop.MainWindow" x:DataType="p:FleetViewModel"
+ Title="ChunkMaestro — Fleet" Width="1120" Height="820" MinWidth="720" MinHeight="520"
+ Background="{DynamicResource ShellSurface}">
+ <Grid RowDefinitions="Auto,*" Margin="24">
+  <StackPanel Spacing="8" Margin="0,0,0,20">
+   <TextBlock Text="ChunkMaestro / Fleet" FontSize="26" FontWeight="SemiBold" Foreground="{DynamicResource ShellAccent}" />
+   <TextBlock Text="Local inventory · Development preview" />
+   <TextBlock Text="Metadata registration does not enroll an agent, adopt a service, establish ownership or authorize operations." />
+   <TextBlock Name="CloseFailure" IsVisible="False" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.LiveSetting="Assertive"
+    Text="Local session cleanup failed. Preserve the database, sidecars and backups. Close this window again to exit the application; no local action or cleanup will be retried." />
+  </StackPanel>
+  <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+   <StackPanel Spacing="16">
+    <Border BorderThickness="1" BorderBrush="{DynamicResource ShellAccent}" CornerRadius="8" Padding="16">
+     <StackPanel Spacing="8">
+      <TextBlock Text="1 · Local storage" FontSize="18" FontWeight="SemiBold" />
+      <TextBlock Text="{Binding StoragePath}" />
+      <CheckBox Name="StorageConsent" IsChecked="{Binding LocalStorageConfirmed}" Content="I confirm this directory is local and not synchronized or shared." AutomationProperties.Name="Confirm local nonsynchronized storage" />
+      <TextBlock Text="Never share the live SQLite database between desktops. No cloud account is needed. Closing this window releases the local store; no background controller runs." />
+      <StackPanel Orientation="Horizontal" Spacing="12">
+       <Button Name="OpenStorage" Content="_Open local store" Click="OpenClick" IsEnabled="{Binding CanOpen}" />
+       <Button Name="Reload" Content="_Reload metadata" Click="ReloadClick" IsEnabled="{Binding CanReload}" />
+      </StackPanel>
+      <TextBlock Name="State" Text="{Binding Status}" AutomationProperties.LiveSetting="Polite" />
+      <TextBlock Name="Error" Text="{Binding Error}" FontWeight="SemiBold" AutomationProperties.LiveSetting="Assertive" />
+     </StackPanel>
+    </Border>
+    <StackPanel Spacing="8">
+     <TextBlock Text="Fleet overview" FontSize="20" FontWeight="SemiBold" />
+     <TextBlock Name="EmptyState" IsVisible="{Binding IsEmpty}" Text="No registered targets to display. Open local storage, then register metadata below. No hosts are discovered automatically." />
+     <ItemsControl Name="InventoryRows" ItemsSource="{Binding Rows}">
+      <ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" Margin="0,4" /></DataTemplate></ItemsControl.ItemTemplate>
+     </ItemsControl>
+     <TextBlock Text="Status / last contact: unknown · Uptime, players, TPS/MSPT, CPU, RAM, heap, disk, latency and alerts: unavailable. No agent transport or probes are implemented." />
+     <Button Name="RemoteOperations" Content="Remote operations unavailable — agent enrollment and authorization required" IsEnabled="{Binding CanOperate}" />
+    </StackPanel>
+    <Border CornerRadius="8" Padding="16" BorderThickness="1" BorderBrush="Gray">
+     <StackPanel Spacing="10" IsEnabled="{Binding CanRegister}">
+      <TextBlock Text="2 · Register local metadata" FontSize="18" FontWeight="SemiBold" />
+      <TextBlock Text="Non-secret labels and addresses only. Nothing is sent to these targets. Ports are metadata, not firewall rules or connectivity evidence." />
+      <Label Name="FleetNameLabel" Content="_Fleet name" Target="{Binding #FleetNameInput}" />
+      <TextBox Name="FleetNameInput" Text="{Binding FleetName}" PlaceholderText="Fleet name" AutomationProperties.Name="Fleet name" />
+      <Button Content="Register _fleet" Click="FleetClick" />
+      <TextBlock Text="Parent fleet" />
+      <local:MetadataSelector Name="FleetSelector" ItemsSource="{Binding Fleets}" SelectedItem="{Binding SelectedFleet}" AutomationProperties.Name="Parent fleet" HorizontalAlignment="Stretch">
+       <ComboBox.ItemTemplate><DataTemplate x:DataType="d:Fleet"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
+      </local:MetadataSelector>
+      <Label Name="HostNameLabel" Content="Host _name" Target="{Binding #HostNameInput}" />
+      <TextBox Name="HostNameInput" Text="{Binding HostName}" PlaceholderText="Host name" AutomationProperties.Name="Host name" />
+      <Label Name="HostAddressLabel" Content="Host _address" Target="{Binding #HostAddressInput}" />
+      <TextBox Name="HostAddressInput" Text="{Binding HostAddress}" PlaceholderText="Host IP address or DNS name" AutomationProperties.Name="Host address" />
+      <Button Content="Register _host" Click="HostClick" />
+      <TextBlock Text="Parent host" />
+      <local:MetadataSelector Name="HostSelector" ItemsSource="{Binding Hosts}" SelectedItem="{Binding SelectedHost}" AutomationProperties.Name="Parent host" HorizontalAlignment="Stretch">
+       <ComboBox.ItemTemplate><DataTemplate x:DataType="d:Host"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
+      </local:MetadataSelector>
+      <Label Name="InstanceNameLabel" Content="Instance na_me" Target="{Binding #InstanceNameInput}" />
+      <TextBox Name="InstanceNameInput" Text="{Binding InstanceName}" PlaceholderText="Instance name" AutomationProperties.Name="Instance name" />
+      <Label Name="ServiceNameLabel" Content="_Service metadata name" Target="{Binding #ServiceNameInput}" />
+      <TextBox Name="ServiceNameInput" Text="{Binding ServiceName}" PlaceholderText="systemd service name" AutomationProperties.Name="Service metadata name" />
+      <Label Name="JavaPortLabel" Content="_Java TCP port (blank to omit)" Target="{Binding #JavaPortInput}" />
+      <TextBox Name="JavaPortInput" Text="{Binding JavaPort}" PlaceholderText="Java TCP port (blank to omit)" AutomationProperties.Name="Java TCP port" />
+      <Label Name="BedrockPortLabel" Content="_Bedrock UDP port (blank to omit)" Target="{Binding #BedrockPortInput}" />
+      <TextBox Name="BedrockPortInput" Text="{Binding BedrockPort}" PlaceholderText="Bedrock UDP port (blank to omit)" AutomationProperties.Name="Bedrock UDP port" />
+      <Button Content="Register _instance" Click="InstanceClick" />
+     </StackPanel>
+    </Border>
+    <TextBlock Text="Appearance follows your system. Status is conveyed with text. Theme overrides, high contrast and colorblind variants, persisted UI preferences, staging, console and lifecycle controls are not implemented in this slice." />
+   </StackPanel>
+  </ScrollViewer>
+ </Grid>
+</Window>

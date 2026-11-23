@@ -39,8 +39,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-2025, macos-15]
-    runs-on: ${{ matrix.os }}
+        # Keep required check/artifact names stable; select hardware separately.
+        include:
+          - {os: ubuntu-24.04, runner: ubuntu-24.04}
+          - {os: windows-2025, runner: windows-2025}
+          - {os: macos-15, runner: macos-15-intel}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
@@ -72,6 +76,9 @@ jobs:
         run: |
           python tooling/build/verify_brace_style.py
           python tooling/build/verify_release_discovery.py
+      - name: Native desktop headless contracts
+        timeout-minutes: 3
+        run: python tooling/ci/command.py --timeout-seconds 150 -- dotnet test tests/ChunkMaestro.AvaloniaHeadlessTests/ChunkMaestro.AvaloniaHeadlessTests.csproj -c Release --no-build --no-restore --blame-hang --blame-hang-timeout 60s --logger trx --logger "console;verbosity=normal" --results-directory .artifacts/ci/desktop-tests
       - name: Retain build and Linux test diagnostics
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -79,6 +86,7 @@ jobs:
           name: managed-${{ matrix.os }}
           path: |
             .artifacts/ci/linux-tests
+            .artifacts/ci/desktop-tests
             .artifacts/build
           if-no-files-found: warn
           retention-days: 14
@@ -93,10 +101,10 @@ jobs:
           - {os: windows-2025, system: Windows, group: integrity}
           - {os: windows-2025, system: Windows, group: recovery}
           - {os: windows-2025, system: Windows, group: authority}
-          - {os: macos-15, system: Darwin, group: inventory}
-          - {os: macos-15, system: Darwin, group: integrity}
-          - {os: macos-15, system: Darwin, group: recovery}
-          - {os: macos-15, system: Darwin, group: authority}
+          - {os: macos-15-intel, system: Darwin, group: inventory}
+          - {os: macos-15-intel, system: Darwin, group: integrity}
+          - {os: macos-15-intel, system: Darwin, group: recovery}
+          - {os: macos-15-intel, system: Darwin, group: authority}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 12
     env:
@@ -151,7 +159,7 @@ jobs:
       matrix:
         include:
           - {os: windows-2025, system: Windows}
-          - {os: macos-15, system: Darwin}
+          - {os: macos-15-intel, system: Darwin}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 8
     steps:
@@ -180,7 +188,7 @@ jobs:
 
   native:
     name: storage / Darwin / native authority
-    runs-on: macos-15
+    runs-on: macos-15-intel
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
