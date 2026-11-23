@@ -16,7 +16,9 @@ from qa_evidence import validate
 MARKER = '<!-- chunkmaestro-qa-v1 -->'
 # Verified repository owner id. Changes to the attestation authority require review.
 LEAD_ID = 38875853
-RISK_PREFIXES = ('src/ChunkMaestro.Agent/', 'src/ChunkMaestro.Transport/',
+RISK_PREFIXES = ('src/ChunkMaestro.Inspector.Native/',
+                 'tests/ChunkMaestro.InspectorNativeTests/',
+                 'src/ChunkMaestro.Agent/', 'src/ChunkMaestro.Transport/',
                  'src/ChunkMaestro.Contracts/', 'src/ChunkMaestro.OwnerVerification/',
                  'src/ChunkMaestro.PrivilegedHelper/', 'src/ChunkMaestro.Persistence/',
                  'src/ChunkMaestro.Backups/', 'src/ChunkMaestro.Deployments/', 'packaging/',
@@ -74,6 +76,12 @@ def storage_execution(result):
     return {'verdict': 'PASS', 'source': 'same-workflow direct storage safety job'}
 
 
+def inspector_execution(result):
+    if result != 'success':
+        raise ValueError('Linux inspector metadata tests did not pass; inspect inspector-metadata artifacts.')
+    return {'verdict': 'PASS', 'source': 'same-workflow Linux metadata kernel and sanitizer job'}
+
+
 def main():
     output = Path('.artifacts/qa')
     output.mkdir(parents=True, exist_ok=True)
@@ -93,6 +101,7 @@ def main():
         files = [item['filename'] for item in api(f'{prefix}/pulls/{number}/files', pages=True)]
         labels = [item['name'] for item in pr['labels']]
         result['storage_execution'] = storage_execution(os.environ.get('STORAGE_SAFETY_RESULT'))
+        result['inspector_execution'] = inspector_execution(os.environ.get('INSPECTOR_METADATA_RESULT'))
         result.update(assess(comments, head, files, labels))
         result['verdict'] = 'PASS'
     except (KeyError, ValueError, TypeError, subprocess.CalledProcessError) as error:

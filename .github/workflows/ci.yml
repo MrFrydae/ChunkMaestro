@@ -14,6 +14,32 @@ env:
   DOTNET_NOLOGO: '1'
   DOTNET_CLI_TELEMETRY_OPTOUT: '1'
 jobs:
+  inspector-metadata:
+    name: inspector-metadata (Linux)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c
+        with:
+          python-version: '3.13'
+      - name: Unprivileged native kernel and separate syscall-control tests
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p .artifacts/ci/inspector-metadata
+          python tooling/ci/command.py --timeout-seconds 180 -- sh tests/ChunkMaestro.InspectorNativeTests/run.sh 2>&1 | tee .artifacts/ci/inspector-metadata/run.log
+      - name: Retain native diagnostics including failures
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: inspector-metadata-linux
+          path: .artifacts/ci/inspector-metadata
+          if-no-files-found: error
+          retention-days: 14
+
   agent-skills:
     name: agent-skills
     runs-on: ubuntu-24.04
@@ -85,6 +111,12 @@ jobs:
       - name: Controller CA profile and self-signature contracts
         timeout-minutes: 3
         run: python tooling/ci/command.py --timeout-seconds 150 -- dotnet test tests/ChunkMaestro.ControllerIdentityTests/ChunkMaestro.ControllerIdentityTests.csproj -c Release --no-build --no-restore --collect "XPlat Code Coverage" --settings tooling/quality/controller-identity/coverage.runsettings --blame-hang --blame-hang-timeout 60s --logger trx --logger "console;verbosity=normal" --results-directory .artifacts/ci/identity-tests
+      - name: Inspection protocol contracts
+        timeout-minutes: 2
+        run: python tooling/ci/command.py --timeout-seconds 90 -- dotnet test tests/ChunkMaestro.ContractsTests/ChunkMaestro.ContractsTests.csproj -c Release --no-build --no-restore --blame-hang --blame-hang-timeout 60s --logger trx --logger "console;verbosity=normal" --results-directory .artifacts/ci/contract-tests
+      - name: Internal owner bridge no-prompt and platform refusal contracts
+        timeout-minutes: 2
+        run: python tooling/ci/command.py --timeout-seconds 90 -- dotnet test tests/ChunkMaestro.OwnerVerificationTests/ChunkMaestro.OwnerVerificationTests.csproj -c Release --no-build --no-restore --blame-hang --blame-hang-timeout 60s --logger trx --logger "console;verbosity=normal" --results-directory .artifacts/ci/owner-tests
       - name: Retain build and Linux test diagnostics
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -95,6 +127,8 @@ jobs:
             .artifacts/ci/desktop-tests
             .artifacts/ci/credential-tests
             .artifacts/ci/identity-tests
+            .artifacts/ci/contract-tests
+            .artifacts/ci/owner-tests
             .artifacts/build
           if-no-files-found: warn
           retention-days: 14
@@ -281,7 +315,7 @@ jobs:
 
   qa-evidence:
     name: qa-evidence
-    needs: storage-safety
+    needs: [storage-safety, inspector-metadata]
     if: always() && github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -296,12 +330,13 @@ jobs:
       - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c
         with:
           python-version: '3.13'
-      - name: Independent QA and same-workflow storage outcome
+      - name: Independent QA and same-workflow safety outcomes
         env:
           GH_TOKEN: ${{ github.token }}
           REVIEW_PR: ${{ github.event.pull_request.number }}
           REVIEW_HEAD: ${{ github.event.pull_request.head.sha }}
           STORAGE_SAFETY_RESULT: ${{ needs.storage-safety.result }}
+          INSPECTOR_METADATA_RESULT: ${{ needs.inspector-metadata.result }}
         run: python tooling/build/qa_ci.py
       - name: Retain independent QA verdict
         if: always()
