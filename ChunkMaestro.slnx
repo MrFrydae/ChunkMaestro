@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="src/ChunkMaestro.Application/ChunkMaestro.Application.csproj" />
+  <Project Path="src/ChunkMaestro.Contracts/ChunkMaestro.Contracts.csproj" />
   <Project Path="src/ChunkMaestro.ControllerIdentity/ChunkMaestro.ControllerIdentity.csproj" />
   <Project Path="src/ChunkMaestro.Credentials/ChunkMaestro.Credentials.csproj" />
   <Project Path="src/ChunkMaestro.Desktop/ChunkMaestro.Desktop.csproj" />
@@ -7,6 +8,7 @@
   <Project Path="src/ChunkMaestro.Persistence/ChunkMaestro.Persistence.csproj" />
   <Project Path="src/ChunkMaestro.Presentation/ChunkMaestro.Presentation.csproj" />
   <Project Path="tests/ChunkMaestro.AvaloniaHeadlessTests/ChunkMaestro.AvaloniaHeadlessTests.csproj" />
+  <Project Path="tests/ChunkMaestro.ContractsTests/ChunkMaestro.ContractsTests.csproj" />
   <Project Path="tests/ChunkMaestro.ControllerIdentityTests/ChunkMaestro.ControllerIdentityTests.csproj" />
   <Project Path="tests/ChunkMaestro.CredentialsTests/ChunkMaestro.CredentialsTests.csproj" />
   <Project Path="tests/ChunkMaestro.PersistenceTests/ChunkMaestro.PersistenceTests.csproj" />

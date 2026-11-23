@@ -17,6 +17,7 @@ MARKER = '<!-- chunkmaestro-qa-v1 -->'
 # Verified repository owner id. Changes to the attestation authority require review.
 LEAD_ID = 38875853
 RISK_PREFIXES = ('src/ChunkMaestro.Agent/', 'src/ChunkMaestro.Transport/',
+                 'src/ChunkMaestro.Contracts/', 'src/ChunkMaestro.OwnerVerification/',
                  'src/ChunkMaestro.PrivilegedHelper/', 'src/ChunkMaestro.Persistence/',
                  'src/ChunkMaestro.Backups/', 'src/ChunkMaestro.Deployments/', 'packaging/',
                  'tooling/build/storage_attestation.py', 'tooling/ci/', '.github/workflows/')

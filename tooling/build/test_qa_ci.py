@@ -61,6 +61,8 @@ class QaCiTests(unittest.TestCase):
 
     def test_high_risk_requires_third_independent_role(self):
         for files, labels in [(['src/ChunkMaestro.Persistence/Store.cs'], []),
+                              (['src/ChunkMaestro.Contracts/InspectCodec.cs'], []),
+                              (['src/ChunkMaestro.OwnerVerification/OwnerContext.cs'], []),
                               (['src/Core/Enrollment.cs'], []), ([], ['high-risk'])]:
             with self.subTest(files=files, labels=labels), self.assertRaisesRegex(ValueError, 'Missing required'):
                 qa_ci.assess([self.comment()], self.head, files, labels)
