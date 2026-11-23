@@ -74,6 +74,15 @@ without starting a shell. Image identity and detach queries use the runner's
 PowerShell 7, preserving its nonsecret module path; Microsoft lists Storage as
 [natively compatible](https://learn.microsoft.com/en-us/powershell/windows/module-compatibility?view=windowsserver2025-ps).
 
+New Windows scratch is configured with the actual invoking user's SID and owner,
+before a product command runs. Python 3.13's mode-0700 directory ACL uses the
+OWNER RIGHTS alias (`S-1-3-4`); the production ancestor check deliberately accepts
+explicit trusted SIDs instead. The fixture replaces that alias only on its newly
+created empty directory, removes inherited grants and logs the resulting ACL.
+It never repairs existing storage, changes parent-directory permissions or weakens
+production checks. SID/ACL setup failure prevents launching the product command.
+See the [upstream implementation](https://github.com/python/cpython/blob/v3.13.7/Modules/posixmodule.c#L5284).
+
 ## Automatic gates and failure reports
 
 `storage-safety` downloads only this workflow run's artifacts and independently

@@ -1,6 +1,8 @@
 """Run one ordinary CI command with live output and no credential environment."""
 import os
+import csv
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -34,6 +36,25 @@ def finish(scratch, result, windows):
     return result
 
 
+def protect_windows_scratch(scratch, env):
+    # Only called for the new empty directory just created by mkdtemp below.
+    # Python 3.13 uses OWNER RIGHTS (S-1-3-4) for mode 0700; production requires
+    # explicit trusted SIDs rather than that owner alias on storage ancestors.
+    identity = subprocess.check_output(['whoami', '/user', '/fo', 'csv', '/nh'],
+                                       env=env, text=True, timeout=15)
+    rows = list(csv.reader(identity.strip().splitlines()))
+    if len(rows) != 1 or len(rows[0]) != 2 or re.fullmatch(r'S-1-[0-9]+(?:-[0-9]+)+', rows[0][1]) is None:
+        raise ValueError('Could not establish the actual Windows user SID')
+    sid = rows[0][1]
+    operations = [('/grant:r', '*' + sid + ':(OI)(CI)F'),
+                  ('/setowner', '*' + sid),
+                  ('/remove:g', '*S-1-3-4'), ('/inheritancelevel:r',)]
+    for operation in operations:
+        subprocess.run(['icacls', scratch, *operation, '/Q'], env=env, check=True, timeout=15)
+    print('New Windows scratch uses explicit user SID; OWNER RIGHTS alias removed: ' + scratch, flush=True)
+    subprocess.run(['icacls', scratch], env=env, check=True, timeout=15)
+
+
 def main():
     args = sys.argv[1:]
     if args[:1] == ['--']:
@@ -53,6 +74,8 @@ def main():
             raise ValueError('LOCALAPPDATA must be absolute')
         base.mkdir(exist_ok=True)
     scratch = tempfile.mkdtemp(prefix='storage-', dir=base)
+    if os.name == 'nt':
+        protect_windows_scratch(scratch, env)
     env.update(TEMP=scratch, TMP=scratch, TMPDIR=scratch)
     print('+ ' + ' '.join(args), flush=True)
     result = subprocess.run(args, env=env).returncode

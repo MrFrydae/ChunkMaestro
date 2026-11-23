@@ -127,6 +127,34 @@ class DirectStorageTests(unittest.TestCase):
             self.assertEqual(0, command.finish('owned-scratch', 0, windows=False))
             self.assertEqual(7, command.finish('owned-scratch', 7, windows=False))
 
+    def test_new_windows_scratch_has_explicit_user_sid_without_owner_alias(self):
+        sid = 'S-1-5-21-1-2-3-1001'
+        with patch.object(command.subprocess, 'check_output', return_value='"runner","' + sid + '"\n'), \
+             patch.object(command.subprocess, 'run') as execute:
+            command.protect_windows_scratch('new-empty-directory', {'PATH': 'tools'})
+            calls = [call.args[0] for call in execute.call_args_list]
+            self.assertEqual(5, len(calls))
+            self.assertTrue(all(call[0:2] == ['icacls', 'new-empty-directory'] for call in calls))
+            self.assertIn('*' + sid + ':(OI)(CI)F', calls[0])
+            self.assertIn('/setowner', calls[1])
+            self.assertIn('*S-1-3-4', calls[2])
+            self.assertIn('/inheritancelevel:r', calls[3])
+            self.assertTrue(all('/T' not in call for call in calls))
+            self.assertTrue(all(call.kwargs['timeout'] == 15 and call.kwargs['check'] is True
+                                for call in execute.call_args_list))
+
+    def test_invalid_sid_or_acl_failure_prevents_running_a_product_command(self):
+        for identity in ('', '"runner","untrusted*sid"', '"runner","S-1-5-21-1"\n"extra","S-1-5-21-2"'):
+            with patch.object(command.subprocess, 'check_output', return_value=identity), \
+                 patch.object(command.subprocess, 'run') as execute:
+                with self.assertRaises(ValueError):
+                    command.protect_windows_scratch('new-empty-directory', {})
+                execute.assert_not_called()
+        with patch.object(command.subprocess, 'check_output', return_value='"runner","S-1-5-21-1"'), \
+             patch.object(command.subprocess, 'run', side_effect=OSError('ACL setup failed')):
+            with self.assertRaises(OSError):
+                command.protect_windows_scratch('new-empty-directory', {})
+
     def test_failed_cancelled_skipped_or_missing_jobs_refused(self):
         for jobs in ({}, {'storage': 'failure'}, {'volume': 'cancelled'}, {'native': 'skipped'}):
             with self.assertRaisesRegex(ValueError, 'prerequisite'):
