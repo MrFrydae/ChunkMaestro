@@ -25,15 +25,16 @@ def native_metrics(report):
     totals = data.get('totals')
     if not isinstance(totals, dict):
         raise ValueError('Missing native coverage totals')
-    for metric, threshold in (('lines', 90), ('branches', 85)):
+    metrics = {}
+    for metric in ('lines', 'branches'):
         total = totals.get(metric)
         if (not isinstance(total, dict) or type(total.get('count')) is not int or
                 type(total.get('covered')) is not int or total['count'] <= 0 or
                 not 0 <= total['covered'] <= total['count']):
             raise ValueError('Invalid native ' + metric + ' coverage counts')
-        if 100 * total['covered'] / total['count'] < threshold:
-            raise ValueError('Native ' + metric + ' below required coverage')
-    return totals
+        metrics[metric] = {'covered': total['covered'], 'total': total['count'],
+                           'percent': 100 * total['covered'] / total['count']}
+    return metrics
 
 
 def coverage_points(folder):
@@ -108,22 +109,21 @@ def evaluate(root, head, jobs):
                 {case['name'] for case in cases} != set(native_plan[name]) or
                 any(case.get('passed') is not True or case['actual'] != case['expected'] for case in cases)):
             raise ValueError('Native fault-path tests missing or failed')
-    native_metrics(read_json(native / 'coverage.json', limit=32 * 1024 * 1024))
+    native_coverage = native_metrics(read_json(native / 'coverage.json', limit=32 * 1024 * 1024))
     metrics, failures = {}, []
     for module in ('Domain', 'Application', 'Persistence'):
         prefix = 'src/ChunkMaestro.' + module + '/'
         metrics[module] = {}
-        for name, points, threshold in (('line', all_lines, 90), ('branch', all_branches, 85)):
+        for name, points in (('line', all_lines), ('branch', all_branches)):
             values = [hit for key, hit in points.items() if key[0].startswith(prefix)]
             if not values and not (module == 'Application' and name == 'branch'):
                 failures.append(module + ' missing ' + name + ' coverage')
             percent = 100 * sum(values) / len(values) if values else None
             metrics[module][name] = {'covered': sum(values), 'total': len(values), 'percent': percent}
-            if percent is not None and percent < threshold:
-                failures.append(f'{module} {name} coverage {percent:.2f}% below {threshold}%')
-    return {'head': head, 'passed': passed, 'metrics': metrics, 'failures': failures,
+    return {'head': head, 'passed': passed, 'metrics': metrics, 'native_metrics': native_coverage,
+            'failures': failures,
             'status': 'FAIL' if failures else 'PASS',
-            'policy': 'direct fault/recovery tests; owner replaced storage mutation gate on 2026-11-22'}
+            'policy': 'direct fault/recovery tests; coverage and mutation are diagnostics per owner decision 2026-11-23'}
 
 
 def main():

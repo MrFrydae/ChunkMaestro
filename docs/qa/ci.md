@@ -3,9 +3,11 @@
 Owner decision, 2026-11-22: replace the storage mutation gate with direct safety
 tests and rewrite CI rather than retrying the qualification collector. This
 supersedes the earlier storage-specific requirement for full mutation campaigns
-before every merge. It does not waive 90% line / 85% branch coverage or independent
-functional, security/reliability and UX/performance review. No mutation score is
-claimed by the replacement.
+before every merge. The [later owner testing policy, 2026-11-23](../product/requirements-source.md#owner-testing-policy--2026-11-23)
+also replaces the native credential mutation gate with direct safety tests and
+makes coverage/mutation scores diagnostic across the application. Coverage
+reporting and independent functional, security/reliability and UX/performance
+review remain required. No mutation score is claimed by the replacement.
 
 ## Execution graph
 
@@ -24,7 +26,7 @@ cancelled Apple Silicon jobs without assigning a runner on 2026-11-23, explicitl
 reporting arm64 capacity constraints. Intel is also a selected product target.
 The managed matrix keeps its `macos-15` check/artifact key stable while its
 separate runner field selects Intel hardware. Storage/native/volume check names,
-commands, test inventories, coverage floors and failure behavior are unchanged.
+commands, test inventories and failure behavior are unchanged by runner selection.
 See [GitHub's standard runner table](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
 Intel execution must pass on that runner; prior Apple Silicon proof does not
 establish Intel execution. Local native desktop and storage evidence remains
@@ -119,9 +121,10 @@ See the [upstream implementation](https://github.com/python/cpython/blob/v3.13.7
 validates every platform/group, prerequisite job success, checked-out commit,
 tracked-input digest, raw file digest, exact executed cases, native assertions and
 real volume proof. It combines coverage by source/point identity across partitions
-and operating systems, enforcing the retained 90% line / 85% branch floors. Missing
-or below-threshold evidence produces a failing JSON verdict and a job summary
-stating the actual missing artifact or metric. Zero branches in the current
+and operating systems, reporting counts and percentages as diagnostic metrics.
+Native coverage counts and percentages are retained too. A low percentage alone
+does not fail the gate. Missing, malformed or unbound evidence produces a failing
+JSON verdict and a job summary stating the actual evidence failure. Zero branches in the current
 interface-only Application module are N/A, never invented 100% coverage.
 Inventories must exactly match their artifact directories before any TRX or
 coverage is consumed; extra coverage files are errors. Native execution binds
@@ -138,8 +141,10 @@ closed for missing evidence. There are no automatic retries.
 existing independent lead-attested role verdicts. A manual storage qualification
 receipt is neither requested nor accepted as a substitute. Green direct tests
 alone do not establish full-PR independent acceptance, native UI or release safety.
-An actual coverage shortfall remains a code/test acceptance failure, not a reason
-to retry CI or lower the coverage threshold.
+Reviewers use uncovered paths and mutation survivors to identify useful tests.
+Acceptance depends on behavioral and security evidence, not a numeric score.
+Environmental limitations must be documented with practical alternative proof;
+failed tests, omitted cases and unsafe behavior remain failures.
 
 ## Local verification
 

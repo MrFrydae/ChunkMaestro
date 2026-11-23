@@ -1,5 +1,10 @@
 # Credential refusal, recovery and lifetime contracts
 
+Policy update, 2026-11-23: the [owner testing policy](../product/requirements-source.md#owner-testing-policy--2026-11-23)
+supersedes this historical handoff's numeric qualification requirements. Its
+measurements and unexecuted limitations remain evidence, not release gates.
+Existing tests, security assertions and independent QA remain required.
+
 Test implementation handoff for issue [#11](https://github.com/MrFrydae/ChunkMaestro/issues/11)
 and draft [PR #16](https://github.com/MrFrydae/ChunkMaestro/pull/16).
 Production base: `ceb644ae1bbb3221aa564a74b5a77cbb315b15a5`.

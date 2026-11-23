@@ -162,7 +162,7 @@ class AggregateTests(unittest.TestCase):
                     self.assertEqual(1, gate.main())
                 self.assertEqual('FAIL', json.loads(result.read_text())['status'])
 
-    def test_low_coverage_is_reported_as_real_failure_not_missing_attestation(self):
+    def test_low_managed_and_native_coverage_is_reported_without_percentage_gate(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             artifacts(root)
@@ -173,9 +173,40 @@ class AggregateTests(unittest.TestCase):
                 report = json.loads(path.read_text())
                 report['files'][coverage.name] = hashlib.sha256(coverage.read_bytes()).hexdigest()
                 path.write_text(json.dumps(report))
+            native = root / 'native-Darwin/coverage.json'
+            data = json.loads(native.read_text())
+            for metric in data['data'][0]['totals'].values():
+                metric['covered'] = 0
+            native.write_text(json.dumps(data))
+            self.rebind_native(root)
+            result = self.run_gate(root)
+            self.assertEqual('PASS', result['status'])
+            self.assertEqual([], result['failures'])
+            self.assertEqual({'covered': 0, 'total': 1, 'percent': 0.0},
+                             result['metrics']['Persistence']['line'])
+            self.assertEqual(0.0, result['metrics']['Persistence']['branch']['percent'])
+            self.assertEqual(0.0, result['native_metrics']['lines']['percent'])
+            self.assertEqual(0.0, result['native_metrics']['branches']['percent'])
+
+    def test_missing_coverage_remains_a_failure_with_diagnostic_metrics(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            artifacts(root)
+            for folder in root.glob('storage-*'):
+                coverage = folder / 'coverage.opencover.xml'
+                coverage.write_text('<CoverageSession/>')
+                path = folder / 'result.json'
+                report = json.loads(path.read_text())
+                report['files'][coverage.name] = hashlib.sha256(coverage.read_bytes()).hexdigest()
+                path.write_text(json.dumps(report))
             result = self.run_gate(root)
             self.assertEqual('FAIL', result['status'])
-            self.assertIn('Persistence line coverage 0.00% below 90%', result['failures'])
+            self.assertIn('Persistence missing line coverage', result['failures'])
+
+    def test_unsuccessful_test_jobs_are_never_replaced_by_diagnostic_scores(self):
+        for status in ('failure', 'cancelled', 'skipped'):
+            with self.subTest(status=status), self.assertRaisesRegex(ValueError, 'Failed prerequisite jobs'):
+                gate.evaluate(Path('unused'), HEAD, {'storage': status})
 
 
 if __name__ == '__main__':

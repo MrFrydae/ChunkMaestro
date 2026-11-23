@@ -168,10 +168,12 @@ Injected tests cover buffer clearing, callback exceptions/reentry, early and que
 cancellation, in-flight disposal, post-dispatch cancellation returning the reserved
 reference, ambiguous native error completion, and sanitized OS status mappings.
 
-Lead still owns solution/CI discovery, safety-module qualification (>=90% line,
->=85% branch and applicable >=80% mutation), additional fault/kill-boundary testing,
+Lead still owns solution/CI discovery, meaningful safety-module verification,
+diagnostic coverage reporting, additional fault/kill-boundary testing,
 Windows/macOS Intel/installer/native UI evidence and all three independent exact-head
-QA roles. No retired storage mutation/manual receipt workflow is revived. No
+QA roles. The [2026-11-23 owner policy](../product/requirements-source.md#owner-testing-policy--2026-11-23)
+replaces numeric coverage/mutation gates, including native credential mutation,
+with meaningful direct safety evidence. No retired storage mutation/manual receipt workflow is revived. No
 independent verdict, complete Q166, production deployment or global acceptance is claimed.
 
 Rollback before integration is deletion of the three newly owned patch paths after

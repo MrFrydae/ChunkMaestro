@@ -2,7 +2,7 @@
   "schema_version": 1,
   "baseline": "ab631d4",
   "source": "docs/product/requirements-source.md",
-  "source_sha256": "4ed296957b2b2955f280484c86e3460974cfda2e612f2fd8801f451110fc29cc",
+  "source_sha256": "4f8251f1b84f054a2febcfa9b53e96d3213d6abec5070493e3e4536392c1bc79",
   "requirements": [
     {
       "id": "Q001",
@@ -2472,7 +2472,7 @@
       "status": "not-implemented",
       "evidence": [],
       "acceptance_id": "AC-Q190",
-      "acceptance": "Publish safety-module reports meeting 90% line/85% branch/80% applicable mutation; fail gate on regression or meaningless skipped assertions."
+      "acceptance": "Apply the 2026-11-23 owner override: meaningful critical-path, edge-case, regression and real-world safety tests; retain coverage reporting and independent QA; coverage/mutation scores are diagnostic, not merge/release gates; document isolation limits and practical alternative proof without weakening assertions."
     },
     {
       "id": "Q191",
