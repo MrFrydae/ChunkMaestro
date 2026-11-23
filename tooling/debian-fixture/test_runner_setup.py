@@ -26,12 +26,10 @@ class RunnerContracts(unittest.TestCase):
         for secondary in (f.Failure('package-inventory-output-limit'), PermissionError('PRIVATE_DETAIL')):
             with self.subTest(secondary=type(secondary).__name__), tempfile.TemporaryDirectory() as d:
                 root = Path(d)
-                source = root / 'sources'
-                source.write_bytes(SOURCE)
                 key = root / 'keyring'
                 key.write_bytes(b'synthetic')
                 (root / 'setup').mkdir()
-                with patch.object(r, 'runner_guard'), patch.object(r, 'SOURCES', source), \
+                with patch.object(r, 'runner_guard'), \
                      patch.object(r, 'KEYRING', str(key)), \
                      patch.object(r, 'validate_sources'), \
                      patch.object(f, 'inventory', return_value={'execution-mode': 'tcg-system-qemu64-multi'}), \
@@ -142,12 +140,11 @@ class RunnerContracts(unittest.TestCase):
                 if name == phase:
                     raise f.Failure(name + '-timeout-or-output-limit')
             with tempfile.TemporaryDirectory() as d, \
-                 patch.object(r, 'runner_guard'), patch.object(r, 'SOURCES', Path(d) / 'sources'), \
+                 patch.object(r, 'runner_guard'), \
                  patch.object(r, 'KEYRING', str(Path(d) / 'keyring')), \
                  patch.object(r, 'validate_sources'), patch.object(f, 'inventory', return_value={'execution-mode': 'tcg-system-qemu64-multi'}), \
                  patch.object(r.SetupHarness, 'run', run), \
                  patch.object(r, 'versions') as versions, patch.object(r.SetupHarness, 'cleanup') as cleanup:
-                r.SOURCES.write_bytes(SOURCE)
                 Path(r.KEYRING).write_bytes(b'synthetic')
                 with self.assertRaisesRegex(f.Failure, phase + '-timeout'):
                     r.setup()
@@ -157,17 +154,52 @@ class RunnerContracts(unittest.TestCase):
 
     def test_setup_reaches_fixed_apt_without_kvm(self):
         with tempfile.TemporaryDirectory() as d, \
-             patch.object(r, 'runner_guard'), patch.object(r, 'SOURCES', Path(d) / 'sources'), \
+             patch.object(r, 'runner_guard'), \
              patch.object(r, 'KEYRING', str(Path(d) / 'keyring')), \
              patch.object(r, 'validate_sources'), \
              patch.object(f, 'inventory', return_value={'execution-mode': 'tcg-system-qemu64-multi'}), \
              patch.object(f.os, 'open', side_effect=AssertionError('must not open KVM')), \
              patch.object(r.SetupHarness, 'run') as run, \
              patch.object(r, 'versions'), patch.object(r.SetupHarness, 'cleanup'):
-            r.SOURCES.write_bytes(SOURCE)
             Path(r.KEYRING).write_bytes(b'synthetic')
             r.setup()
             self.assertEqual([c.args[1] for c in run.call_args_list], ['apt-update', 'apt-install'])
+
+    def test_private_signed_sources_ignore_runner_mirror_and_third_party_lists(self):
+        reads = []
+        def read(path):
+            reads.append(str(path))
+            if str(path) != r.KEYRING:
+                raise AssertionError('Ambient source/mirror lists must not be consumed')
+            return b'synthetic archive keyring'
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d) / 'setup'
+            root.mkdir()
+            with patch.object(r, 'runner_guard'), patch.object(f, 'inventory'), \
+                 patch.object(Path, 'read_bytes', read), \
+                 patch.object(r.tempfile, 'mkdtemp', return_value=str(root)), \
+                 patch.object(r.SetupHarness, 'run') as run, \
+                 patch.object(r, 'versions'), patch.object(r.SetupHarness, 'cleanup'), \
+                 contextlib.redirect_stdout(io.StringIO()) as output:
+                r.setup()
+            self.assertEqual(reads, [r.KEYRING])
+            staged = (root / 'ubuntu.sources').read_text()
+            blocks = [dict(line.split(': ', 1) for line in block.splitlines())
+                      for block in staged.strip().split('\n\n')]
+            self.assertEqual([b['URIs'] for b in blocks], [
+                'https://archive.ubuntu.com/ubuntu/', 'https://security.ubuntu.com/ubuntu/'])
+            self.assertEqual([b['Suites'] for b in blocks], ['noble noble-updates', 'noble-security'])
+            for block in blocks:
+                self.assertEqual(set(block), {'Types', 'URIs', 'Suites', 'Components', 'Signed-By'})
+                self.assertEqual(block['Types'], 'deb')
+                self.assertEqual(block['Components'], 'main universe')
+                self.assertEqual(block['Signed-By'], '/usr/share/keyrings/ubuntu-archive-keyring.gpg')
+            self.assertEqual([call.args[1] for call in run.call_args_list], ['apt-update', 'apt-install'])
+            for call in run.call_args_list:
+                self.assertIn('Dir::Etc::sourcelist=' + str(root / 'ubuntu.sources'), call.args[0])
+                self.assertIn('Dir::Etc::sourceparts=-', call.args[0])
+                self.assertIn('APT::Get::AllowUnauthenticated=false', call.args[0])
+            self.assertIn('fixed-private-official-ubuntu-noble', output.getvalue())
 
     def test_source_exact_optional_slash_only(self):
         for host in ('archive', 'security', 'azure.archive'):

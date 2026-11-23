@@ -267,13 +267,14 @@ versions, configured source bytes and Ubuntu keyring bytes. This does not claim
 bit-for-bit host reproducibility or that preinstalled runner packages came from
 Ubuntu; existing runner image/package provenance remains a trust boundary.
 
-The setup accepts only `/etc/apt/sources.list.d/ubuntu.sources` with fixed noble
-suites, official archive/security/azure.archive.ubuntu.com URLs and explicit
-Ubuntu archive keyring Signed-By. Unknown fields, insecure overrides, alternate
-keys/repositories and unexpected formats fail closed. It copies those configured
-bytes into a private setup directory and uses private APT lists and no sourceparts,
-so cached third-party indexes cannot supply missing packages. No source, key or
-host trust file is added or modified. See Ubuntu's [source policy](https://manpages.ubuntu.com/manpages/noble/fr/man5/sources.list.5.html)
+The setup constructs a private source file with fixed HTTPS
+`archive.ubuntu.com/ubuntu/` (noble/noble-updates) and
+`security.ubuntu.com/ubuntu/` (noble-security), main/universe only and explicit
+Ubuntu archive keyring Signed-By. These reviewed bytes, rather than the runner's
+mutable source/mirror lists, select acquisition origins. Validation still rejects
+unknown fields, insecure overrides and alternate keys/repositories. Private APT
+lists and no sourceparts prevent cached third-party indexes from supplying missing
+packages. No system source, key or host trust file is added or modified. See Ubuntu's [source policy](https://manpages.ubuntu.com/manpages/noble/fr/man5/sources.list.5.html)
 and [archive authentication](https://manpages.ubuntu.com/manpages/resolute/man8/apt-secure.8.html).
 
 This explicitly changes the old no-install boundary: two fixed noninteractive
@@ -383,3 +384,30 @@ The workflow is byte-identical to frozen cd5721e except its TCG smoke step name.
 Two new backend contracts reject historical cd5721e (KVM preflight error and KVM
 argv assertion); those logs remain separate from passing patched-source results.
 No C# inputs changed, so .NET format/build checks do not apply to this patch.
+
+## Fixed private source selection after the first TCG activation
+
+Run `45254358055` at `faaf8fa` passed all offline contracts but stopped at
+`setup-source-policy`, before APT, image retrieval or VM creation. Its runner
+reported image `ubuntu24/20261116.376`. The corresponding
+[image provisioning script](https://github.com/actions/runner-images/blob/ubuntu24/20261116.376/images/ubuntu/scripts/build/configure-apt-sources.sh)
+rewrites direct Ubuntu URIs to `mirror+file:/etc/apt/apt-mirrors.txt`; the earlier
+validator accepts direct URLs only. The run did not upload its actual source-list
+bytes, so the image recipe establishes the incompatible assumption rather than a
+byte-for-byte observation of that runner file.
+
+Setup now constructs the fixed private HTTPS source file described above. It
+never reads or rewrites the runner's source or mirror lists, and it still uses the
+existing Ubuntu archive keyring and signature authentication. The same two APT
+commands, five-package allowlist, private indexes, credential stripping, deadlines,
+no automatic retry, and primary-failure preservation remain. No source/trust bypass
+or hardware privilege grant is introduced.
+
+The new offline regression runs the setup boundary with ambient source/mirror
+reads forbidden, verifies both staged HTTPS origins/suites/components/key binding,
+and checks the real generated APT argv. It fails against the old implementation
+at the ambient source read. Local suite: 36 passed, one Linux-only skip; syntax,
+actionlint, specification and whitespace checks passed. No local APT, privileged
+operation or VM ran. Hosted installation/boot/SSH/teardown and final independent
+acceptance remain outstanding; the original failed run and raw artifact digest
+are retained under `.artifacts/debian-15-integration/tcg-run-45254358055/`.

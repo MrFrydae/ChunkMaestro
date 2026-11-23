@@ -11,12 +11,23 @@ import tempfile
 import fixture as f
 
 PACKAGES = ('curl', 'qemu-system-x86', 'qemu-utils', 'cloud-image-utils', 'openssh-client')
-SOURCES = Path('/etc/apt/sources.list.d/ubuntu.sources')
 KEYRING = '/usr/share/keyrings/ubuntu-archive-keyring.gpg'
+FIXED_SOURCES = b'''Types: deb
+URIs: https://archive.ubuntu.com/ubuntu/
+Suites: noble noble-updates
+Components: main universe
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+
+Types: deb
+URIs: https://security.ubuntu.com/ubuntu/
+Suites: noble-security
+Components: main universe
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+'''
 
 
 def validate_sources(data):
-    # Accept only the existing standard noble deb822 source, fail on unknown fields.
+    # Validate the staged official noble sources, fail on unknown/trust-bypass fields.
     text = data.decode('ascii')
     blocks = re.split(r'\n\s*\n', text.strip())
     if not blocks:
@@ -113,8 +124,11 @@ def setup():
     runner_guard()
     # Inventory selects fixed software emulation; never inspect/open /dev/kvm.
     f.inventory()
-    data = SOURCES.read_bytes()
+    # Runner images use mutable mirror+file indirection. Acquire only from these
+    # reviewed origins, without reading or modifying the runner's source lists.
+    data = FIXED_SOURCES
     validate_sources(data)
+    f.event('setup-source-policy', 'fixed-private-official-ubuntu-noble')
     f.event('configured-ubuntu-source-sha256', hashlib.sha256(data).hexdigest())
     f.event('ubuntu-keyring-sha256', hashlib.sha256(Path(KEYRING).read_bytes()).hexdigest())
     root = Path(tempfile.mkdtemp(prefix='cm-runner-setup-', dir='/tmp'))
