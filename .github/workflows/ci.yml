@@ -81,7 +81,7 @@ jobs:
         run: python tooling/ci/command.py --timeout-seconds 150 -- dotnet test tests/ChunkMaestro.AvaloniaHeadlessTests/ChunkMaestro.AvaloniaHeadlessTests.csproj -c Release --no-build --no-restore --blame-hang --blame-hang-timeout 60s --logger trx --logger "console;verbosity=normal" --results-directory .artifacts/ci/desktop-tests
       - name: Protected credential native and refusal contracts
         timeout-minutes: 3
-        run: python tooling/ci/command.py --timeout-seconds 150 -- dotnet test tests/ChunkMaestro.CredentialsTests/ChunkMaestro.CredentialsTests.csproj -c Release --no-build --no-restore --blame-hang --blame-hang-timeout 60s --logger trx --logger "console;verbosity=normal" --results-directory .artifacts/ci/credential-tests
+        run: python tooling/ci/command.py --timeout-seconds 150 -- dotnet test tests/ChunkMaestro.CredentialsTests/ChunkMaestro.CredentialsTests.csproj -c Release --no-build --no-restore --collect "XPlat Code Coverage" --blame-hang --blame-hang-timeout 60s --logger trx --logger "console;verbosity=normal" --results-directory .artifacts/ci/credential-tests
       - name: Retain build and Linux test diagnostics
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

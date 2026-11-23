@@ -147,6 +147,13 @@ public sealed class CredentialTests
 });
         fixture.Lock();
         Assert.Equal(CredentialFailure.Locked, (await Assert.ThrowsAsync<CredentialException>(() => store.UseAsync(scope, reference, _ => throw new InvalidOperationException()))).Failure);
+        CredentialException create = await Assert.ThrowsAsync<CredentialException>(() => store.CreateAsync(scope, CredentialStore.Reserve(scope), new byte[]
+        {
+            9
+        }));
+        Assert.Equal(CredentialFailure.Locked, create.Failure);
+        Assert.Equal(CredentialCompletion.Unknown, create.Completion);
+        Assert.Equal(CredentialFailure.Locked, (await Assert.ThrowsAsync<CredentialException>(() => store.DeleteAsync(scope, reference))).Failure);
     }
 
     [Fact]
@@ -378,6 +385,85 @@ public sealed class CredentialTests
             catch (CredentialException error) when (error.Failure == CredentialFailure.Absent)
             {
                 // Both child processes failed before creating; retain the original test failure.
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2560)]
+    public async Task NativeExactReferenceRecoveryAndScopeIsolationOrUnsupported(int size)
+    {
+        if (!OperatingSystem.IsMacOS() && !OperatingSystem.IsWindows())
+        {
+            Assert.Equal(CredentialFailure.Unsupported, Assert.Throws<CredentialException>(() => new CredentialStore()).Failure);
+            return;
+        }
+        using NativeFixture fixture = new();
+        CredentialScope scope = Scope with
+        {
+            Purpose = new string('a', 64)
+        };
+        CredentialReference reserved = CredentialStore.Reserve(scope);
+        byte[] input = Enumerable.Repeat((byte) 47, size).ToArray();
+        try
+        {
+            using (CredentialStore store = fixture.Open())
+            {
+                Assert.Equal(CredentialFailure.Absent, (await Assert.ThrowsAsync<CredentialException>(() => store.UseAsync(scope, reserved, _ => Assert.Fail("Reservation created native data")))).Failure);
+                Assert.Same(reserved, await store.CreateAsync(scope, reserved, input));
+                CredentialException conflict = await Assert.ThrowsAsync<CredentialException>(() => store.CreateAsync(scope, reserved, new byte[]
+                {
+                    99
+                }));
+                Assert.Equal(CredentialFailure.Conflict, conflict.Failure);
+                Assert.Equal(CredentialCompletion.NotCreated, conflict.Completion);
+                await store.UseAsync(scope, reserved, secret => Assert.True(secret.SequenceEqual(input)));
+            }
+            // Reconstruct only from durable nonsecret components; no cached store state.
+            CredentialScope recoveredScope = new(new FleetId(scope.Fleet.Value), scope.Target, scope.Purpose);
+            CredentialReference recovered = new(recoveredScope, reserved.Id);
+            using CredentialStore reopened = fixture.Open();
+            foreach (CredentialScope other in new CredentialScope[]
+            {
+                scope with
+                {
+                    Fleet = new FleetId(Guid.NewGuid())
+                },
+                scope with
+                {
+                    Target = Guid.NewGuid()
+                },
+                scope with
+                {
+                    Purpose = "other"
+                }
+            })
+            {
+                CredentialException wrong = await Assert.ThrowsAsync<CredentialException>(() => reopened.UseAsync(other, recovered, _ => Assert.Fail("Mismatched scope reached callback")));
+                Assert.Equal(CredentialFailure.WrongScope, wrong.Failure);
+                CredentialReference otherReference = new(other, reserved.Id);
+                Assert.Equal(CredentialFailure.Absent, (await Assert.ThrowsAsync<CredentialException>(() => reopened.UseAsync(other, otherReference, _ => Assert.Fail("Native namespace aliased another scope")))).Failure);
+                Assert.Equal(CredentialFailure.Absent, (await Assert.ThrowsAsync<CredentialException>(() => reopened.DeleteAsync(other, otherReference))).Failure);
+            }
+            CredentialReference otherId = new(recoveredScope, Guid.NewGuid());
+            Assert.Equal(CredentialFailure.Absent, (await Assert.ThrowsAsync<CredentialException>(() => reopened.UseAsync(recoveredScope, otherId, _ => Assert.Fail("Native lookup ignored reference ID")))).Failure);
+            await reopened.UseAsync(recoveredScope, recovered, secret => Assert.True(secret.SequenceEqual(input)));
+            await reopened.DeleteAsync(recoveredScope, recovered);
+            Assert.Equal(CredentialFailure.Absent, (await Assert.ThrowsAsync<CredentialException>(() => reopened.DeleteAsync(recoveredScope, recovered))).Failure);
+            Assert.Equal(CredentialFailure.Absent, (await Assert.ThrowsAsync<CredentialException>(() => reopened.UseAsync(recoveredScope, recovered, _ => Assert.Fail("Deletion regenerated native secret")))).Failure);
+        }
+        finally
+        {
+            System.Security.Cryptography.CryptographicOperations.ZeroMemory(input);
+            using CredentialStore cleanup = fixture.Open();
+            try
+            {
+                await cleanup.DeleteAsync(scope, reserved);
+            }
+            catch (CredentialException error) when (error.Failure == CredentialFailure.Absent)
+            {
+                // Exact owned locator was already deleted, or creation never completed.
             }
         }
     }
