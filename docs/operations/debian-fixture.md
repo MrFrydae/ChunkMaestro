@@ -172,3 +172,13 @@ label combinations with zero authorization mismatches. Local offline validation
 still reports 15 passing tests and one Linux-only skip; actionlint and specification
 checks pass. This policy check is not GitHub execution, a VM boot or host-key
 integration proof. No activation label or dispatch has been issued.
+
+The bounded independent integrity preflight at `9f615fa` passed with one low
+finding, SR-01: background QEMU output was not included in the 1 MiB polling check.
+The lead reproduced it with a failing regression, then added checks of every owned
+child's output during boot, command supervision and the final shutdown boundary.
+The corrected local suite passes 16 cases with one Linux-only skip. The prior
+exact-head hosted Linux suite passed all 16 original cases; it is not execution
+proof for the new regression. Original review and failure logs remain retained.
+Runner tool/KVM availability, real boot/host-key behavior, QEMU teardown and final
+independent acceptance are still pending; no VM has been activated.

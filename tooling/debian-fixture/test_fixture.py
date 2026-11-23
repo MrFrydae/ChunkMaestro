@@ -173,6 +173,20 @@ class Contracts(unittest.TestCase):
             finally:
                 h.cleanup()
 
+    def test_background_vm_output_is_checked_during_probe(self):
+        # A long-lived VM is supervised alongside a shorter command, not via wait(vm).
+        with tempfile.TemporaryDirectory() as d:
+            h = f.Harness(Path(d))
+            vm, output = h.start([sys.executable, '-c', 'import time; time.sleep(60)'])
+            try:
+                output.write(b'x' * (2 * 1024**2))
+                output.flush()
+                with self.assertRaisesRegex(f.Failure, 'probe-output-limit'):
+                    h.run([sys.executable, '-c', 'print("probe-ok")'], 'probe', 5)
+            finally:
+                h.cleanup()
+            self.assertIsNotNone(vm.poll())
+
     def test_boot_configuration_closed_and_cleanup_on_failure(self):
         # Reach the real QEMU argv builder with fake tools and tiny synthetic input.
         with tempfile.TemporaryDirectory() as d:

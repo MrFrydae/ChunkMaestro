@@ -101,7 +101,8 @@ class Harness:
         beat = 0
         while p.poll() is None:
             now = time.monotonic()
-            if now >= end or os.fstat(out.fileno()).st_size > 1024**2:
+            self.check_output_limits(phase)
+            if now >= end:
                 raise Failure(phase + '-timeout-or-output-limit')
             if now >= beat:
                 event(phase, 'waiting')
@@ -109,10 +110,15 @@ class Harness:
             time.sleep(0.1)
         if p.returncode:
             raise Failure(phase + '-exit')
-        if os.fstat(out.fileno()).st_size > 1024**2:
-            raise Failure(phase + '-output-limit')
+        self.check_output_limits(phase)
         out.seek(0)
         return out.read(1024**2)
+
+    def check_output_limits(self, phase):
+        # QEMU remains live while boot and SSH commands are supervised.
+        if any(os.fstat(output.fileno()).st_size > 1024**2
+               for _, output in self.children):
+            raise Failure(phase + '-output-limit')
 
     def run(self, args, phase, seconds=30):
         event(phase, 'start')
@@ -220,6 +226,7 @@ def exercise(h):
     end = min(time.monotonic() + 240, h.deadline)
     # Readiness polling is bounded, not a VM/SSH operation retry. SSH runs once.
     while True:
+        h.check_output_limits('boot')
         if vm.poll() is not None:
             raise Failure('boot-qemu-exit')
         if time.monotonic() >= end:
@@ -263,6 +270,7 @@ def main():
         if shutil.disk_usage(root).free < 10 * 1024**3:
             raise Failure('preflight-disk')
         exercise(h)
+        h.check_output_limits('shutdown')
     finally:
         signal.alarm(0)
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
