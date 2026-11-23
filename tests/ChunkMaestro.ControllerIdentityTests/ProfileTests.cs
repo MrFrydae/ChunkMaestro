@@ -13,6 +13,37 @@ public sealed class ProfileTests
     private static readonly DateTimeOffset Now = new(2026, 11, 23, 12, 0, 0, TimeSpan.Zero);
 
     [Fact]
+    public void GenerationRejectsPre1950ValidityWithoutPreventingValidIssuance()
+    {
+        DateTimeOffset earliest = new(1950, 1, 1, 0, 5, 0, TimeSpan.Zero);
+        Assert.Throws<ArgumentOutOfRangeException>(() => RootMaterial.Generate(Fleet, Controller, new CountingClock(earliest.AddSeconds(-1))));
+        using RootMaterial material = RootMaterial.Generate(Fleet, Controller, new CountingClock(earliest));
+        byte[] der = material.GetPublicCertificate();
+        using X509Certificate2 certificate = X509CertificateLoader.LoadCertificate(der);
+        using ECDsa publicKey = certificate.GetECDsaPublicKey()!;
+        Assert.Equal(new DateTime(1950, 1, 1, 0, 0, 0, DateTimeKind.Utc), certificate.NotBefore.ToUniversalTime());
+        material.ValidatePossession(Fleet, Controller, SHA256.HashData(der),
+            SHA256.HashData(publicKey.ExportSubjectPublicKeyInfo()), earliest);
+    }
+
+    [Fact]
+    public void SignedValidityThatOverflowsTheRequiredLifetimeIsRefused()
+    {
+        using ECDsa key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        CertificateRequest request = RootProfile.Request(key, Fleet, Controller);
+        DateTimeOffset before = new(9998, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        byte[] serial = new byte[16];
+        serial[0] = 1;
+        using X509Certificate2 certificate = request.Create(request.SubjectName,
+            X509SignatureGenerator.CreateForECDsa(key), before, before.AddYears(1), serial);
+        byte[] der = certificate.RawData;
+        byte[] hash = SHA256.HashData(der);
+        byte[] spkiHash = SHA256.HashData(key.ExportSubjectPublicKeyInfo());
+        Assert.Throws<CryptographicException>(() => RootProfile.Validate(der, Fleet, Controller,
+            hash, spkiHash, before.AddHours(1)));
+    }
+
+    [Fact]
     public void GeneratedRootHasExactProfileAndOwnedLifetime()
     {
         CountingClock clock = new(Now.AddTicks(12345));
