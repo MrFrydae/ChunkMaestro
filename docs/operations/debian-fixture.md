@@ -411,3 +411,33 @@ actionlint, specification and whitespace checks passed. No local APT, privileged
 operation or VM ran. Hosted installation/boot/SSH/teardown and final independent
 acceptance remain outstanding; the original failed run and raw artifact digest
 are retained under `.artifacts/debian-15-integration/tcg-run-45254358055/`.
+
+## Bounded HTTPS redirects for the pinned image
+
+Corrected-source run `45257568353` at `fb3cfbd` passed the fixed official APT
+update/install, recorded package versions and passed post-setup prerequisites.
+The fixture then stopped at `image-hash`, before disk parsing, overlay creation
+or guest execution. Cleanup reaped the children and deleted its owned workspace.
+The original hash guard remained effective; an unexpected download never booted.
+
+A read-only request to the pinned image URL returned HTTP302 with an HTTPS
+Debian mirror location. The old curl command did not follow redirects, so a
+successful curl exit did not establish an image download. The correction follows
+at most three redirects, restricts both initial and redirect protocols to HTTPS,
+and preserves certificate verification, file-size/connect/whole-transfer limits
+and zero retries. It uses ordinary `--location`, not credential-forwarding
+`--location-trusted`; child environment/private HOME remain noncredential.
+See the [curl manual](https://curl.se/docs/manpage.html) for these flags.
+The pinned URL, image SHA512, checksum-file digest and metadata digest are unchanged.
+Byte length and computed image SHA512 are now emitted as bounded nonsecret
+provenance diagnostics before the mandatory hash comparison; raw content is not
+logged and a mismatch still stops before any image/VM command.
+
+Local verification: 38 tests passed, one Linux-only skip. New cases verify the
+bounded HTTPS redirect command and refusal of redirect-body/corrupt bytes before
+disk/VM commands. The redirect contract rejects the old implementation. A real
+read-only retrieval through the corrected harness validated checksum/metadata and
+retrieved 341,180,416 image bytes matching the original pinned SHA512. No guest,
+APT or privileged operation ran locally. Raw download/provenance and failure
+records are retained in `.artifacts/debian-15-integration/tcg-run-45257568353/`.
+Corrected hosted boot/SSH/teardown and final independent acceptance remain open.

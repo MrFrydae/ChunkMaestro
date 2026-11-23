@@ -61,6 +61,44 @@ class Contracts(unittest.TestCase):
         self.assertEqual(set(env), {'PATH', 'HOME', 'LANG', 'LC_ALL'})
         self.assertNotIn('sentinel', str(env))
 
+    def test_download_uses_bounded_https_redirects_without_retries_or_auth_forwarding(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            h = f.Harness(root)
+            (root / 'image').write_bytes(b'bounded fixture')
+            with patch.object(h, 'run') as run:
+                h.download('image', 1024, 30)
+            args, phase, seconds = run.call_args.args
+            self.assertEqual(phase, 'download')
+            self.assertEqual(seconds, 35)
+            self.assertIn('--location', args)
+            self.assertEqual(args[args.index('--proto') + 1], '=https')
+            self.assertEqual(args[args.index('--proto-redir') + 1], '=https')
+            self.assertEqual(args[args.index('--max-redirs') + 1], '3')
+            self.assertEqual(args[args.index('--max-time') + 1], '30')
+            self.assertEqual(args[args.index('--max-filesize') + 1], '1024')
+            self.assertNotIn('--retry', args)
+            self.assertNotIn('--location-trusted', args)
+            self.assertEqual(args[-1], f.PIN['base_url'] + 'image')
+
+    def test_redirect_body_or_wrong_image_digest_cannot_reach_disk_or_vm_commands(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            h = f.Harness(root)
+            def download(name, cap, seconds):
+                (root / name).write_bytes(b'<html>redirect or damaged download</html>')
+            with patch.object(h, 'download', side_effect=download), \
+                 patch.object(f, 'validate_provenance'), patch.object(h, 'run') as run, \
+                 contextlib.redirect_stdout(io.StringIO()) as output:
+                with self.assertRaisesRegex(f.Failure, '^image-hash$'):
+                    f.exercise(h)
+            run.assert_not_called()
+            events = [json.loads(line) for line in output.getvalue().splitlines()]
+            self.assertEqual(events[0]['phase'], 'image-size-bytes')
+            self.assertEqual(events[1]['phase'], 'image-sha512')
+            self.assertEqual(events[1]['status'], hashlib.sha512((root / f.PIN['filename']).read_bytes()).hexdigest())
+            self.assertNotIn('<html>', output.getvalue())
+
     def test_provenance_denies_tampering(self):
         sums = (f.HERE / 'SHA512SUMS').read_bytes()
         self.assertEqual(hashlib.sha256(sums).hexdigest(), f.PIN['checksums_sha256'])

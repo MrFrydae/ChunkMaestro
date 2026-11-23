@@ -169,6 +169,7 @@ class Harness:
 
     def download(self, name, cap, seconds):
         self.run(['curl', '--fail', '--silent', '--show-error', '--proto', '=https',
+                  '--location', '--proto-redir', '=https', '--max-redirs', '3',
                   '--tlsv1.2', '--connect-timeout', '20', '--max-time', str(seconds),
                   '--max-filesize', str(cap), '--output', name, PIN['base_url'] + name],
                  'download', seconds + 5)
@@ -244,6 +245,8 @@ def exercise(h):
     base = r / PIN['filename']
     with base.open('rb') as stream:
         digest = hashlib.file_digest(stream, 'sha512').hexdigest()
+    event('image-size-bytes', str(base.stat().st_size))
+    event('image-sha512', digest)
     if digest != PIN['sha512']:
         raise Failure('image-hash')
     base.chmod(0o400)
