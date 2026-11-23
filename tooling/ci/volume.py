@@ -8,6 +8,7 @@ from pathlib import Path
 import platform
 import plistlib
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -177,6 +178,30 @@ def detach_mac_image(image, mount, log, execute=subprocess.run):
         raise RuntimeError('Disposable image detachment failed or remains mounted')
 
 
+def run_test(args, cwd, env, log, timeout=120):
+    process = subprocess.Popen(args, cwd=cwd, env=env, stdout=log,
+                               stderr=subprocess.STDOUT, start_new_session=os.name != 'nt')
+    try:
+        return process.wait(timeout=timeout)
+    except (subprocess.TimeoutExpired, KeyboardInterrupt):
+        log.write('Test interrupted: terminating owned test tree; completion remains unconfirmed.\n')
+        log.flush()
+        try:
+            if os.name == 'nt':
+                subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'],
+                               env=env, stdout=log, stderr=subprocess.STDOUT, timeout=15)
+            else:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            process.wait(timeout=15)
+        except (OSError, subprocess.SubprocessError) as error:
+            log.write('Bounded test-tree termination failed: ' + str(error) + '\n')
+            log.flush()
+        raise
+
+
 def run(output):
     output.mkdir(parents=True, exist_ok=False)
     dotnet = os.environ.get('CHUNKMAESTRO_DOTNET', 'dotnet')
@@ -186,6 +211,7 @@ def run(output):
                                              env=tool_env, timeout=30, text=True).strip(),
               'mechanism': 'new disposable 64 MiB image; real filesystem exhaustion; writes bounded at 128 MiB'}
     attached = False
+    test_active = False
     # Retain the image if detachment fails; never remove a live mounted fixture.
     temp = Path(tempfile.mkdtemp(prefix='chunkmaestro-full-volume-', dir='/private/tmp' if platform.system() == 'Darwin' else None))
     mount = temp / 'mount'
@@ -195,9 +221,17 @@ def run(output):
     log = (output / 'commands.log').open('w')
 
     def call(args, env=None):
+        nonlocal test_active
         print('[disk-full] START ' + str(args[0]) + '; deadline=120s; log=' + str(output / 'commands.log'), flush=True)
-        code = subprocess.run(args, cwd=ROOT, env=tool_env if env is None else env,
-                              stdout=log, stderr=subprocess.STDOUT, timeout=120).returncode
+        child_env = tool_env if env is None else env
+        if len(args) > 1 and args[1] == 'test':
+            test_active = True
+            code = run_test(args, ROOT, child_env, log)
+            if code == 0:
+                test_active = False
+        else:
+            code = subprocess.run(args, cwd=ROOT, env=child_env,
+                                  stdout=log, stderr=subprocess.STDOUT, timeout=120).returncode
         log.flush()
         if code:
             raise RuntimeError(f'Command failed ({code}): {args[0]}')
@@ -265,6 +299,7 @@ def run(output):
             raise RuntimeError('Unsupported controller platform; no disk action performed')
         env = dict(tool_env, CHUNKMAESTRO_DISPOSABLE_VOLUME=str(mount))
         call([dotnet, 'test', 'tooling/quality/storage/volume/VolumeTests.csproj', '-c', 'Release', '--no-build', '--no-restore',
+              '--blame-hang', '--blame-hang-timeout', '60s',
               '--logger', 'trx', '--results-directory', str(output / 'tests')], env)
         result['execution'] = executed_case(output)
         result['status'] = 'PASS'
@@ -273,6 +308,8 @@ def run(output):
     finally:
         try:
             if attached:
+                if test_active:
+                    raise RuntimeError('Image retained: test process completion is unconfirmed; no detach attempted')
                 if platform.system() == 'Darwin':
                     detach_mac_image(image, mount, log)
                 else:
@@ -286,7 +323,7 @@ def run(output):
         if not attached and platform.system() == 'Darwin':
             import shutil
             shutil.rmtree(temp)
-        elif platform.system() == 'Windows':
+        else:
             result['retained_fixture'] = str(temp)
         (output / 'volume.json').write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps(result, indent=2))

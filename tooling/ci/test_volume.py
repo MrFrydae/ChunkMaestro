@@ -4,9 +4,10 @@ import json
 import os
 from pathlib import Path
 import plistlib
+import subprocess
 import tempfile
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import xml.etree.ElementTree as ET
 
 import volume
@@ -116,6 +117,8 @@ class VolumeExecutionEvidenceTests(unittest.TestCase):
                      patch.object(volume, 'occupied_drives', return_value=['C:\\']), \
                      patch.object(volume.tempfile, 'mkdtemp', return_value=str(scratch)), \
                      patch.object(volume.subprocess, 'check_output', return_value='a' * 40), \
+                     patch.object(volume, 'run_test', side_effect=lambda args, cwd, env, log:
+                                  run(args, cwd=cwd, env=env, timeout=120).returncode), \
                      patch.object(volume.subprocess, 'run', side_effect=run):
                     self.assertEqual(not executed, volume.run(output))
                 self.assertEqual(['restore', 'build', 'test'], calls)
@@ -135,6 +138,70 @@ class VolumeExecutionEvidenceTests(unittest.TestCase):
                         return_value=SimpleNamespace(returncode=0, stdout=json.dumps(dict(expected, **{field: value})), stderr='')):
                     with self.assertRaises(RuntimeError):
                         volume.windows_image_binding(image, Path('Z:\\'), guid, io.StringIO(), {})
+
+    def test_failed_or_interrupted_test_retains_attached_image_without_detaching(self):
+        for failure in (1, subprocess.TimeoutExpired(['dotnet', 'test'], 120)):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                scratch = root / 'scratch'
+                scratch.mkdir()
+                output = root / 'evidence'
+                with patch.object(volume.platform, 'system', return_value='Darwin'), \
+                     patch.object(volume.tempfile, 'mkdtemp', return_value=str(scratch)), \
+                     patch.object(volume.subprocess, 'check_output', return_value='a' * 40), \
+                     patch.object(volume.subprocess, 'run', return_value=SimpleNamespace(returncode=0)), \
+                     patch.object(volume.os.path, 'ismount', return_value=True), \
+                     patch.object(volume, 'run_test', side_effect=failure if isinstance(failure, Exception) else None,
+                                  return_value=failure) as execute, \
+                     patch.object(volume, 'detach_mac_image') as detach:
+                    self.assertTrue(volume.run(output))
+                execute.assert_called_once()
+                detach.assert_not_called()
+                self.assertTrue(scratch.exists())
+                result = json.loads((output / 'volume.json').read_bytes())
+                self.assertEqual('FAIL', result['status'])
+                self.assertIn('completion is unconfirmed', result['cleanup_error'])
+                self.assertEqual(str(scratch), result['retained_fixture'])
+
+    def test_timeout_terminates_only_owned_test_tree_with_bounded_wait_and_preserves_error(self):
+        for system in ('nt', 'posix'):
+            with self.subTest(system=system):
+                timeout = subprocess.TimeoutExpired(['dotnet', 'test'], 120)
+                process = Mock(pid=12345)
+                process.wait.side_effect = [timeout, 1]
+                log = io.StringIO()
+                fixture = Path('/fixture')
+                with patch.object(volume.os, 'name', system), \
+                     patch.object(volume.signal, 'SIGKILL', 9, create=True), \
+                     patch.object(volume.subprocess, 'Popen', return_value=process) as start, \
+                     patch.object(volume.subprocess, 'run') as taskkill, \
+                     patch.object(volume.os, 'killpg', create=True) as kill:
+                    with self.assertRaises(subprocess.TimeoutExpired) as raised:
+                        volume.run_test(['dotnet', 'test'], fixture, {'PATH': 'fixture'}, log)
+                self.assertIs(timeout, raised.exception)
+                self.assertEqual([120, 15], [call.kwargs['timeout'] for call in process.wait.call_args_list])
+                self.assertEqual(system != 'nt', start.call_args.kwargs['start_new_session'])
+                if system == 'nt':
+                    taskkill.assert_called_once_with(['taskkill', '/PID', '12345', '/T', '/F'],
+                        env={'PATH': 'fixture'}, stdout=log, stderr=subprocess.STDOUT, timeout=15)
+                    kill.assert_not_called()
+                else:
+                    kill.assert_called_once_with(12345, 9)
+                    taskkill.assert_not_called()
+
+    def test_tree_termination_failure_does_not_mask_original_timeout(self):
+        timeout = subprocess.TimeoutExpired(['dotnet', 'test'], 120)
+        process = Mock(pid=12345)
+        process.wait.side_effect = timeout
+        log = io.StringIO()
+        fixture = Path('/fixture')
+        with patch.object(volume.os, 'name', 'nt'), \
+             patch.object(volume.subprocess, 'Popen', return_value=process), \
+             patch.object(volume.subprocess, 'run', side_effect=OSError('synthetic termination failure')):
+            with self.assertRaises(subprocess.TimeoutExpired) as raised:
+                volume.run_test(['dotnet', 'test'], fixture, {}, log)
+        self.assertIs(timeout, raised.exception)
+        self.assertIn('synthetic termination failure', log.getvalue())
 
 
 class DriveSelectionTests(unittest.TestCase):

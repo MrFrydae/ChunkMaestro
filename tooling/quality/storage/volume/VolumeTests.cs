@@ -42,20 +42,34 @@ public sealed class VolumeTests
         // Bound writes to 128 MiB even if a fixture mount failed. Never fill a host disk.
         using (FileStream fill = new FileStream(filler, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough))
         {
-            byte[] block = new byte[4096];
+            byte[] block = new byte[1024 * 1024];
             new Random(41).NextBytes(block);
             bool full = false;
-            try
+            int blockSize = block.Length;
+            long attemptedBytes = 0;
+            const long MaximumBytes = 128L * 1024 * 1024;
+            while (attemptedBytes + blockSize <= MaximumBytes)
             {
-                for (int i = 0; i < 32768; i++)
+                attemptedBytes += blockSize;
+                try
                 {
-                    fill.Write(block);
+                    fill.Write(block, 0, blockSize);
                     fill.Flush(true);
                 }
-            }
-            catch (IOException)
-            {
-                full = true;
+                catch (IOException)
+                {
+                    if (blockSize > 4096)
+                    {
+                        // Finish the remaining space at SQLite-page granularity;
+                        // bulk writes avoid thousands of costly VHD flushes.
+                        blockSize = 4096;
+                    }
+                    else
+                    {
+                        full = true;
+                        break;
+                    }
+                }
             }
             Assert.True(full, "Disposable 64 MiB volume must fill within the 128 MiB write bound");
         }

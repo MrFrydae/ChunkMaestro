@@ -51,6 +51,13 @@ Disk-full runs as a separate eight-minute job on each OS. It retains the reviewe
 checks, raw executed test and bounded cleanup. Only the fixture was extracted to
 `tooling/ci/volume.py`; it imports no qualification or mutation collector. The
 gate rechecks the exact passed case and input/raw hashes, never status alone.
+The filler writes and flushes 1 MiB blocks, then uses 4 KiB writes for the last
+available pages. This preserves actual exhaustion and the write bound while
+avoiding thousands of synchronous VHD flushes. The executed case has a 60-second
+hang timeout and the test process a 120-second limit. An interruption triggers
+bounded termination of the owned test process tree. If successful test completion
+is unconfirmed, the helper retains the attached fixture for disposable-runner
+teardown rather than detaching a volume that test descendants may still use.
 
 Native macOS authority runs in a separate five-minute job. It compiles the actual
 C helper once for 42 real filesystem cases and once for ten explicitly injected
