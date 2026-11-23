@@ -1364,3 +1364,23 @@ These links explain specific review findings; the owner's conversation answers r
 ## Document verification
 
 The generated document was checked locally for exactly 205 questions in the original order, one nonempty answer per question, the corrected question 11–14 mapping, and the later desktop/scheduling/restart overrides. This is document verification only; it does not verify application behavior, current host state, networking, implementation completeness, or legal clearance.
+
+## Owner testing policy — 2026-11-23
+
+Later explicit owner decision, superseding Q190's numeric merge/release gates
+throughout the application, including native credentials:
+
+> My priority is a reliable, thoroughly tested application, not achieving an arbitrary coverage or mutation-testing percentage.
+
+Use direct native credential safety tests in place of its mutation gate.
+Continue writing and executing meaningful unit, integration, end-to-end and
+security tests wherever appropriate, prioritizing critical functionality, edge
+cases, regressions and real-world behavior. Retain coverage reporting and
+independent QA. Treat coverage and mutation scores as diagnostic metrics rather
+than hard merge or release gates. Preserve existing tests and security assertions;
+never remove or weaken them to improve metrics or bypass failures. If a test
+cannot run reliably because of environmental or isolation limitations, document
+the limitation and provide alternative verification where practical. An
+unexecuted test remains unexecuted, and a failing behavior remains a defect.
+
+The original questionnaire answer above is retained as historical provenance.

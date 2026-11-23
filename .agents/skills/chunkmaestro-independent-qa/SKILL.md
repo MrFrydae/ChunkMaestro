@@ -20,7 +20,11 @@ The assigned role reviews the bounded change, runs meaningful public-boundary an
 failure/recovery cases, and reports material defects with path/line, trigger,
 actual/expected result and reproducible evidence. Reuse unchanged baseline checks;
 do not repeat entire unrelated suites as a ritual. Native, platform, safety and
-coverage/mutation obligations are not waived by a green unit suite or bounded PR.
+behavioral obligations are not waived by a green unit suite or bounded PR.
+Apply the [owner testing policy](../../../docs/product/requirements-source.md#owner-testing-policy--2026-11-23):
+retain coverage reporting, use coverage/mutation scores diagnostically, and base
+acceptance on meaningful behavior and security evidence. Document environmental
+limits and practical alternative verification; a skipped test is not a pass.
 
 Keep review checkouts read-only unless implementation is separately assigned.
 Use disposable external fixtures without production data. Do not mutate live
