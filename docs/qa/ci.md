@@ -84,6 +84,27 @@ bounded termination of the owned test process tree. If successful test completio
 is unconfirmed, the helper retains the attached fixture for disposable-runner
 teardown rather than detaching a volume that test descendants may still use.
 
+macOS cleanup initially requires the exact new image, one whole device, only its
+partitions and its expected mount. A normal detach may unmount the filesystem
+before eject reports busy. After that owned detach attempt only, an absent mount
+is permitted if it is independently no longer mounted and the exact image/device
+and partition binding still matches. A changed device or unrelated/live mount
+refuses forced cleanup. Forced detach remains a single bounded operation on the
+reverified original device; final image absence and mount absence are mandatory.
+
+Run `45256000615` passed the actual disk-full case but failed cleanup after normal
+detach reported busy and subsequent identity checking refused. The raw inventory
+was not logged, so it does not prove the exact intermediate state. The correction
+has a regression that fails the old implementation, unchanged negative identity
+controls, and a local real disk-full PASS. A separate new 64 MiB native image was
+really unmounted, the harness supplied a controlled busy return, and native image
+inspection observed no mount fields while the same device remained attached.
+Reverified forced detachment and final fixture deletion passed. This proves that
+state transition with controlled failure, not a naturally occurring busy event.
+Evidence is retained in `.artifacts/qa/pr18-cleanup-correction/`; global mounted
+image inventories and unrelated paths are not logged. Original failed artifacts
+remain under `.artifacts/qa/pr18-82a9950-notification/`.
+
 Native macOS authority runs in a separate five-minute job. It compiles the actual
 C helper once for 42 real filesystem cases and once for ten explicitly injected
 OS-error/metadata cases. LLVM coverage comes only from real filesystem execution.

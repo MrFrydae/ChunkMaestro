@@ -255,6 +255,41 @@ class DriveSelectionTests(unittest.TestCase):
             detach_mac_image(image, mount, io.StringIO(), unrelated)
         self.assertTrue(all(c[1] == 'info' for c in commands))
 
+    def test_busy_mac_eject_can_finish_after_its_own_detach_unmounts_the_fixture(self):
+        image, mount = Path('/tmp/owned/fixture.dmg'), Path('/tmp/owned/mount')
+        unmounted = self.info()
+        del unmounted['images'][0]['system-entities'][1]['mount-point']
+        with self.assertRaisesRegex(ValueError, 'mount identity'):
+            mac_image_device(unmounted, image, mount)
+        commands = []
+        queries = iter([self.info(), unmounted, {'images': []}])
+        def execute(args, **kwargs):
+            commands.append(args)
+            if args[1] == 'info':
+                return SimpleNamespace(returncode=0, stdout=plistlib.dumps(next(queries)))
+            return SimpleNamespace(returncode=0 if '-force' in args else 16)
+        with patch('volume.os.path.ismount', return_value=False):
+            detach_mac_image(image, mount, io.StringIO(), execute)
+        self.assertEqual([command for command in commands if command[1] == 'detach'], [
+            ['hdiutil', 'detach', '/dev/disk42'], ['hdiutil', 'detach', '-force', '/dev/disk42']])
+
+    def test_unmounted_busy_cleanup_still_refuses_replaced_device_or_live_mount(self):
+        image, mount = Path('/tmp/owned/fixture.dmg'), Path('/tmp/owned/mount')
+        for device, mounted in (('/dev/disk42', True), ('/dev/disk43', False)):
+            unmounted = self.info(device=device)
+            del unmounted['images'][0]['system-entities'][1]['mount-point']
+            queries = iter([self.info(), unmounted])
+            commands = []
+            def execute(args, **kwargs):
+                commands.append(args)
+                return SimpleNamespace(returncode=0 if args[1] == 'info' else 16,
+                    stdout=plistlib.dumps(next(queries)) if args[1] == 'info' else b'')
+            with self.subTest(device=device, mounted=mounted), \
+                 patch('volume.os.path.ismount', return_value=mounted), \
+                 self.assertRaises((ValueError, RuntimeError)):
+                detach_mac_image(image, mount, io.StringIO(), execute)
+            self.assertFalse(any('-force' in command for command in commands))
+
     def test_mac_cleanup_never_forces_an_unexplained_error_or_accepts_failed_force(self):
         for code in (1, 16):
             commands = []

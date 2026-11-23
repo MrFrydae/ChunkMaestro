@@ -128,7 +128,7 @@ def free_drive_letter(occupied):
     return letter
 
 
-def mac_image_device(info, image, mount):
+def mac_image_device(info, image, mount, *, allow_unmounted=False):
     matches = [entry for entry in info['images'] if Path(entry['image-path']).resolve() == image.resolve()]
     if not matches:
         return None
@@ -137,21 +137,25 @@ def mac_image_device(info, image, mount):
     entities = matches[0]['system-entities']
     devices = [entry['dev-entry'] for entry in entities if re.fullmatch(r'/dev/disk[0-9]+', entry['dev-entry'])]
     mounts = {Path(entry['mount-point']).resolve() for entry in entities if entry.get('mount-point')}
-    if (len(devices) != 1 or mounts != {mount.resolve()} or any(
+    if (len(devices) != 1 or any(
             not re.fullmatch(re.escape(devices[0]) + r'(s[0-9]+)*', entry['dev-entry']) for entry in entities)):
-        raise ValueError('Disposable image device or mount identity differs')
+        raise ValueError('Disposable image device identity differs')
+    if mounts != {mount.resolve()} and not (
+            allow_unmounted and not mounts and not os.path.ismount(mount)):
+        raise ValueError('Disposable image mount identity differs')
     return devices[0]
 
 
 def detach_mac_image(image, mount, log, execute=subprocess.run):
     """Detach only this fixture. Busy cleanup may force only a reverified device."""
-    def device():
+    def device(*, allow_unmounted=False):
         state = execute(['hdiutil', 'info', '-plist'], stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE, timeout=30, env=child_environment(os.environ))
         if state.returncode:
             raise RuntimeError('Could not inspect disposable image attachment')
         # Do not log unrelated mounted image paths from the host-wide inventory.
-        return mac_image_device(plistlib.loads(state.stdout), image, mount)
+        return mac_image_device(plistlib.loads(state.stdout), image, mount,
+                                allow_unmounted=allow_unmounted)
 
     def detach(args):
         result = execute(args, stdout=log, stderr=subprocess.STDOUT, timeout=30,
@@ -166,15 +170,18 @@ def detach_mac_image(image, mount, log, execute=subprocess.run):
         return
     code = detach(['hdiutil', 'detach', original])
     if code == 16:
-        current = device()
+        # A normal detach can unmount successfully before eject reports busy.
+        # Only our own prior detach permits an absent, independently unmounted
+        # fixture mount; exact image/device and partition binding still apply.
+        current = device(allow_unmounted=True)
         if current == original:
-            log.write('Busy fixture: exact image/device/mount reverified before forced detachment.\n')
+            log.write('Busy fixture: exact image/device and mount state reverified before forced detachment.\n')
             code = detach(['hdiutil', 'detach', '-force', original])
         elif current is not None:
             raise RuntimeError('Disposable image identity changed during cleanup')
         else:
             code = 0
-    if code or device() is not None or os.path.ismount(mount):
+    if code or device(allow_unmounted=True) is not None or os.path.ismount(mount):
         raise RuntimeError('Disposable image detachment failed or remains mounted')
 
 
