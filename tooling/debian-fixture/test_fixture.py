@@ -5,6 +5,7 @@ import io
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 import signal
 import subprocess
 import sys
@@ -278,6 +279,90 @@ class Contracts(unittest.TestCase):
             self.assertIn('restrict=on,hostfwd=tcp:127.0.0.1:', network)
             for banned in ('kvm', 'accel=', 'virtfs', 'fsdev', '0.0.0.0', 'daemonize'):
                 self.assertNotIn(banned, ' '.join(qemu))
+
+
+class MainFailureContracts(unittest.TestCase):
+    def run_main(self, primary=None, cleanup=None, deletion=None):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d) / 'owned'
+            root.mkdir()
+            (root / 'private-disk').write_text('PRIVATE_SENTINEL')
+            log = io.StringIO()
+            original_delete = f.shutil.rmtree
+            with patch.object(sys, 'argv', ['fixture.py', '--execute-owner-reviewed-fixture']), \
+                 patch.object(f, 'prerequisites'), patch.object(f.ctypes, 'CDLL') as libc, \
+                 patch.object(f.tempfile, 'mkdtemp', return_value=str(root)), \
+                 patch.object(f.shutil, 'disk_usage', return_value=SimpleNamespace(free=11 * 1024**3)), \
+                 patch.object(f.signal, 'signal'), patch.object(f.signal, 'alarm'), \
+                 patch.object(f.os, 'umask'), \
+                 patch.object(f, 'exercise', side_effect=primary), \
+                 patch.object(f.Harness, 'cleanup', side_effect=cleanup), \
+                 patch.object(f.shutil, 'rmtree', side_effect=deletion or original_delete) as delete, \
+                 contextlib.redirect_stdout(log):
+                libc.return_value.prctl.return_value = 0
+                error = None
+                try:
+                    f.main()
+                except BaseException as caught:
+                    error = caught
+            return error, [json.loads(line) for line in log.getvalue().splitlines()], root.exists(), delete.call_count
+
+    def test_primary_failure_survives_cleanup_failure_without_deleting_disks(self):
+        primary = f.Failure('probe-exit')
+        error, events, retained, deletes = self.run_main(primary, f.Failure('cleanup-descendants-live'))
+        self.assertIs(error, primary)
+        self.assertEqual(events[0], {'phase': 'fixture-primary-probe-exit', 'status': 'failed'})
+        self.assertIn({'phase': 'fixture-cleanup-cleanup-descendants-live', 'status': 'failed'}, events)
+        self.assertTrue(retained)
+        self.assertEqual(deletes, 0)
+        self.assertNotIn('smoke-passed-not-product-acceptance', str(events))
+
+    def test_primary_failure_survives_workspace_deletion_failure(self):
+        primary = f.Failure('probe-identity')
+        error, events, retained, deletes = self.run_main(primary, deletion=PermissionError('PRIVATE_SENTINEL'))
+        self.assertIs(error, primary)
+        self.assertEqual(events[0]['phase'], 'fixture-primary-probe-identity')
+        self.assertIn({'phase': 'fixture-workspace-deletion-internal', 'status': 'failed'}, events)
+        self.assertIn({'phase': 'cleanup', 'status': 'workspace-retained-for-ephemeral-runner-destruction'}, events)
+        self.assertTrue(retained)
+        self.assertEqual(deletes, 1)
+        self.assertNotIn('PRIVATE_SENTINEL', str(events))
+        self.assertNotIn('smoke-passed-not-product-acceptance', str(events))
+
+    def test_cleanup_failure_after_success_still_fails_and_retains_disks(self):
+        cleanup = f.Failure('cleanup-descendants-live')
+        error, events, retained, deletes = self.run_main(cleanup=cleanup)
+        self.assertIs(error, cleanup)
+        self.assertTrue(retained)
+        self.assertEqual(deletes, 0)
+        self.assertNotIn('smoke-passed-not-product-acceptance', str(events))
+
+    def test_deletion_failure_after_success_still_fails(self):
+        deletion = PermissionError('PRIVATE_SENTINEL')
+        error, events, retained, deletes = self.run_main(deletion=deletion)
+        self.assertIs(error, deletion)
+        self.assertTrue(retained)
+        self.assertEqual(deletes, 1)
+        self.assertNotIn('PRIVATE_SENTINEL', str(events))
+        self.assertNotIn('smoke-passed-not-product-acceptance', str(events))
+
+    def test_unknown_primary_exception_is_sanitized_and_preserved(self):
+        primary = RuntimeError('PRIVATE_SENTINEL')
+        error, events, retained, deletes = self.run_main(primary, f.Failure('cleanup-descendants-live'))
+        self.assertIs(error, primary)
+        self.assertEqual(events[0]['phase'], 'fixture-primary-internal')
+        self.assertNotIn('PRIVATE_SENTINEL', str(events))
+        self.assertTrue(retained)
+        self.assertEqual(deletes, 0)
+
+    def test_success_requires_reaping_and_deletion(self):
+        error, events, retained, deletes = self.run_main()
+        self.assertIsNone(error)
+        self.assertFalse(retained)
+        self.assertEqual(deletes, 1)
+        self.assertEqual(events, [
+            {'phase': 'cleanup', 'status': 'owned-workspace-deleted'},
+            {'phase': 'fixture', 'status': 'smoke-passed-not-product-acceptance'}])
 
 
 if __name__ == '__main__':

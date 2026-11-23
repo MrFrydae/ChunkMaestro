@@ -441,3 +441,30 @@ retrieved 341,180,416 image bytes matching the original pinned SHA512. No guest,
 APT or privileged operation ran locally. Raw download/provenance and failure
 records are retained in `.artifacts/debian-15-integration/tcg-run-45257568353/`.
 Corrected hosted boot/SSH/teardown and final independent acceptance remain open.
+
+## Preserve the first fixture failure during teardown
+
+Historical run `45261150002` at `8262a59` subsequently passed package setup,
+the unchanged image pins, TCG boot, strict authenticated Debian13/systemd probe,
+reaping and owned workspace deletion. Its raw evidence remains attributed to
+that execution head; ancestry-only restack `6d26e36` preserved all fixture inputs.
+It is infrastructure proof, not helper/enrollment or product acceptance.
+
+Final diagnostics review UX-PR17-01 reproduced a separate failure path: when a
+probe failed and reaping or workspace deletion also failed, the latter exception
+hid the original error from uploaded sanitized events. The fixture now records
+the primary failure before teardown, records secondary cleanup/deletion failures
+separately, and rethrows the original exception. Unknown exception details remain
+suppressed. Successful reaping is still required before deleting disks. Any
+cleanup failure prevents smoke success; remaining workspace responsibility is
+explicitly assigned to ephemeral runner destruction. No retry or deadline change
+is introduced. Regression controls inject failures at these boundaries; they do
+not claim a new guest execution or naturally occurring OS cleanup failure.
+
+Correction validation: 44 tests passed, one Linux-only descendant case skipped
+on macOS; the six new main-boundary cases include successful teardown as well
+as independent primary/cleanup/deletion errors. Three new regressions reject
+`6d26e36`. Python syntax, specification and whitespace checks passed. No C# build
+input changed. The old successful VM run remains narrower, separately attributed
+evidence; the corrected main wrapper has not been executed in a fresh VM run.
+Final current-head CI and new independent role verdicts remain required.

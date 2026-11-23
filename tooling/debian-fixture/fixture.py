@@ -42,6 +42,16 @@ def event(phase, status):
     print(json.dumps({'phase': phase, 'status': status}), flush=True)
 
 
+def failure_name(error):
+    if isinstance(error, Failure) and re.fullmatch(r'[a-z0-9-]{1,80}', str(error)):
+        return str(error)
+    return 'internal'
+
+
+def record_failure(phase, error):
+    event('fixture-' + phase + '-' + failure_name(error), 'failed')
+
+
 def child_env(home):
     return {'PATH': '/usr/bin:/bin', 'HOME': str(home), 'LANG': 'C', 'LC_ALL': 'C'}
 
@@ -300,18 +310,38 @@ def main():
     os.umask(0o077)
     root = Path(tempfile.mkdtemp(prefix='cm-debian-fixture-', dir='/tmp'))
     h = Harness(root)
+    primary = None
     try:
         if shutil.disk_usage(root).free < 10 * 1024**3:
             raise Failure('preflight-disk')
         exercise(h)
         h.check_output_limits('shutdown')
+    except BaseException as error:
+        primary = error
+        record_failure('primary', error)
     finally:
         signal.alarm(0)
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
         signal.signal(signal.SIGINT, signal.SIG_IGN)
-        h.cleanup()
-        shutil.rmtree(root)  # If reaping fails, retain private disks for runner teardown.
-        event('cleanup', 'owned-workspace-deleted')
+        try:
+            h.cleanup()
+        except BaseException as error:
+            record_failure('cleanup', error)
+            event('cleanup', 'workspace-retained-for-ephemeral-runner-destruction')
+            if primary is None:
+                primary = error
+        else:
+            # Delete private disks only after successful reaping.
+            try:
+                shutil.rmtree(root)
+                event('cleanup', 'owned-workspace-deleted')
+            except BaseException as error:
+                record_failure('workspace-deletion', error)
+                event('cleanup', 'workspace-retained-for-ephemeral-runner-destruction')
+                if primary is None:
+                    primary = error
+    if primary is not None:
+        raise primary
     event('fixture', 'smoke-passed-not-product-acceptance')
 
 
@@ -323,7 +353,7 @@ if __name__ == '__main__':
     try:
         main()
     except Failure as exc:
-        event(str(exc), 'failed')
+        event(failure_name(exc), 'failed')
         raise SystemExit(1)
     except Exception:
         event('internal', 'failed-details-suppressed')
