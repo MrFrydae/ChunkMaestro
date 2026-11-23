@@ -2,13 +2,19 @@
 #import <AppKit/AppKit.h>
 #import <LocalAuthentication/LocalAuthentication.h>
 #include <stdio.h>
+#include <string.h>
 #define CM_OWNER_TESTING 1
 static NSObject *fakeWindow;
+static NSObject *replacementWindow;
 static BOOL windowOpen = YES;
 static unsigned starts;
 static void (^osReply)(BOOL, NSError *);
 static NSWindow *ownedWindow(uintptr_t bits)
 {
+    if (bits == 43)
+    {
+        return (NSWindow *)replacementWindow;
+    }
     return windowOpen && bits == 42 ? (NSWindow *)fakeWindow : nil;
 }
 static void startPolicy(LAContext *context, void (^reply)(BOOL, NSError *))
@@ -23,6 +29,7 @@ static unsigned count;
 static unsigned deliveries;
 static int32_t observed;
 static BOOL acknowledge = YES;
+static BOOL acknowledgeDrain = YES;
 static int32_t receive(uint64_t request, uint64_t generation, uintptr_t window,
     const uint8_t *nonce, size_t size, int32_t result, uint32_t phase, void *cookie)
 {
@@ -30,8 +37,15 @@ static int32_t receive(uint64_t request, uint64_t generation, uintptr_t window,
     CHECK(nonce != NULL && size == 32 && nonce[0] == 1 && cookie == (void *)1);
     if (phase == 1)
     {
-        CHECK(active.count == 0);
-        return 1;
+        CHECK(active.count == 1);
+        uint64_t replacement = 0;
+        uint8_t replacementNonce[32] = {1};
+        uint8_t replacementSession[16] = {1};
+        CHECK(cm_owner_create(2, replacementNonce, 32, replacementSession, 16, 1, &replacement) == CM_CONTEXT_CREATED);
+        CHECK(cm_owner_bind_window_explicit(replacement, 43, 1) == CM_WINDOW_CAPTURED);
+        CHECK(cm_owner_evaluate_explicit(replacement, 43, 1, receive, (void *)1) == CM_FAILURE);
+        CHECK(cm_owner_release(replacement) == CM_CANCELED);
+        return acknowledgeDrain ? 1 : 0;
     }
     deliveries++;
     observed = result;
@@ -64,11 +78,36 @@ static void queue(uint64_t request, uintptr_t window)
     CHECK(cm_owner_bind_window_explicit(request, window, 1) == CM_WINDOW_CAPTURED);
     CHECK(cm_owner_evaluate_explicit(request, window, 1, receive, (void *)1) == CM_EVALUATION_QUEUED);
 }
-int main(void)
+int main(int argc, const char **argv)
 {
     @autoreleasepool
     {
         fakeWindow = [NSObject new];
+        replacementWindow = [NSObject new];
+        if (argc == 2 && strcmp(argv[1], "--refuse-drain") == 0)
+        {
+            acknowledgeDrain = NO;
+            uint64_t refused = create();
+            queue(refused, 42);
+            pump();
+            CHECK(starts == 1 && active.count == 1);
+            osReply(YES, nil);
+            pump();
+            CHECK(deliveries == 1 && active.count == 1);
+            CHECK(cm_owner_release(refused) == CM_CANCELED);
+            CHECK(active.count == 1);
+            uint64_t blocked = create();
+            CHECK(cm_owner_bind_window_explicit(blocked, 42, 1) == CM_WINDOW_CAPTURED);
+            CHECK(cm_owner_evaluate_explicit(blocked, 42, 1, receive, (void *)1) == CM_FAILURE);
+            cm_owner_release(blocked);
+            osReply(YES, nil);
+            pump();
+            CHECK(deliveries == 1 && active.count == 1 && starts == 1);
+            osReply = nil;
+            printf("refused drain assertions: %u\n", count);
+            return 0;
+        }
+        CHECK(argc == 1);
         CHECK(cm_owner_abi() == 2 && sizeof(int32_t) == 4 && sizeof(uint64_t) == 8);
         uint64_t request = create();
         queue(request, 42);

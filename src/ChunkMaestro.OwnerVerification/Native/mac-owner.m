@@ -86,7 +86,7 @@ int32_t cm_owner_create(uint32_t abi, const uint8_t *nonce, size_t nonce_size,
                 return CM_FAILURE;
             }
             value.context.touchIDAuthenticationAllowableReuseDuration = 0;
-            // Defense in depth: this partial bridge cannot display an authentication UI.
+            // Default operations remain noninteractive; only explicit evaluation enables UI.
             value.context.interactionNotAllowed = YES;
             value.nonce = [NSData dataWithBytes:nonce length:32];
             value.session = [NSData dataWithBytes:session length:16];
@@ -328,22 +328,18 @@ static void finish(CMOwnerRequest *value, int32_t result)
         [NSNotificationCenter.defaultCenter removeObserver:value.closeObserver];
         value.closeObserver = nil;
     }
-    // Phase 0 acknowledgment permits the separately signaled cookie drain. Failed delivery remains
-    // owned in active forever, unknown; no retry/replacement or fictional timeout cleanup.
+    // Both acknowledgments must finish before replacement admission. Cookie drain
+    // cannot temporarily remove the process-wide unknown-work barrier.
     int32_t acknowledged = reply(value.identifier, value.generation, value.window,
         value.nonce.bytes, value.nonce.length, result, 0, cookie);
     if (acknowledged == 1)
     {
-        @synchronized(registryGate())
-        {
-            [active removeObjectForKey:@(value.identifier)];
-        }
         if (reply(value.identifier, value.generation, value.window,
-            value.nonce.bytes, value.nonce.length, result, 1, cookie) != 1)
+            value.nonce.bytes, value.nonce.length, result, 1, cookie) == 1)
         {
             @synchronized(registryGate())
             {
-                active[@(value.identifier)] = value;
+                [active removeObjectForKey:@(value.identifier)];
             }
         }
     }

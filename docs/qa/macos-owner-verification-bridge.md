@@ -109,9 +109,12 @@ runs on main; a captured request released before evaluation queues observer clea
 
 Native terminal-once state clears delivery ingress before invoking managed code.
 Phase0 validates exact identity and stores the sanitized terminal result. Returning
-1 acknowledges receipt only. Native removes active ownership, then phase1 signals
-safe cookie drain; managed frees its GCHandle exactly once, zeroes the retained
+1 acknowledges receipt only. Phase1 signals safe cookie drain while the process-wide
+busy barrier remains held; managed frees its GCHandle exactly once, zeroes the retained
 nonce, and completes its TaskCompletionSource with asynchronous continuations.
+Only a successful phase1 acknowledgment removes the native busy record. Reentrant
+or concurrent replacement admission during either callback refuses; failed phase1
+delivery keeps the barrier held without a remove-and-reinsert gap.
 Late/duplicate OS replies see native terminal state and cannot access the freed
 cookie. Phase mismatch/identity mismatch/managed callback failure returns 0;
 failed terminal/drain delivery retains native state and the managed GCHandle as
@@ -194,3 +197,21 @@ removing its new files. Parent project/solution registration stays intact. No
 schema, keychain, host, account, settings or durable data migration needs reversal.
 The immutable handoff includes an owned patch and hashes; independent QA, later
 manual opt-in, Contracts integration and public/core authority remain parent work.
+
+## Lead correction: drain acknowledgment ordering
+
+At local completion head `06809a9dd3079c3b64651423e41bbf2c83e9a3f4`, a fresh
+no-prompt callback probe reproduced replacement admission during phase1, before
+drain acknowledgment. The original failure is retained under
+`.artifacts/owner-native-integration/drain-ordering/`. The correction holds the
+native busy record through both acknowledgments. Checked-in regressions attempt
+replacement from inside phase1 on another synthetic window and prove that a
+refused phase1 keeps later replacement blocked. Original phase0 failure, duplicate,
+window-close and cancellation assertions remain. Both harness modes passed ASan:
+93 callback assertions and 21 refused-drain assertions. These simulated callback
+checks never invoke OS evaluation and do not establish native qualification.
+Fresh root verification passed 543 tests (13 bridge), zero failures/skips, with
+Release build, syntax/style and formatting checks. This graph contains the native
+bridge and accepted projects, separately from the unmerged Contracts branch.
+Independent correction review remains pending; these results are separate from
+the implementer's immutable original evidence.

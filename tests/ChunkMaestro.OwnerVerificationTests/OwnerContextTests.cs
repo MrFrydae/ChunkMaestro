@@ -115,7 +115,24 @@ public sealed class OwnerContextTests
         using Process process = Process.Start(info)!;
         Assert.True(process.WaitForExit(30000));
         Assert.Equal(0, process.ExitCode);
-        Assert.Equal("callback simulation assertions: 72\n", process.StandardOutput.ReadToEnd());
+        Assert.Equal("callback simulation assertions: 93\n", process.StandardOutput.ReadToEnd());
+        Assert.Equal("", process.StandardError.ReadToEnd());
+    }
+
+    [MacFact]
+    public void RefusedDrainKeepsReplacementBlockedDuringAndAfterCallback()
+    {
+        ProcessStartInfo info = new(Path.Combine(AppContext.BaseDirectory, "owner-callback-tests"))
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+        info.ArgumentList.Add("--refuse-drain");
+        using Process process = Process.Start(info)!;
+        Assert.True(process.WaitForExit(30000));
+        Assert.Equal(0, process.ExitCode);
+        Assert.Equal("refused drain assertions: 21\n", process.StandardOutput.ReadToEnd());
         Assert.Equal("", process.StandardError.ReadToEnd());
     }
 
