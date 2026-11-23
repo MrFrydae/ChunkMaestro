@@ -215,3 +215,25 @@ Release build, syntax/style and formatting checks. This graph contains the nativ
 bridge and accepted projects, separately from the unmerged Contracts branch.
 Independent correction review remains pending; these results are separate from
 the implementer's immutable original evidence.
+
+## Restacked integration and bounded security preflight
+
+The implementation was restacked with signed commits onto accepted Contracts main
+`23b371fbcc2c5f64f50d276f752af4eb7961147b`. All 13 native module/test/document
+files matched the pre-restack head before this comment-only clarification. Both
+project pairs remain registered. Combined root verification passed 561 tests
+(18 Contracts and 13 bridge included), zero failures/skips, with Release build,
+syntax/style and formatting checks. Raw TRX and source-equivalence proof are under
+`.artifacts/owner-native-integration/restack-main-23b371f/`.
+
+Independent security preflight at `02ffc3d4753bc941684925d523a07f50d8a8d5f3`
+passed 13 bridge tests and 502 ASan assertions, including exception/silent-callback
+ownership controls and a negative control that admitted replacement on old source.
+The original report is preserved at
+`/private/tmp/chunkmaestro-owner-security-preflight-20261123-173249-502d42c6/`,
+with a separate source-binding addendum. Its one low finding, DOC-01, identified
+the stale phase1 ordering comment in the ABI header; that comment now matches
+the retained-busy-barrier runtime order. This is preflight evidence only, not a
+final aggregate or real native authentication qualification. New final exact-head
+functional, security/reliability and UX/performance reviews and hosted checks
+remain required. Public owner authority stays denial-only.

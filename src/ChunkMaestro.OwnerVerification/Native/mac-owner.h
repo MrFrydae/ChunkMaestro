@@ -39,8 +39,9 @@ typedef int32_t (*cm_owner_reply)(uint64_t request, uint64_t generation, uintptr
 // Main-thread no-prompt capture; 8 means retained actual owned window, not permission.
 int32_t cm_owner_bind_window_explicit(uint64_t request, uintptr_t window, uint64_t generation);
 // 7 transfers callback ownership; all other statuses promise no callback.
-// phase 0 delivers terminal; ack 1 permits phase 1 drain after active removal.
-// phase 1 ack 1 releases cookie; failure retains unknown ownership, never retried.
+// phase 0 delivers terminal; ack 1 permits phase 1 drain while active remains held.
+// phase 1 ack 1 releases cookie, then native removes active; failure retains
+// unknown ownership and blocks replacement, never retried.
 int32_t cm_owner_evaluate_explicit(uint64_t request, uintptr_t window, uint64_t generation,
     cm_owner_reply reply, void *cookie);
 #endif
