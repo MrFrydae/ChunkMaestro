@@ -3,7 +3,7 @@ using System.Security.Cryptography;
 
 namespace ChunkMaestro.OwnerVerification;
 
-// Intentionally no NativeVerified status: evaluation is blocked on qualified monitoring.
+// Allocation/preflight statuses do not confer authority.
 internal enum OwnerProbeStatus
 {
     ContextCreated = 0,
@@ -12,22 +12,27 @@ internal enum OwnerProbeStatus
     Unsupported = 3,
     InvalidInput = 4,
     Canceled = 5,
-    Failure = 6
+    Failure = 6,
+    EvaluationQueued = 7,
+    WindowCaptured = 8
 }
 
 // Diagnostic native context only. This is neither a session monitor nor CorePermission.
-internal sealed class OwnerContext : IDisposable
+internal sealed class OwnerContext : IDisposable, IAsyncDisposable
 {
     private readonly object gate = new();
     private readonly ulong generation;
-    private ulong request;
+    private readonly ulong request;
+    private readonly byte[] nonce;
+    private EvaluationCompletion? evaluation;
     private bool canceled;
     private bool disposed;
 
-    private OwnerContext(ulong request, ulong generation)
+    private OwnerContext(ulong request, ulong generation, byte[] nonce)
     {
         this.request = request;
         this.generation = generation;
+        this.nonce = (byte[]) nonce.Clone();
     }
 
     internal static OwnerProbeStatus Create(Guid session, ulong generation, out OwnerContext? context)
@@ -45,11 +50,11 @@ internal sealed class OwnerContext : IDisposable
         byte[] sessionBytes = session.ToByteArray();
         try
         {
-            OwnerProbeStatus result = Native.cm_owner_create(1, nonce, (nuint) nonce.Length,
+            OwnerProbeStatus result = Native.cm_owner_create(2, nonce, (nuint) nonce.Length,
                 sessionBytes, (nuint) sessionBytes.Length, generation, out ulong handle);
             if (result == OwnerProbeStatus.ContextCreated && handle != 0)
             {
-                context = new OwnerContext(handle, generation);
+                context = new OwnerContext(handle, generation, nonce);
                 return result;
             }
             return result == OwnerProbeStatus.ContextCreated ? OwnerProbeStatus.Failure : result;
@@ -68,8 +73,8 @@ internal sealed class OwnerContext : IDisposable
             {
                 return OwnerProbeStatus.Canceled;
             }
-            return Native.cm_owner_probe(request);
         }
+        return Native.cm_owner_probe(request);
     }
 
     internal OwnerProbeStatus Prepare(nint window, ulong currentGeneration)
@@ -80,12 +85,57 @@ internal sealed class OwnerContext : IDisposable
             {
                 return OwnerProbeStatus.Canceled;
             }
-            if (window == 0 || currentGeneration != generation)
-            {
-                return OwnerProbeStatus.InvalidInput;
-            }
-            return Native.cm_owner_prepare(request, (nuint) window, currentGeneration);
         }
+        return window == 0 || currentGeneration != generation ? OwnerProbeStatus.InvalidInput :
+            Native.cm_owner_prepare(request, (nuint) window, currentGeneration);
+    }
+
+    internal OwnerProbeStatus CaptureWindowExplicitly(nint window, ulong currentGeneration)
+    {
+        lock (gate)
+        {
+            if (disposed || canceled)
+            {
+                return OwnerProbeStatus.Canceled;
+            }
+        }
+        return Native.cm_owner_bind_window_explicit(request, (nuint) window, currentGeneration);
+    }
+
+    // No production caller. This explicit internal entry MAY prompt with a valid owned
+    // window; default Create/Probe/Prepare cannot reach it. Never a CorePermission.
+    internal Task<RawPolicyObservation> EvaluateExplicitlyAsync(nint window, ulong currentGeneration)
+    {
+        EvaluationCompletion pending;
+        lock (gate)
+        {
+            if (evaluation is not null)
+            {
+                return evaluation.Task;
+            }
+            if (disposed || canceled || window == 0 || currentGeneration != generation)
+            {
+                return Task.FromResult(RawPolicyObservation.Unknown);
+            }
+            pending = new EvaluationCompletion(request, generation, (nuint) window, nonce);
+            evaluation = pending;
+        }
+        try
+        {
+            OwnerProbeStatus status = Native.cm_owner_evaluate_explicit(request, (nuint) window,
+                generation, EvaluationCompletion.Reply, pending.Cookie);
+            if (status != OwnerProbeStatus.EvaluationQueued)
+            {
+                pending.RefuseBeforeTransfer();
+            }
+        }
+        catch
+        {
+            // P/Invoke entry failure transfers nothing. Native catches ObjC exceptions.
+            pending.RefuseBeforeTransfer();
+            throw;
+        }
+        return pending.Task;
     }
 
     internal OwnerProbeStatus Cancel()
@@ -93,8 +143,13 @@ internal sealed class OwnerContext : IDisposable
         lock (gate)
         {
             canceled = true;
-            return disposed ? OwnerProbeStatus.Canceled : Native.cm_owner_cancel(request);
+            evaluation?.Revoke();
+            if (disposed)
+            {
+                return OwnerProbeStatus.Canceled;
+            }
         }
+        return Native.cm_owner_cancel(request);
     }
 
     public void Dispose()
@@ -107,10 +162,25 @@ internal sealed class OwnerContext : IDisposable
             }
             canceled = true;
             disposed = true;
-            Native.cm_owner_release(request);
-            request = 0;
+            evaluation?.Revoke();
         }
+        Native.cm_owner_release(request);
         GC.SuppressFinalize(this);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Dispose();
+        GC.SuppressFinalize(this);
+        Task? drain;
+        lock (gate)
+        {
+            drain = evaluation?.Task;
+        }
+        if (drain is not null)
+        {
+            await drain.ConfigureAwait(false);
+        }
     }
 
     ~OwnerContext()
@@ -122,6 +192,17 @@ internal sealed class OwnerContext : IDisposable
 internal static class Native
 {
     private const string Library = "chunkmaestro_owner";
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    internal delegate int ReplyCallback(ulong request, ulong generation, nuint window,
+        nint nonce, nuint nonceSize, int result, uint phase, nint cookie);
+
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern OwnerProbeStatus cm_owner_evaluate_explicit(ulong request, nuint window,
+        ulong generation, ReplyCallback reply, nint cookie);
+
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern OwnerProbeStatus cm_owner_bind_window_explicit(ulong request, nuint window, ulong generation);
 
     [DllImport(Library)]
     internal static extern uint cm_owner_abi();

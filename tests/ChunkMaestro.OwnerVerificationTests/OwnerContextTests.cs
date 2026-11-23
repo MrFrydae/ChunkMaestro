@@ -90,7 +90,32 @@ public sealed class OwnerContextTests
         using Process process = Process.Start(info)!;
         Assert.True(process.WaitForExit(30000));
         Assert.Equal(0, process.ExitCode);
-        Assert.Equal("native assertions: 320\n", process.StandardOutput.ReadToEnd());
+        Assert.Equal("native assertions: 325\n", process.StandardOutput.ReadToEnd());
+        Assert.Equal("", process.StandardError.ReadToEnd());
+    }
+
+    [MacFact]
+    public async Task DisposedEvaluationRefusesWithoutQueueAndAsyncDisposalIsIdempotent()
+    {
+        OwnerContext context = Create();
+        await context.DisposeAsync();
+        Assert.Equal(RawPolicyObservation.Unknown, await context.EvaluateExplicitlyAsync(nint.MaxValue, 1));
+        await context.DisposeAsync();
+    }
+
+    [MacFact]
+    public void SyntheticNativeCallbackHarnessCannotInvokeOSPolicy()
+    {
+        ProcessStartInfo info = new(Path.Combine(AppContext.BaseDirectory, "owner-callback-tests"))
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+        using Process process = Process.Start(info)!;
+        Assert.True(process.WaitForExit(30000));
+        Assert.Equal(0, process.ExitCode);
+        Assert.Equal("callback simulation assertions: 72\n", process.StandardOutput.ReadToEnd());
         Assert.Equal("", process.StandardError.ReadToEnd());
     }
 
