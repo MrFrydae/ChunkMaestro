@@ -8,6 +8,8 @@
    <TextBlock Text="ChunkMaestro / Fleet" FontSize="26" FontWeight="SemiBold" Foreground="{DynamicResource ShellAccent}" />
    <TextBlock Text="Local inventory · Development preview" />
    <TextBlock Text="Metadata registration does not enroll an agent, adopt a service, establish ownership or authorize operations." />
+   <TextBlock Name="CloseFailure" IsVisible="False" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.LiveSetting="Assertive"
+    Text="Local session cleanup failed. Preserve the database, sidecars and backups. Close this window again to exit the application; no local action or cleanup will be retried." />
   </StackPanel>
   <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
    <StackPanel Spacing="16">
@@ -38,22 +40,29 @@
      <StackPanel Spacing="10" IsEnabled="{Binding CanRegister}">
       <TextBlock Text="2 · Register local metadata" FontSize="18" FontWeight="SemiBold" />
       <TextBlock Text="Non-secret labels and addresses only. Nothing is sent to these targets. Ports are metadata, not firewall rules or connectivity evidence." />
+      <Label Name="FleetNameLabel" Content="_Fleet name" Target="{Binding #FleetNameInput}" />
       <TextBox Name="FleetNameInput" Text="{Binding FleetName}" PlaceholderText="Fleet name" AutomationProperties.Name="Fleet name" />
       <Button Content="Register _fleet" Click="FleetClick" />
       <TextBlock Text="Parent fleet" />
       <local:MetadataSelector Name="FleetSelector" ItemsSource="{Binding Fleets}" SelectedItem="{Binding SelectedFleet}" AutomationProperties.Name="Parent fleet" HorizontalAlignment="Stretch">
        <ComboBox.ItemTemplate><DataTemplate x:DataType="d:Fleet"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
       </local:MetadataSelector>
+      <Label Name="HostNameLabel" Content="Host _name" Target="{Binding #HostNameInput}" />
       <TextBox Name="HostNameInput" Text="{Binding HostName}" PlaceholderText="Host name" AutomationProperties.Name="Host name" />
+      <Label Name="HostAddressLabel" Content="Host _address" Target="{Binding #HostAddressInput}" />
       <TextBox Name="HostAddressInput" Text="{Binding HostAddress}" PlaceholderText="Host IP address or DNS name" AutomationProperties.Name="Host address" />
       <Button Content="Register _host" Click="HostClick" />
       <TextBlock Text="Parent host" />
       <local:MetadataSelector Name="HostSelector" ItemsSource="{Binding Hosts}" SelectedItem="{Binding SelectedHost}" AutomationProperties.Name="Parent host" HorizontalAlignment="Stretch">
        <ComboBox.ItemTemplate><DataTemplate x:DataType="d:Host"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
       </local:MetadataSelector>
+      <Label Name="InstanceNameLabel" Content="Instance na_me" Target="{Binding #InstanceNameInput}" />
       <TextBox Name="InstanceNameInput" Text="{Binding InstanceName}" PlaceholderText="Instance name" AutomationProperties.Name="Instance name" />
-      <TextBox Text="{Binding ServiceName}" PlaceholderText="systemd service name" AutomationProperties.Name="Service metadata name" />
+      <Label Name="ServiceNameLabel" Content="_Service metadata name" Target="{Binding #ServiceNameInput}" />
+      <TextBox Name="ServiceNameInput" Text="{Binding ServiceName}" PlaceholderText="systemd service name" AutomationProperties.Name="Service metadata name" />
+      <Label Name="JavaPortLabel" Content="_Java TCP port (blank to omit)" Target="{Binding #JavaPortInput}" />
       <TextBox Name="JavaPortInput" Text="{Binding JavaPort}" PlaceholderText="Java TCP port (blank to omit)" AutomationProperties.Name="Java TCP port" />
+      <Label Name="BedrockPortLabel" Content="_Bedrock UDP port (blank to omit)" Target="{Binding #BedrockPortInput}" />
       <TextBox Name="BedrockPortInput" Text="{Binding BedrockPort}" PlaceholderText="Bedrock UDP port (blank to omit)" AutomationProperties.Name="Bedrock UDP port" />
       <Button Content="Register _instance" Click="InstanceClick" />
      </StackPanel>

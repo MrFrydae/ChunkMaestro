@@ -33,19 +33,13 @@ public sealed partial class App : Avalonia.Application
             {
                 DataContext = model
             };
-            bool closing = false;
-            window.Closing += async (_, args) =>
+            WindowCloseController close = new(window, model);
+            desktop.Exit += (_, args) =>
             {
-                if (closing)
+                if (close.CleanupFailed)
                 {
-                    return;
+                    args.ApplicationExitCode = 1;
                 }
-
-                args.Cancel = true;
-                window.IsEnabled = false;
-                await model.DisposeAsync();
-                closing = true;
-                window.Close();
             };
             desktop.MainWindow = window;
         }

@@ -62,14 +62,20 @@ An ambiguous local write failure retains the displayed rows and blocks further
 registration until a manual reload succeeds. Validation errors remain correctable
 without that recovery gate; no write is automatically replayed. Closing waits for
 an in-flight local action and disposes the acquired store once, including
-overlapping close requests, to release controller locks. No tray/background process or automatic live host commands run.
+overlapping close requests, to release controller locks. If cleanup throws, a fixed
+assertive message preserves recovery guidance, storage actions remain blocked,
+and the window stays enabled so a second explicit close can exit without retrying
+cleanup. That exit reports failure (code 1); raw exception details are not shown.
+No tray/background process or automatic live host commands run.
 
 ## Appearance and accessibility subset
 
 Native OS titlebar/window controls, system theme default, off-white #FAFAF9 and
 graphite #242427 surfaces, accent #2563EB light / #60A5FA dark. Status uses text,
 not color alone. Standard focusable native Avalonia controls have automation
-names, access-key labels, default focus indicators and a scrollable form. Inline
+names, persistent visible labels targeting all seven registration inputs,
+access keys, default focus indicators and a scrollable form. Java TCP and
+Bedrock UDP remain identified even when both populated inputs show the same port. Inline
 state/errors request polite/assertive accessibility announcements. These are
 implementation details, not proof of screen-reader interoperability.
 
@@ -88,11 +94,15 @@ macOS and Linux after building it. Tests have live output, raw TRX retention, a
 This is separate from the accepted storage gate; fake-service headless contracts
 do not establish native desktop-to-SQLite or operating-system interactions.
 The restack cold locked restore, normal Release build, syntax and formatting
-passed. Combined verification now executes 24 headless/composition/lifecycle
-cases and 270 macOS storage cases: 294 passed, zero failures/skips. Four
+passed. Combined verification now executes 28 headless/composition/lifecycle
+cases and 270 macOS storage cases: 298 passed, zero failures/skips. Four
 composition cases use real disposable SQLite with public window/viewmodel/store
 operations; twelve lifecycle cases use explicitly injected service faults.
 The original lifecycle implementation failed ten of those twelve cases.
+Four additional contracts cover persistent filled-field labels, cleanup failure,
+deferred normal closing, and repeated close requests during pending disposal.
+A separate actual-App lifetime probe checks exit codes; its inventory is injected,
+so it is narrower than the real-store native proof below.
 
 Native macOS inspection used a development-only launch bundle and the real
 application/window. Consent and keyboard focus gates, scrolling, disabled remote
@@ -114,8 +124,12 @@ record representation, with a focused headless regression. The pinned upstream
 [collapsed selection behavior](https://github.com/AvaloniaUI/Avalonia/blob/12.1.6/src/Avalonia.Controls/Automation/Peers/ComboBoxAutomationPeer.cs)
 explains that boundary. Native proof and harness/source/binary hashes are retained
 under `.artifacts/native-preview/` and `.artifacts/native-composition/`; these are
-development evidence, not installer or release packages. Current-head hosted
-checks and independent desktop acceptance remain pending.
+development evidence, not installer or release packages. The attempted native close-fault harness could not be addressed by automation
+(`cgWindowNotFound`), including a fresh launch of the previously working bundle
+and the Finder control check. These processes were stopped without opening the
+fixture. No native close-fault or corrected-label visual result is claimed from
+that attempt. Current-head hosted checks, corrected native interaction and
+independent desktop acceptance remain pending.
 
 ## Historical validation and integration evidence (2026-11-14)
 

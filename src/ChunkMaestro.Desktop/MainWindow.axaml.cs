@@ -13,4 +13,9 @@ public sealed partial class MainWindow : Window
     private async void FleetClick(object? sender, RoutedEventArgs args) => await Model.RegisterFleetAsync();
     private async void HostClick(object? sender, RoutedEventArgs args) => await Model.RegisterHostAsync();
     private async void InstanceClick(object? sender, RoutedEventArgs args) => await Model.RegisterInstanceAsync();
+
+    internal void ShowCloseFailure()
+    {
+        this.FindControl<TextBlock>("CloseFailure")!.IsVisible = true;
+    }
 }
