@@ -100,20 +100,18 @@ class DirectStorageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary, \
              patch.object(command.sys, 'argv', ['command.py', '--', 'test-command']), \
              patch.object(command.tempfile, 'mkdtemp', return_value=temporary), \
-             patch.object(command.subprocess, 'run') as execute, \
+             patch.object(command, 'execute', return_value=1) as execute, \
              patch.object(command.shutil, 'rmtree') as remove:
-            execute.return_value.returncode = 1
             self.assertEqual(1, command.main())
             remove.assert_not_called()
-            self.assertEqual(temporary, execute.call_args.kwargs['env']['TMPDIR'])
+            self.assertEqual(temporary, execute.call_args.args[1]['TMPDIR'])
 
     def test_successful_command_cleans_only_owned_scratch(self):
         with tempfile.TemporaryDirectory() as temporary, \
              patch.object(command.sys, 'argv', ['command.py', '--', 'test-command']), \
              patch.object(command.tempfile, 'mkdtemp', return_value=temporary), \
-             patch.object(command.subprocess, 'run') as execute, \
+             patch.object(command, 'execute', return_value=0), \
              patch.object(command.shutil, 'rmtree') as remove:
-            execute.return_value.returncode = 0
             self.assertEqual(0, command.main())
             remove.assert_called_once_with(temporary)
 

@@ -128,9 +128,9 @@ jobs:
         run: |
           $filter = python tooling/ci/storage.py filter --group $env:STORAGE_GROUP
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python tooling/ci/command.py -- python tooling/ci/discover.py --group $env:STORAGE_GROUP --output .artifacts/ci/tests
+          python tooling/ci/command.py --timeout-seconds 45 -- python tooling/ci/discover.py --group $env:STORAGE_GROUP --output .artifacts/ci/tests
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python tooling/ci/command.py -- dotnet test tests/ChunkMaestro.PersistenceTests/ChunkMaestro.PersistenceTests.csproj -c Release --no-build --no-restore --filter "$filter" --collect "XPlat Code Coverage" --settings tooling/quality/storage/coverage.runsettings --blame-hang --blame-hang-timeout 60s --logger trx --logger "console;verbosity=normal" --results-directory .artifacts/ci/tests
+          python tooling/ci/command.py --timeout-seconds 150 -- dotnet test tests/ChunkMaestro.PersistenceTests/ChunkMaestro.PersistenceTests.csproj -c Release --no-build --no-restore --filter "$filter" --collect "XPlat Code Coverage" --settings tooling/quality/storage/coverage.runsettings --blame-hang --blame-hang-timeout 60s --logger trx --logger "console;verbosity=normal" --results-directory .artifacts/ci/tests
       - name: Validate actual executed cases and preserve failure result
         if: always()
         timeout-minutes: 1

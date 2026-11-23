@@ -45,6 +45,15 @@ ordinary `dotnet test --no-build --no-restore`, with live test output, Coverlet,
 VSTest blame and a 60-second per-test hang timeout. A four-minute test-step limit
 and twelve-minute job limit bound startup and process failures. The limits are
 upper bounds, not measured completion promises or speed claims.
+The command wrapper also enforces a local process deadline, because a hosted
+macOS recovery step remained running beyond its configured GitHub timeout.
+Discovery gets 45 seconds and test execution 150 seconds, with an elapsed-time
+heartbeat every 15 seconds. Timeout or interruption terminates only the owned
+process tree and retains scratch; it cannot return success. Termination waits
+are bounded too. On POSIX, remaining descendants in the owned process group are
+also stopped after normal command exit, so inherited output cannot keep a
+completed step open. Other wrapper commands default to a 180-second local limit.
+These are direct command limits, with no campaign scheduler or automatic retry.
 
 Disk-full runs as a separate eight-minute job on each OS. It retains the reviewed
 64 MiB disposable-image fixture and its 128 MiB write bound, image/drive identity

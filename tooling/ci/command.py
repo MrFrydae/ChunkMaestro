@@ -1,12 +1,15 @@
 """Run one ordinary CI command with live output and no credential environment."""
 import os
+import argparse
 import csv
 from pathlib import Path
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 
 ALLOWED = {'CI', 'PATH', 'HOME', 'USER', 'USERNAME', 'USERPROFILE', 'SYSTEMROOT', 'WINDIR',
            'SYSTEMDRIVE', 'COMSPEC', 'PATHEXT', 'PROGRAMFILES', 'PROGRAMFILES(X86)',
@@ -55,8 +58,71 @@ def protect_windows_scratch(scratch, env):
     subprocess.run(['icacls', scratch], env=env, check=True, timeout=15)
 
 
+class CommandInterrupted(Exception):
+    def __init__(self, number):
+        self.number = number
+
+
+def execute(args, env, timeout=180, heartbeat=15):
+    """Bound the command locally even if runner cancellation cannot finish it."""
+    if not 0 < timeout <= 180 or not 0 < heartbeat <= 15:
+        raise ValueError('Command deadline must be at most 180s; heartbeat at most 15s')
+    started = time.monotonic()
+    process = subprocess.Popen(args, env=env, start_new_session=os.name != 'nt')
+
+    def interrupted(number, frame):
+        raise CommandInterrupted(number)
+
+    previous = signal.signal(signal.SIGTERM, interrupted)
+    try:
+        while True:
+            remaining = timeout - (time.monotonic() - started)
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(args, timeout)
+            try:
+                result = process.wait(timeout=min(heartbeat, remaining))
+            except subprocess.TimeoutExpired:
+                print(f'[ci-command] running pid={process.pid}; elapsed={time.monotonic() - started:.1f}s; '
+                      f'deadline={timeout}s', flush=True)
+                continue
+            if os.name != 'nt':
+                # A child inheriting runner output can keep a completed step
+                # open after its command exits. This group belongs only to us.
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                except OSError as failure:
+                    print('[ci-command] Remaining process-group cleanup failed: ' + str(failure), flush=True)
+                    return 1
+            return result
+    except (subprocess.TimeoutExpired, KeyboardInterrupt, CommandInterrupted) as error:
+        code = 124 if isinstance(error, subprocess.TimeoutExpired) else (
+            128 + error.number if isinstance(error, CommandInterrupted) else 130)
+        print(f'[ci-command] STOP exit={code}; terminating owned process tree pid={process.pid}', flush=True)
+        try:
+            if os.name == 'nt':
+                subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'],
+                               env=env, timeout=10, check=False)
+            else:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            process.wait(timeout=5)
+        except (OSError, subprocess.SubprocessError) as failure:
+            print('[ci-command] Process termination unconfirmed: ' + str(failure), flush=True)
+        return code
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+
+
 def main():
-    args = sys.argv[1:]
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--timeout-seconds', type=int, default=180, choices=range(1, 181), metavar='1..180')
+    parser.add_argument('command', nargs=argparse.REMAINDER)
+    options = parser.parse_args()
+    args = options.command
     if args[:1] == ['--']:
         args = args[1:]
     if not args:
@@ -77,8 +143,8 @@ def main():
     if os.name == 'nt':
         protect_windows_scratch(scratch, env)
     env.update(TEMP=scratch, TMP=scratch, TMPDIR=scratch)
-    print('+ ' + ' '.join(args), flush=True)
-    result = subprocess.run(args, env=env).returncode
+    print('+ ' + ' '.join(args) + f'; local deadline={options.timeout_seconds}s', flush=True)
+    result = execute(args, env, timeout=options.timeout_seconds)
     # Actual fixture detach failures still return nonzero and retain scratch.
     # Generic cleanup must never replace the real command result.
     return finish(scratch, result, os.name == 'nt')
