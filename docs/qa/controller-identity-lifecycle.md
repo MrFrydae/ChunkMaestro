@@ -194,3 +194,10 @@ All 23 integrated lifecycle cases pass on macOS arm64 after this fixture correct
 Windows cleanup execution and final platform/coverage/independent evidence remain
 pending. The internal lifecycle is not yet reachable through an owner-reauthenticated
 native application flow and does not complete issue #12.
+
+After signed restacking onto the credential boundary contracts, final integrated
+macOS arm64 verification passes **488 tests**: desktop 28, profile/envelope 34,
+credentials 74, persistence 352, zero failures/skips. Locked restore, Release
+build, syntax/style, formatting and all 46 CI tooling tests pass. Inventory totals
+remain Darwin 352 / Windows 361 / combined 713. New Windows lifecycle and fixture
+cleanup execution, current coverage and independent acceptance remain pending.
