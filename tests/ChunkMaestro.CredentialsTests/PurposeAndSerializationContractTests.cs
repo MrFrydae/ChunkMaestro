@@ -5,9 +5,16 @@ using Xunit;
 
 namespace ChunkMaestro.CredentialsTests;
 
+[CollectionDefinition("Credential handoff contracts", DisableParallelization = true)]
+public sealed class CredentialHandoffGroup
+{
+}
+
+[Collection("Credential handoff contracts")]
 public sealed class PurposeAndSerializationContractTests
 {
     private static readonly TimeSpan Bound = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan StartupBound = TimeSpan.FromSeconds(10);
 
     private static CredentialScope Scope(string purpose)
     {
@@ -150,7 +157,7 @@ public sealed class PurposeAndSerializationContractTests
                     throw new InvalidOperationException("consumer failure");
                 }
             });
-            await entered.Task.WaitAsync(Bound);
+            await entered.Task.WaitAsync(StartupBound);
             int before = adapter.Effects.Count;
             Task waiting = store.UseAsync(scope, new CredentialReference(scope, reserved.Id), secret => Assert.True(secret.SequenceEqual(caller)));
             Assert.False(waiting.IsCompleted);
@@ -212,7 +219,7 @@ public sealed class PurposeAndSerializationContractTests
             adapter.Enter = entered;
             adapter.Release = release;
             Task active = store.UseAsync(scope, reserved, secret => Assert.True(secret.SequenceEqual(caller)));
-            await entered.Task.WaitAsync(Bound);
+            await entered.Task.WaitAsync(StartupBound);
             Task canceled = operation switch
             {
                 "create" => store.CreateAsync(scope, canceledReference, caller, cancellation.Token),

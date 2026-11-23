@@ -179,3 +179,25 @@ Integrated macOS arm64 verification passes 372 tests: desktop 28, credentials 74
 persistence 270, zero failures/skips. Locked restore, Release build, style/syntax
 and formatting pass. The implementation bytes remain unchanged. This is test
 evidence, not a mutation score or independent acceptance verdict.
+
+## Hosted startup scheduling correction
+
+At `cca89c3`, hosted Windows and Linux credential suites passed 67 cases each.
+Intel macOS passed 73/74: the canceled-create handoff row timed out at the wait
+for its offloaded adapter to enter, before cancellation assertions. Both native
+purpose cases passed on Windows and macOS. Raw digest-verified TRX is retained in
+`.artifacts/qa/pr16-cca89c3-notification/`; the failed run is not platform acceptance.
+
+Other fixture collections were concurrently executing blocking native/barrier
+tests. This collection now runs separately from them, while each test's explicit
+concurrent operations remain required. Only adapter entry gets a ten-second
+startup wait, matching existing fixture startup waits; handoff, cancellation,
+continuation and disposal assertions keep their two-second bounds. This does not
+assert a product latency guarantee or extend the CI command/job deadlines.
+
+Corrected macOS arm64 root verification passes 372 tests with zero failures/skips,
+including all 74 credential cases. Build/style/format pass. The first local compile
+rejected the collection-definition type's `Collection` suffix (CA1711); it was
+renamed without suppressing the analyzer, and that log is preserved. The earlier
+negative controls remain historical evidence at their recorded source hashes.
+Fresh hosted execution and final independent acceptance remain pending.
