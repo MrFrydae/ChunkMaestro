@@ -34,7 +34,7 @@ public sealed class PopulatedUpgradeTests(ITestOutputHelper output) : IDisposabl
         {
             await using FleetDbContext context = Context(connection);
             versions = context.Database.GetMigrations().ToArray();
-            Assert.Equal(3, versions.Length);
+            Assert.Equal(4, versions.Length);
             Assert.Equal(Initial, versions[0]);
             await SupportedSchema.VerifyAsync(connection, Initial, default);
         }

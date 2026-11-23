@@ -46,6 +46,11 @@ internal static class SupportedSchema
                 throw new FleetStorageException(StorageFailure.CorruptDatabase,
                     "Database contains invalid endpoint ports. Preserve files for reviewed recovery.");
             }
+            command.CommandText = "SELECT 1 FROM sqlite_schema WHERE name='ControllerIdentities' AND type='table'";
+            if (await command.ExecuteScalarAsync(token) is not null)
+            {
+                await LocalFleetStore.VerifyIdentityMetadataAsync(actual, token);
+            }
             await VerifyIdentitiesAsync(actual, token);
             await VerifyAddressesAsync(actual, token);
             command.CommandText = "SELECT 1 FROM Hosts WHERE typeof(RegisteredAt)<>'integer' " +

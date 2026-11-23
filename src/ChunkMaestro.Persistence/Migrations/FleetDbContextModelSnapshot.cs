@@ -17,6 +17,77 @@ partial class FleetDbContextModelSnapshot : ModelSnapshot
 #pragma warning disable 612, 618
         modelBuilder.HasAnnotation("ProductVersion", "10.0.15");
 
+        modelBuilder.Entity("ChunkMaestro.Persistence.ControllerIdentityRow", b =>
+            {
+                b.Property<Guid>("FleetId")
+                    .HasColumnType("TEXT");
+
+                b.Property<Guid>("AttemptId")
+                    .HasColumnType("TEXT");
+
+                b.Property<byte[]>("CertificateDer")
+                    .IsRequired()
+                    .HasColumnType("BLOB");
+
+                b.Property<byte[]>("CertificateHash")
+                    .IsRequired()
+                    .HasColumnType("BLOB");
+
+                b.Property<Guid>("ControllerId")
+                    .HasColumnType("TEXT");
+
+                b.Property<long>("CreatedAt")
+                    .HasColumnType("INTEGER");
+
+                b.Property<Guid>("CredentialId")
+                    .HasColumnType("TEXT");
+
+                b.Property<int>("ProfileVersion")
+                    .HasColumnType("INTEGER");
+
+                b.Property<long?>("PublishedAt")
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("Purpose")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.Property<byte[]>("SpkiHash")
+                    .IsRequired()
+                    .HasColumnType("BLOB");
+
+                b.Property<int>("State")
+                    .HasColumnType("INTEGER");
+
+                b.HasKey("FleetId");
+
+                b.HasIndex("AttemptId")
+                    .IsUnique();
+
+                b.HasIndex("ControllerId")
+                    .IsUnique();
+
+                b.HasIndex("CredentialId")
+                    .IsUnique();
+
+                b.ToTable("ControllerIdentities", null, t =>
+                    {
+                        t.HasCheckConstraint("CK_ControllerIdentity_AttemptId", "typeof(AttemptId) = 'text' AND length(AttemptId) = 36 AND AttemptId <> '00000000-0000-0000-0000-000000000000' AND substr(AttemptId,9,1) = '-' AND substr(AttemptId,14,1) = '-' AND substr(AttemptId,19,1) = '-' AND substr(AttemptId,24,1) = '-' AND length(replace(AttemptId,'-','')) = 32 AND replace(AttemptId,'-','') NOT GLOB '*[^0-9A-F]*'");
+
+                        t.HasCheckConstraint("CK_ControllerIdentity_ControllerId", "typeof(ControllerId) = 'text' AND length(ControllerId) = 36 AND ControllerId <> '00000000-0000-0000-0000-000000000000' AND substr(ControllerId,9,1) = '-' AND substr(ControllerId,14,1) = '-' AND substr(ControllerId,19,1) = '-' AND substr(ControllerId,24,1) = '-' AND length(replace(ControllerId,'-','')) = 32 AND replace(ControllerId,'-','') NOT GLOB '*[^0-9A-F]*'");
+
+                        t.HasCheckConstraint("CK_ControllerIdentity_CredentialId", "typeof(CredentialId) = 'text' AND length(CredentialId) = 36 AND CredentialId <> '00000000-0000-0000-0000-000000000000' AND substr(CredentialId,9,1) = '-' AND substr(CredentialId,14,1) = '-' AND substr(CredentialId,19,1) = '-' AND substr(CredentialId,24,1) = '-' AND length(replace(CredentialId,'-','')) = 32 AND replace(CredentialId,'-','') NOT GLOB '*[^0-9A-F]*'");
+
+                        t.HasCheckConstraint("CK_ControllerIdentity_FleetId", "typeof(FleetId) = 'text' AND length(FleetId) = 36 AND FleetId <> '00000000-0000-0000-0000-000000000000' AND substr(FleetId,9,1) = '-' AND substr(FleetId,14,1) = '-' AND substr(FleetId,19,1) = '-' AND substr(FleetId,24,1) = '-' AND length(replace(FleetId,'-','')) = 32 AND replace(FleetId,'-','') NOT GLOB '*[^0-9A-F]*'");
+
+                        t.HasCheckConstraint("CK_ControllerIdentity_Material", "typeof(CertificateDer) = 'blob' AND length(CertificateDer) BETWEEN 1 AND 4096 AND typeof(CertificateHash) = 'blob' AND length(CertificateHash) = 32 AND typeof(SpkiHash) = 'blob' AND length(SpkiHash) = 32");
+
+                        t.HasCheckConstraint("CK_ControllerIdentity_Profile", "typeof(ProfileVersion) = 'integer' AND ProfileVersion = 1 AND Purpose = 'controller-root-v1'");
+
+                        t.HasCheckConstraint("CK_ControllerIdentity_StateTime", "typeof(State) = 'integer' AND typeof(CreatedAt) = 'integer' AND CreatedAt BETWEEN -62135596800000 AND 253402300799999 AND ((State = 0 AND PublishedAt IS NULL) OR (State = 1 AND typeof(PublishedAt) = 'integer' AND PublishedAt BETWEEN CreatedAt AND 253402300799999))");
+                    });
+            });
+
         modelBuilder.Entity("ChunkMaestro.Persistence.EndpointRow", b =>
             {
                 b.Property<Guid>("InstanceId")
@@ -116,6 +187,15 @@ partial class FleetDbContextModelSnapshot : ModelSnapshot
                     .IsUnique();
 
                 b.ToTable("Instances", (string) null);
+            });
+
+        modelBuilder.Entity("ChunkMaestro.Persistence.ControllerIdentityRow", b =>
+            {
+                b.HasOne("ChunkMaestro.Persistence.FleetRow", null)
+                    .WithMany()
+                    .HasForeignKey("FleetId")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired();
             });
 
         modelBuilder.Entity("ChunkMaestro.Persistence.EndpointRow", b =>

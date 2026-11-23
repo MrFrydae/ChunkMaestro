@@ -33,7 +33,7 @@ def trx(folder, counts, outcome='Passed'):
 class DirectStorageTests(unittest.TestCase):
     def test_partitions_cover_all_supported_classes_once(self):
         expected = json.loads(storage.PLAN.read_text())['expected_cases']
-        for system, count in (('Darwin', 270), ('Windows', 279)):
+        for system, count in (('Darwin', 329), ('Windows', 338)):
             groups = storage.plan(system)
             names = [name for values in groups.values() for name in values]
             self.assertEqual(len(names), len(set(names)))

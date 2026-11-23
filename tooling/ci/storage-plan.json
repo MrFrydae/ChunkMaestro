@@ -13,7 +13,8 @@
       "InitialEndpointConstraintTests",
       "IntegerEndpointPortTests",
       "PersistedIdentityTests",
-      "SchemaReferenceContractTests"
+      "SchemaReferenceContractTests",
+      "ControllerIdentityMetadataTests"
     ],
     "recovery": [
       "BackupFailureQualificationTests",
@@ -63,7 +64,8 @@
       "StorageIdentityLifetimeTests": 4,
       "StorageSafetyAcceptanceTests": 5,
       "StorageTests": 43,
-      "StoreFailureMutationContractTests": 6
+      "StoreFailureMutationContractTests": 6,
+      "ControllerIdentityMetadataTests": 59
     },
     "Windows": {
       "AuthorityMutationContractTests": 32,
@@ -87,7 +89,8 @@
       "StorageSafetyAcceptanceTests": 5,
       "StorageTests": 43,
       "StoreFailureMutationContractTests": 6,
-      "WindowsAuthorityQualificationTests": 9
+      "WindowsAuthorityQualificationTests": 9,
+      "ControllerIdentityMetadataTests": 59
     }
   }
 }
