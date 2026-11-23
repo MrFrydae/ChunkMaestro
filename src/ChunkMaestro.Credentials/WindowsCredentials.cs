@@ -104,9 +104,9 @@ internal sealed class WindowsCredentials : INativeCredentials
         {
             throw new CredentialException(Map(Marshal.GetLastPInvokeError()));
         }
-        Credential credential = Marshal.PtrToStructure<Credential>(pointer);
         try
         {
+            Credential credential = Marshal.PtrToStructure<Credential>(pointer);
             if (credential.BlobSize is < 1 or > 2560)
             {
                 throw new CredentialException(CredentialFailure.Unavailable);

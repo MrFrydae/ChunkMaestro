@@ -10,9 +10,11 @@ internal sealed class MacCredentials : INativeCredentials
     private static readonly Lazy<nint> CoreLibrary = new(() => NativeLibrary.Load(Core));
     private static readonly object InteractionGate = new();
     private readonly nint keychain;
+    private readonly NativeResources resources;
 
-    internal MacCredentials(nint keychain = default)
+    internal MacCredentials(nint keychain = default, NativeResources? resources = null)
     {
+        this.resources = resources ?? new NativeResources();
         this.keychain = keychain;
         if (keychain == 0)
         {
@@ -88,6 +90,56 @@ internal sealed class MacCredentials : INativeCredentials
     [DllImport(Security)]
     private static extern int SecKeychainSetUserInteractionAllowed(byte allowed);
 
+    // Trusted native boundary. Fault tests override allocation/interaction results;
+    // production uses the framework calls below without changing their semantics.
+    internal class NativeResources
+    {
+        internal virtual int GetInteractionAllowed(out byte allowed)
+        {
+            return SecKeychainGetUserInteractionAllowed(out allowed);
+        }
+
+        internal virtual int SetInteractionAllowed(byte allowed)
+        {
+            return SecKeychainSetUserInteractionAllowed(allowed);
+        }
+
+        internal virtual nint CreateDictionary()
+        {
+            return CFDictionaryCreateMutable(0, 0, 0, 0);
+        }
+
+        internal virtual nint CreateString(byte[] utf8)
+        {
+            return CFStringCreateWithCString(0, utf8, 0x08000100);
+        }
+
+        internal virtual nint CreateSearchList(nint handle)
+        {
+            return CFArrayCreate(0, [handle], 1, 0);
+        }
+
+        internal virtual nint CreateData(nint bytes, int length)
+        {
+            return CFDataCreateWithBytesNoCopy(0, bytes, length, Symbol("kCFAllocatorNull", true));
+        }
+
+        internal virtual unsafe byte[] CopySecret(nint data)
+        {
+            nint length = CFDataGetLength(data);
+            if (length is < 1 or > 2560)
+            {
+                throw new CredentialException(CredentialFailure.Unavailable);
+            }
+            return new ReadOnlySpan<byte>((void*) CFDataGetBytePtr(data), (int) length).ToArray();
+        }
+
+        internal virtual void Release(nint handle)
+        {
+            CFRelease(handle);
+        }
+    }
+
     internal static CredentialFailure Map(int status)
     {
         return status switch
@@ -108,18 +160,21 @@ internal sealed class MacCredentials : INativeCredentials
         }
     }
 
-    private static nint Query()
+    private static nint Allocated(nint handle)
     {
-        // NULL callbacks: values are owned explicitly until each native call returns.
-        nint query = CFDictionaryCreateMutable(0, 0, 0, 0);
-        if (query == 0)
+        if (handle == 0)
         {
             throw new CredentialException(CredentialFailure.Unavailable);
         }
-        CFDictionarySetValue(query, Symbol("kSecClass"), Symbol("kSecClassGenericPassword"));
-        CFDictionarySetValue(query, Symbol("kSecUseAuthenticationUI"), Symbol("kSecUseAuthenticationUIFail"));
-        CFDictionarySetValue(query, Symbol("kSecUseNoAuthenticationUI"), Symbol("kCFBooleanTrue", true));
-        return query;
+        return handle;
+    }
+
+    private void ReleaseOwned(nint handle)
+    {
+        if (handle != 0)
+        {
+            resources.Release(handle);
+        }
     }
 
     // File Keychain ignores the modern authentication-UI option on this host.
@@ -128,15 +183,15 @@ internal sealed class MacCredentials : INativeCredentials
     {
         lock (InteractionGate)
         {
-            Check(SecKeychainGetUserInteractionAllowed(out byte allowed));
-            Check(SecKeychainSetUserInteractionAllowed(0));
+            Check(resources.GetInteractionAllowed(out byte allowed));
+            Check(resources.SetInteractionAllowed(0));
             try
             {
                 WithQueryCore(name, add, action);
             }
             finally
             {
-                Check(SecKeychainSetUserInteractionAllowed(allowed));
+                Check(resources.SetInteractionAllowed(allowed));
             }
         }
     }
@@ -148,12 +203,20 @@ internal sealed class MacCredentials : INativeCredentials
         {
             throw new CredentialException(CredentialFailure.Locked);
         }
-        nint query = Query();
-        nint account = CFStringCreateWithCString(0, System.Text.Encoding.UTF8.GetBytes(name + "\0"), 0x08000100);
-        nint service = CFStringCreateWithCString(0, "ChunkMaestro.credentials.v1\0"u8.ToArray(), 0x08000100);
+        nint query = 0;
+        nint account = 0;
+        nint service = 0;
         nint list = 0;
         try
         {
+            // NULL dictionary callbacks: each value stays explicitly owned until
+            // the call returns. Protect every acquisition before starting the next.
+            query = Allocated(resources.CreateDictionary());
+            CFDictionarySetValue(query, Symbol("kSecClass"), Symbol("kSecClassGenericPassword"));
+            CFDictionarySetValue(query, Symbol("kSecUseAuthenticationUI"), Symbol("kSecUseAuthenticationUIFail"));
+            CFDictionarySetValue(query, Symbol("kSecUseNoAuthenticationUI"), Symbol("kCFBooleanTrue", true));
+            account = Allocated(resources.CreateString(System.Text.Encoding.UTF8.GetBytes(name + "\0")));
+            service = Allocated(resources.CreateString("ChunkMaestro.credentials.v1\0"u8.ToArray()));
             CFDictionarySetValue(query, Symbol("kSecAttrService"), service);
             CFDictionarySetValue(query, Symbol("kSecAttrAccount"), account);
             if (keychain != 0)
@@ -164,7 +227,7 @@ internal sealed class MacCredentials : INativeCredentials
                 }
                 else
                 {
-                    list = CFArrayCreate(0, [keychain], 1, 0);
+                    list = Allocated(resources.CreateSearchList(keychain));
                     CFDictionarySetValue(query, Symbol("kSecMatchSearchList"), list);
                 }
             }
@@ -172,13 +235,10 @@ internal sealed class MacCredentials : INativeCredentials
         }
         finally
         {
-            if (list != 0)
-            {
-                CFRelease(list);
-            }
-            CFRelease(service);
-            CFRelease(account);
-            CFRelease(query);
+            ReleaseOwned(list);
+            ReleaseOwned(service);
+            ReleaseOwned(account);
+            ReleaseOwned(query);
         }
     }
 
@@ -186,7 +246,7 @@ internal sealed class MacCredentials : INativeCredentials
     {
         fixed (byte* pointer = secret)
         {
-            nint data = CFDataCreateWithBytesNoCopy(0, (nint) pointer, secret.Length, Symbol("kCFAllocatorNull", true));
+            nint data = Allocated(resources.CreateData((nint) pointer, secret.Length));
             try
             {
                 WithQuery(name, true, query =>
@@ -197,7 +257,7 @@ internal sealed class MacCredentials : INativeCredentials
             }
             finally
             {
-                CFRelease(data);
+                ReleaseOwned(data);
             }
         }
     }
@@ -205,31 +265,51 @@ internal sealed class MacCredentials : INativeCredentials
     public unsafe byte[] Read(string name)
     {
         byte[]? bytes = null;
-        WithQuery(name, false, query =>
+        try
         {
-            CFDictionarySetValue(query, Symbol("kSecReturnData"), Symbol("kCFBooleanTrue", true));
-            CFDictionarySetValue(query, Symbol("kSecMatchLimit"), Symbol("kSecMatchLimitOne"));
-            Check(SecItemCopyMatching(query, out nint data));
-            try
+            WithQuery(name, false, query =>
             {
-                nint length = CFDataGetLength(data);
-                if (length is < 1 or > 2560)
+                CFDictionarySetValue(query, Symbol("kSecReturnData"), Symbol("kCFBooleanTrue", true));
+                CFDictionarySetValue(query, Symbol("kSecMatchLimit"), Symbol("kSecMatchLimitOne"));
+                Check(SecItemCopyMatching(query, out nint data));
+                try
                 {
-                    throw new CredentialException(CredentialFailure.Unavailable);
+                    bytes = resources.CopySecret(Allocated(data));
                 }
-                bytes = new ReadOnlySpan<byte>((void*) CFDataGetBytePtr(data), (int) length).ToArray();
-            }
-            finally
+                finally
+                {
+                    ReleaseOwned(data);
+                }
+            });
+            return bytes!;
+        }
+        catch
+        {
+            // Ownership transfers only on successful return, after interaction
+            // restoration. The store cannot clear a buffer it never receives.
+            if (bytes is not null)
             {
-                CFRelease(data);
+                System.Security.Cryptography.CryptographicOperations.ZeroMemory(bytes);
             }
-        });
-        return bytes!;
+            throw;
+        }
     }
 
     public void Delete(string name)
     {
-        WithQuery(name, false, query => Check(SecItemDelete(query)));
+        bool deleted = false;
+        try
+        {
+            WithQuery(name, false, query =>
+            {
+                Check(SecItemDelete(query));
+                deleted = true;
+            });
+        }
+        catch (CredentialException error) when (deleted)
+        {
+            throw new CredentialException(error.Failure, CredentialCompletion.Unknown);
+        }
     }
 
     public void Dispose()

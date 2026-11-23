@@ -485,7 +485,7 @@ public sealed class CredentialTests
         return System.Diagnostics.Process.Start(start)!;
     }
 
-    private sealed class NativeFixture : IDisposable
+    internal sealed class NativeFixture : IDisposable
     {
         private readonly nint keychain;
         private readonly string? directory;
@@ -525,6 +525,11 @@ public sealed class CredentialTests
         public CredentialStore Open()
         {
             return new CredentialStore(Adapter());
+        }
+
+        internal CredentialStore Open(MacCredentials.NativeResources resources)
+        {
+            return new CredentialStore(new MacCredentials(keychain, resources));
         }
 
         public INativeCredentials Adapter()

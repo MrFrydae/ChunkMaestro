@@ -43,7 +43,10 @@ No presentation project references this assembly in this patch.
 Unsupported, WrongScope and Conflict without native input/status/secret text or inner
 exceptions. `Completion` is NotStarted for validation/preflight failures, NotCreated
 for create Conflict, and conservatively Unknown for a native create error. Native
-success returns normally. Unknown does not mean absent or rolled back. Caller
+success returns normally. If macOS deletion succeeds but interaction-state cleanup
+fails, completion is Unknown, never NotStarted. Reconcile the same exact locator;
+do not automatically repeat a destructive operation. Unknown does not mean absent
+or rolled back. Caller
 callback exceptions propagate, so trusted callbacks must also keep their exception
 messages and logging secret-free. Callback failures do not mutate the store.
 
@@ -216,3 +219,33 @@ macOS-only credential coverage is **74.21% line / 60.37% branch**, including the
 unexecuted Windows adapter. This is a gap measurement, not combined-platform
 qualification. Windows/Intel execution, further failure-path coverage, mutation
 qualification and independent QA remain required before merge.
+
+### Native failure corrections
+
+The independent security preflight at `f1c1b5c` reported SEC-01, REL-02 and REL-03.
+Its original FAIL and all 507 evidence hashes remain preserved. The lead reproduced
+the first two through the actual assembly and an internal native-resource boundary:
+the old read retained both synthetic bytes after restoration failure, and the old
+delete reported NotStarted after real deletion. Both regression failures are kept.
+
+Read now retains responsibility for its allocated managed buffer until interaction
+restoration completes; any exception before return clears it. A post-delete cleanup
+failure reports Unknown. Every dictionary/string/search-list/data-wrapper allocation
+is checked before use, acquisitions enter cleanup protection before the next
+allocation, and only nonzero owned references are released.
+
+Seven macOS-specific cases prove both restoration failures and null dictionary,
+account, service, search-list and data-wrapper refusals. They use fresh owned
+Keychains with injected allocation/interaction results and observe that all tracked
+native handles are released. The fault interaction implementation does not alter
+the actual process flag; these are controlled fault proofs, not natural OS errors
+or actual memory exhaustion. The default resource implementation still calls the
+real framework APIs. No public test hook or new public capability is exposed.
+
+These cases compile only on macOS; Windows/Linux do not report them as successful
+native tests. Local macOS arm64 full verification passes **359 tests**, including
+61 credential cases, zero failures/skips; locked restore, Release build, syntax
+and generated-inclusive formatting pass. Fresh final-head Windows/Intel execution,
+coverage/mutation qualification and independent correction review remain pending.
+The Windows read's initial structure marshaling is now inside the existing
+guaranteed-free region too; native Windows failure injection remains unexecuted.
