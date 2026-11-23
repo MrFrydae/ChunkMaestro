@@ -5,6 +5,11 @@ Source: Q163–175, Q189–191. The measured module is the in-memory
 This report does not qualify native credential storage, owner reauthentication,
 UI initialization or the complete issue #12.
 
+The [2026-11-23 owner testing policy](../product/requirements-source.md#owner-testing-policy--2026-11-23)
+now treats coverage and mutation scores as diagnostics throughout the application.
+The earlier numeric qualification outcomes below remain historical observations;
+meaningful behavioral/security tests and independent QA govern acceptance.
+
 The original frozen `f21d684` measurement retained 34 passing identities before
 and after collection. It measured 205/210 lines (97.619%) and 73/86 branches
 (84.884%). Branch coverage failed the 85% floor; it was not rounded up. Its one
@@ -40,12 +45,15 @@ The four unsupported JSON keys (`log-to-file`, `diag`, `skip-version-check`,
 template. Remaining keys match the allowed-key list reported by pinned Stryker
 5.0.0. No framework, source selection, tests or thresholds were changed to bypass
 the failure. The corrected template has not yet established a mutation score.
-One separately supervised remeasurement may use that concrete correction, retain
+If a diagnostic remeasurement is useful, it may use that concrete correction, retain
 all identities/statuses, credit actual Killed only and stop within its fixed
 180-second whole-command budget. Missing initial identities or terminal report
 remains UNRESOLVED, with no automatic retry or budget enlargement.
 
-Windows/Intel coverage, applicable 80% mutation evidence and final independent QA
-remain open. Historical bounded functional/security preflights remain immutable
+Windows/Intel reporting and final independent QA remain open. Native mutation
+isolation is not established; direct native lifecycle, denial, collision,
+recovery and failure-injection tests provide narrower alternative verification.
+No mutation score or full native mutation proof is claimed or required for a
+numeric gate. Historical bounded functional/security preflights remain immutable
 and ineligible for final aggregation. Rollback removes only these test/collector
 changes; it does not reset native identities, metadata, backups or schema.
