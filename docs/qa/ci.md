@@ -60,6 +60,16 @@ directories beneath `/private/tmp` to respect named-pipe socket path limits.
 Checkout credentials are not persisted. Product tests never receive the QA
 metadata step's GitHub token, SSH agent or artifact-service credentials.
 
+Windows command scratch stays until disposable-runner teardown because Roslyn
+servers may retain open analyzer DLLs after a successful build. Generic scratch
+cleanup cannot change a command's successful exit into failure. Actual fixture
+detach/verification failures still fail the disk-full job and preserve its files.
+Drive enumeration uses the native
+[GetLogicalDrives bitmask](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getlogicaldrives),
+without starting a shell. Image identity and detach queries use the runner's
+PowerShell 7, preserving its nonsecret module path; Microsoft lists Storage as
+[natively compatible](https://learn.microsoft.com/en-us/powershell/windows/module-compatibility?view=windowsserver2025-ps).
+
 ## Automatic gates and failure reports
 
 `storage-safety` downloads only this workflow run's artifacts and independently

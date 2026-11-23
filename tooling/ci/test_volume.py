@@ -101,12 +101,10 @@ class VolumeExecutionEvidenceTests(unittest.TestCase):
                         if args[1] == 'test':
                             self.assertIn('CHUNKMAESTRO_DISPOSABLE_VOLUME', env)
                             if executed: self.trx(output)
-                    if args[0] == 'powershell' and '-Command' in args:
-                        return SimpleNamespace(returncode=0, stdout=json.dumps(['C:\\']), stderr='')
                     if args[0] == 'mountvol':
                         return SimpleNamespace(returncode=0,
                             stdout='\\\\?\\Volume{00000000-0000-0000-0000-000000000000}\\', stderr='')
-                    if args[0] == 'powershell' and '-File' in args:
+                    if args[0] == 'pwsh' and '-File' in args:
                         return SimpleNamespace(returncode=0, stdout=json.dumps({
                             'image_path': str(Path(args[args.index('-ImagePath') + 1]).resolve()), 'disk_number': 7,
                             'drive_root': args[args.index('-DriveLetter') + 1] + ':\\',
@@ -115,6 +113,7 @@ class VolumeExecutionEvidenceTests(unittest.TestCase):
                 with patch.dict(os.environ, {'GH_TOKEN': 'synthetic-only', 'ACTIONS_RUNTIME_TOKEN': 'synthetic-only',
                                              'AZURE_CLIENT_SECRET': 'synthetic-only'}, clear=True), \
                      patch.object(volume.platform, 'system', return_value='Windows'), \
+                     patch.object(volume, 'occupied_drives', return_value=['C:\\']), \
                      patch.object(volume.tempfile, 'mkdtemp', return_value=str(scratch)), \
                      patch.object(volume.subprocess, 'check_output', return_value='a' * 40), \
                      patch.object(volume.subprocess, 'run', side_effect=run):
@@ -139,6 +138,13 @@ class VolumeExecutionEvidenceTests(unittest.TestCase):
 
 
 class DriveSelectionTests(unittest.TestCase):
+    def test_native_drive_mask_includes_every_occupied_letter(self):
+        self.assertEqual(['C:\\', 'Z:\\'], volume.occupied_drives(lambda: (1 << 2) | (1 << 25)))
+        self.assertEqual('Y', free_drive_letter(volume.occupied_drives(lambda: (1 << 2) | (1 << 25))))
+        for mask in (0, -1, 1 << 26, None, True):
+            with self.subTest(mask=mask), self.assertRaises(RuntimeError):
+                volume.occupied_drives(lambda: mask)
+
     def info(self, image='/tmp/owned/fixture.dmg', mount='/tmp/owned/mount', device='/dev/disk42'):
         return {'images': [{'image-path': image, 'system-entities': [
             {'dev-entry': device}, {'dev-entry': device + 's1', 'mount-point': mount}]}]}

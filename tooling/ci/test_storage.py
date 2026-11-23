@@ -116,6 +116,16 @@ class DirectStorageTests(unittest.TestCase):
             self.assertEqual(0, command.main())
             remove.assert_called_once_with(temporary)
 
+    def test_windows_success_preserves_locked_compiler_scratch_and_actual_exit(self):
+        with patch.object(command.shutil, 'rmtree', side_effect=PermissionError('locked analyzer')) as remove:
+            self.assertEqual(0, command.finish('owned-scratch', 0, windows=True))
+            remove.assert_not_called()
+
+    def test_cleanup_lock_cannot_convert_a_success_into_a_failed_build(self):
+        with patch.object(command.shutil, 'rmtree', side_effect=PermissionError('locked analyzer')):
+            self.assertEqual(0, command.finish('owned-scratch', 0, windows=False))
+            self.assertEqual(7, command.finish('owned-scratch', 7, windows=False))
+
     def test_failed_cancelled_skipped_or_missing_jobs_refused(self):
         for jobs in ({}, {'storage': 'failure'}, {'volume': 'cancelled'}, {'native': 'skipped'}):
             with self.assertRaisesRegex(ValueError, 'prerequisite'):

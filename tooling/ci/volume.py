@@ -1,5 +1,7 @@
 """Create ONLY a new bounded disposable image, exercise it, detach ONLY that image."""
 import hashlib
+import ctypes
+from ctypes import wintypes
 import json
 import os
 from pathlib import Path
@@ -83,7 +85,7 @@ def windows_image_binding(image, mount, expected_volume, log, env):
         '@{ image_path=$image.ImagePath; disk_number=$disks[0].Number; '
         'drive_root=([string]$parts[0].DriveLetter + ":\\"); volume_guid=$volumes[0].UniqueId } '
         '| ConvertTo-Json -Compress\n', encoding='utf-8')
-    state = subprocess.run(['powershell', '-NoProfile', '-NonInteractive', '-File', str(script),
+    state = subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-File', str(script),
                             '-ImagePath', str(image), '-DriveLetter', str(mount)[0]],
                            env=env, timeout=30, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     log.write(state.stdout + state.stderr)
@@ -98,6 +100,18 @@ def windows_image_binding(image, mount, expected_volume, log, env):
             type(binding.get('disk_number')) is not int or binding['disk_number'] < 0):
         raise RuntimeError('Disposable image/partition/volume binding differs')
     return binding
+
+
+def occupied_drives(get_mask=None):
+    if get_mask is None:
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        get_mask = kernel.GetLogicalDrives
+        get_mask.argtypes = []
+        get_mask.restype = wintypes.DWORD
+    mask = get_mask()
+    if type(mask) is not int or mask <= 0 or mask >> 26:
+        raise RuntimeError('Could not enumerate occupied drive letters')
+    return [chr(ord('A') + index) + ':\\' for index in range(26) if mask & (1 << index)]
 
 
 def free_drive_letter(occupied):
@@ -200,7 +214,7 @@ def run(output):
                           '$image = Get-DiskImage -ImagePath $ImagePath\n'
                           'if ($Detach -and $image.Attached) { Dismount-DiskImage -ImagePath $ImagePath | Out-Null }\n'
                           '(Get-DiskImage -ImagePath $ImagePath).Attached | ConvertTo-Json -Compress\n', encoding='utf-8')
-        state = subprocess.run(['powershell', '-NoProfile', '-NonInteractive', '-File', str(script),
+        state = subprocess.run(['pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-File', str(script),
                                 '-ImagePath', str(image), *(['-Detach'] if detach else [])], cwd=ROOT,
                                env=tool_env, timeout=30, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         log.write(state.stdout + state.stderr)
@@ -225,12 +239,10 @@ def run(output):
         elif platform.system() == 'Windows':
             if image.exists():
                 raise RuntimeError('Image must not exist')
-            drives = subprocess.run(['powershell', '-NoProfile', '-NonInteractive', '-Command',
-                                     '[Environment]::GetLogicalDrives() | ConvertTo-Json -Compress'],
-                                    env=tool_env, timeout=30, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            if drives.returncode:
-                raise RuntimeError('Could not enumerate occupied drive letters')
-            letter = free_drive_letter(json.loads(drives.stdout))
+            drives = occupied_drives()
+            log.write('Occupied logical drives: ' + json.dumps(drives) + '\n')
+            log.flush()
+            letter = free_drive_letter(drives)
             # Assignment fails if another process claims the letter; never remove an existing mapping.
             mount = Path(letter + ':\\')
             attached = True
