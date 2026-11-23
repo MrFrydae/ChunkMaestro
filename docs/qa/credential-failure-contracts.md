@@ -189,3 +189,17 @@ deadline, for later source-bound platform accounting. Actionlint passes.
 
 This does not establish combined coverage or an 80% module mutation result.
 The draft PR remains blocked on final native measurements and independent QA.
+
+At `f1c1b5c`, the lead audited fresh hosted TRX and artifact digests: all 54 cases
+passed on Windows and macOS Intel, with zero failures/skips. Linux passed the
+same count through core and explicit unsupported contracts, not native adapters.
+The tested PR merge tree exactly matched that head's tree. Direct storage safety
+passed; `qa-evidence` correctly refused the absent independent attestation.
+
+The initial Cobertura reports combine branch outcomes per line, so their platform
+percentages cannot be added to establish combined coverage. The credential-specific
+runsettings now collect OpenCover with distinct branch offset/path identities,
+including both native adapters and every credential type, without exclusions.
+Local validation executed all 54 cases within the same 150-second deadline and
+produced 106 distinct branch points. That verifies report granularity, not the
+combined threshold. Production code and test identities are unchanged.
