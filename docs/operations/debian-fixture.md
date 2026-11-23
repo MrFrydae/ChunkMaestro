@@ -4,7 +4,7 @@ This is bounded test infrastructure for Q145, Q151, Q158, Q186, Q189,
 Q191–195 and later #13/#14 work. The owner has no disposable Debian VM.
 The patch prepares an explicitly activated workflow; it has **not executed a VM**, enrollment,
 the product helper, schedules, permissions or recovery acceptance. No production
-host, retired storage workflow, product code, package graph or existing CI changes.
+host, retired storage workflow, product code, product package graph or unrelated CI changes.
 
 ## Reviewed upstream provenance (2026-11-23)
 
@@ -36,10 +36,11 @@ This supports choosing the standard ephemeral runner; it does not prove usable
 nested KVM/QEMU on a particular allocation. The harness requires Linux x86_64,
 non-root execution, an openable character `/dev/kvm` and all of `curl`,
 `qemu-system-x86_64`, `qemu-img`, `cloud-localds`, `ssh-keygen`, `ssh` in
-`/usr/bin:/bin`, plus Python 3.11+. It never installs tools or grants KVM access.
-A missing tool or KVM permission is a hard failure for the owner/lead to assess.
-No udev rules, chmod, group edits, sudo, persistent settings, TCG, container
-substitution, self-hosted runner or paid larger pool is configured. A future
+`/usr/bin:/bin`, plus Python 3.11+. The original delivery never installed tools or granted KVM access. The corrected
+runner-only APT setup is documented below; it still grants no KVM access.
+A missing tool after setup or KVM permission remains a hard failure.
+No udev rules, chmod, group edits, TCG, container substitution, self-hosted runner
+or paid larger pool is configured. A future
 runner-only ACL exception would require a separately reviewed bounded change.
 
 The new workflow reuses the checkout v5 and upload-artifact v4 commit pins already
@@ -68,7 +69,8 @@ acknowledgement `RUN-SYNTHETIC-DEBIAN-13` for a reviewed ref. No push, schedule,
 workflow-run or privileged PR trigger exists. VM runs serialize without cancelling
 one another; offline checks have their own three-minute job bound and do not wait
 for that VM concurrency group. Repository administrators remain a trust boundary:
-they can edit workflows. Preparation has not activated either route or executed a VM.
+they can edit workflows. Preparation alone does not activate either route; the first reviewed attempt is
+recorded below and did not reach VM creation.
 
 The separate opt-in CLI is for an explicitly approved ephemeral Linux runner:
 
@@ -159,8 +161,9 @@ authorized owner execution of the reviewed ref. Never switch to `latest` or
 silently repin a failed download.
 
 Rollback: while uncommitted, remove only the three new owned paths after saving
-review evidence; after integration, use a reviewed revert. No installed software,
-production data, host settings or existing workflow needs rollback. Keep initial
+review evidence; after integration, use a reviewed revert. The original delivery installed no software. Corrected setup installs packages
+only on an ephemeral runner; runner destruction is its rollback boundary.
+No production data is involved. Keep initial
 failure logs outside tracked source. Independent QA and hosted proof remain lead
 integration gates.
 
@@ -171,7 +174,7 @@ and evaluated the actual workflow condition across 384 event/actor/repository/
 label combinations with zero authorization mismatches. Local offline validation
 still reports 15 passing tests and one Linux-only skip; actionlint and specification
 checks pass. This policy check is not GitHub execution, a VM boot or host-key
-integration proof. No activation label or dispatch has been issued.
+integration proof. At that historical checkpoint no activation label or dispatch had been issued.
 
 The bounded independent integrity preflight at `9f615fa` passed with one low
 finding, SR-01: background QEMU output was not included in the 1 MiB polling check.
@@ -181,4 +184,98 @@ The corrected local suite passes 16 cases with one Linux-only skip. The prior
 exact-head hosted Linux suite passed all 16 original cases; it is not execution
 proof for the new regression. Original review and failure logs remain retained.
 Runner tool/KVM availability, real boot/host-key behavior, QEMU teardown and final
-independent acceptance are still pending; no VM has been activated.
+independent acceptance are still pending; no VM had been activated at that checkpoint.
+
+## Corrected runner prerequisites (issue #15, frozen source d9082b9)
+
+The first owner-reviewed activation, [run 45236698337 job 137910330399](https://github.com/MrFrydae/ChunkMaestro/actions/runs/45236698337/job/137910330399),
+failed with `preflight-tools` before image download or VM creation. The old aggregate
+failure does not establish which commands were absent. It provides no evidence of
+KVM access or guest boot. The lead retains the original ZIP/log/assessment under
+`.artifacts/debian-15-integration/activation-45236698337` in its checkout.
+Earlier no-activation/no-install statements describe the historical delivery.
+
+The corrected workflow separates read-only inventory, fixed runner setup, and a
+nonroot post-check. Setup also refuses before APT unless KVM is already openable
+by the runner user; package installation cannot be used to acquire missing access.
+Every inventory emits all six fixed command names, platform,
+Python version compatibility, nonroot status and KVM status, without resolved
+paths, exception strings, keys or environment values. KVM distinguishes missing,
+non-character-device, not-openable and ready. Setup failure still emits inventory;
+the post-check also runs after failure unless cancelled. A failed setup blocks the
+VM even if a later inventory finds the tools present. No automatic retry exists.
+
+Only an ephemeral GitHub standard `ubuntu-24.04` x64 runner may run setup. The
+workflow owner/event condition remains the execution authority; environment/OS
+checks are an additional accident guard, not attestation of a physical runner.
+The fixed APT direct-package allowlist and actual harness usage are:
+
+| Package | Used commands | Primary Ubuntu metadata |
+| --- | --- | --- |
+| curl | HTTPS provenance/image retrieval | [files](https://packages.ubuntu.com/noble/amd64/curl/filelist) |
+| qemu-system-x86 | KVM VM, restricted user networking | [metadata](https://packages.ubuntu.com/fr/noble/qemu-system-x86), [files](https://packages.ubuntu.com/noble/all/qemu-system-x86/filelist) |
+| qemu-utils | qcow2 inspection/overlay | [metadata](https://packages.ubuntu.com/noble/qemu-utils), [files](https://packages.ubuntu.com/da/noble-updates/amd64/qemu-utils/filelist) |
+| cloud-image-utils | cloud-localds seed creation | [metadata](https://packages.ubuntu.com/ca/noble/amd64/admin/cloud-image-utils), [files](https://packages.ubuntu.com/noble/all/cloud-image-utils/filelist) |
+| openssh-client | synthetic Ed25519 generation/strict SSH probe | [files](https://packages.ubuntu.com/noble/amd64/openssh-client/filelist) |
+
+Ubuntu's cloud-image-utils (source cloud-utils, 0.33-1 at review) depends on
+qemu-utils, genisoimage, ca-certificates, e2fsprogs, file, python3 and wget. Its ISO
+seed path needs genisoimage; these are package dependencies, not extra user inputs.
+QEMU's package dependencies include libslirp0 (restricted user networking), seabios,
+qemu-system-common/data and its runtime libraries. Optional GUI/OpenGL, OVMF,
+Samba, extra block backends and recommended tools are not requested. Existing
+Python 3.11+, sudo, GNU timeout, dpkg and official Ubuntu archive keyring are runner
+prerequisites, not installed by bootstrap. No .NET/NuGet/Java/product dependency
+changes occur. Versions are resolved from signed configured noble indexes, rather
+than freezing a security-update version that may disappear; execution evidence
+records actual direct package versions and the SHA-256 of all installed package
+versions, configured source bytes and Ubuntu keyring bytes. This does not claim
+bit-for-bit host reproducibility or that preinstalled runner packages came from
+Ubuntu; existing runner image/package provenance remains a trust boundary.
+
+The setup accepts only `/etc/apt/sources.list.d/ubuntu.sources` with fixed noble
+suites, official archive/security/azure.archive.ubuntu.com URLs and explicit
+Ubuntu archive keyring Signed-By. Unknown fields, insecure overrides, alternate
+keys/repositories and unexpected formats fail closed. It copies those configured
+bytes into a private setup directory and uses private APT lists and no sourceparts,
+so cached third-party indexes cannot supply missing packages. No source, key or
+host trust file is added or modified. See Ubuntu's [source policy](https://manpages.ubuntu.com/manpages/noble/fr/man5/sources.list.5.html)
+and [archive authentication](https://manpages.ubuntu.com/manpages/resolute/man8/apt-secure.8.html).
+
+This explicitly changes the old no-install boundary: two fixed noninteractive
+sudo invocations run official Ubuntu APT update/install through GNU timeout.
+There is no user package/command/source input, shell execution or curl-to-shell.
+APT signature authentication is required, insecure/downgrade/unauthenticated
+options are false, update partial errors fail, retries are zero, HTTP(S) timeouts
+15 seconds, lock timeout 30 seconds. Root timeout terminates each privileged APT
+process group (TERM at 230/290 seconds, KILL after 5); outer supervision bounds
+are 240/300 seconds. Only DEBIAN_FRONTEND=noninteractive and NEEDRESTART_MODE=l
+are added to the credential-stripped child environment; sudo preserves those fixed
+values. Install disables recommends, removals and upgrades of already-installed
+direct packages. Required transitive dependencies and their package maintainer
+scripts execute as root on this disposable runner. This is real privileged package
+installation, not a guarantee of zero system side effects. No KVM chmod/udev/group/
+ACL, firewall, account or host-trust changes are scripted. Private APT indexes and
+root-owned setup files remain for ephemeral runner destruction; no privileged
+cleanup command is introduced. Abrupt cancellation may leave the bounded root
+APT process until its timeout or runner destruction. No persistent-host promise.
+
+APT stdout/stderr stays private with the existing supervised output/file caps;
+only fixed phase/status events, validated direct version strings and hashes are
+uploaded. Evidence uses explicit filenames, never directory globs. Setup has a
+10-minute step ceiling within the unchanged 25-minute job; harness work remains
+1200 seconds, 2 vCPU/2 GiB/KVM only, with existing download/disk/network/SSH/cleanup
+limits. These nested bounds can cause the outer job to cancel before every phase
+finishes; they are ceilings, not reserved extra time. Nonroot openable `/dev/kvm`
+remains mandatory. Failure requires a lead decision; no software emulation,
+expanded access, paid/self-hosted pool or repeated activation is authorized here.
+
+Proposed next execution, after independent review of the corrected exact source:
+one owner-issued labeled event, no retries. First require passing offline Linux
+contracts, source-format/keyring guard and all tools; require the nonroot KVM check
+before any image download/VM. Retain inventory/setup/post-check evidence even on
+failure. Stop on tool, APT, provenance, KVM, resource, boot or SSH failure. This
+patch itself grants no new activation authority. Actual APT resolution, KVM access,
+guest boot, real SSH trust behavior and teardown remain unexecuted for this patch.
+Prior security and functional reports remain immutable historical evidence, not
+independent review of this change or product acceptance.

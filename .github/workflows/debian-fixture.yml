@@ -46,16 +46,31 @@ jobs:
           persist-credentials: false
       - name: Offline contracts
         run: python3 -B -m unittest discover -s tooling/debian-fixture -p 'test_*.py' -v
-      - name: Read-only prerequisite check (no installs or access grants)
+      - name: Bind reviewed setup inputs
         run: |
-          python3 -B -c 'import sys; assert sys.version_info >= (3, 11)'
-          python3 -B -c 'import sys; sys.path.insert(0,"tooling/debian-fixture"); import fixture; fixture.prerequisites()'
+          mkdir -m 700 "$RUNNER_TEMP/debian-fixture-evidence"
+          sha256sum tooling/debian-fixture/*.py tooling/debian-fixture/image.json tooling/debian-fixture/SHA512SUMS .github/workflows/debian-fixture.yml > "$RUNNER_TEMP/debian-fixture-evidence/inputs.sha256"
+      - name: Read-only prerequisite inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tooling/debian-fixture/runner_setup.py inventory | tee "$RUNNER_TEMP/debian-fixture-evidence/inventory.jsonl"
+      - name: Fixed official Ubuntu runner dependencies
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tooling/debian-fixture/runner_setup.py setup | tee "$RUNNER_TEMP/debian-fixture-evidence/setup.jsonl"
+      - name: Nonroot post-setup prerequisites
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tooling/debian-fixture/runner_setup.py check | tee "$RUNNER_TEMP/debian-fixture-evidence/post-setup.jsonl"
       - name: Synthetic VM smoke
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -m 700 "$RUNNER_TEMP/debian-fixture-evidence"
-          sha256sum tooling/debian-fixture/fixture.py tooling/debian-fixture/image.json tooling/debian-fixture/SHA512SUMS .github/workflows/debian-fixture.yml > "$RUNNER_TEMP/debian-fixture-evidence/inputs.sha256"
           env -i PATH=/usr/bin:/bin LANG=C LC_ALL=C /usr/bin/python3 -B tooling/debian-fixture/fixture.py --execute-owner-reviewed-fixture 2>&1 | tee "$RUNNER_TEMP/debian-fixture-evidence/status.jsonl"
       - name: Upload fixed sanitized evidence only
         if: always()
@@ -64,6 +79,9 @@ jobs:
           name: debian-fixture-sanitized
           path: |
             ${{ runner.temp }}/debian-fixture-evidence/inputs.sha256
+            ${{ runner.temp }}/debian-fixture-evidence/inventory.jsonl
+            ${{ runner.temp }}/debian-fixture-evidence/setup.jsonl
+            ${{ runner.temp }}/debian-fixture-evidence/post-setup.jsonl
             ${{ runner.temp }}/debian-fixture-evidence/status.jsonl
           if-no-files-found: warn
           retention-days: 7

@@ -12,6 +12,7 @@ import shutil
 import signal
 import socket
 import stat
+import sys
 import subprocess
 import tempfile
 import time
@@ -51,20 +52,40 @@ def limits():
     resource.setrlimit(resource.RLIMIT_CPU, (900, 900))
 
 
-def prerequisites():
-    if platform.system() != 'Linux' or platform.machine() != 'x86_64':
-        raise Failure('preflight-platform')
-    if os.geteuid() == 0:
-        raise Failure('preflight-root')
-    if any(shutil.which(t, path='/usr/bin:/bin') is None for t in TOOLS):
-        raise Failure('preflight-tools')
+def inventory():
+    statuses = {
+        'platform': 'ready' if platform.system() == 'Linux' and platform.machine() == 'x86_64' else 'unsupported',
+        'nonroot': 'ready' if os.geteuid() != 0 else 'root-refused',
+        'python': 'ready' if sys.version_info >= (3, 11) else 'unsupported',
+    }
+    for tool in TOOLS:
+        statuses[tool] = 'ready' if shutil.which(tool, path='/usr/bin:/bin') else 'missing'
     try:
-        if not stat.S_ISCHR(os.stat('/dev/kvm').st_mode):
-            raise OSError()
-        fd = os.open('/dev/kvm', os.O_RDWR | os.O_CLOEXEC)
-        os.close(fd)
+        mode = os.stat('/dev/kvm').st_mode
+        if not stat.S_ISCHR(mode):
+            statuses['kvm'] = 'not-character-device'
+        else:
+            fd = os.open('/dev/kvm', os.O_RDWR | os.O_CLOEXEC)
+            os.close(fd)
+            statuses['kvm'] = 'ready'
+    except FileNotFoundError:
+        statuses['kvm'] = 'missing'
     except OSError:
-        raise Failure('preflight-kvm') from None
+        statuses['kvm'] = 'not-openable'
+    for name, status in statuses.items():
+        event('prerequisite-' + name, status)
+    return statuses
+
+
+def prerequisites():
+    statuses = inventory()
+    for name in ('platform', 'nonroot', 'python'):
+        if statuses[name] != 'ready':
+            raise Failure('preflight-' + ('root' if name == 'nonroot' else name))
+    if any(statuses[t] != 'ready' for t in TOOLS):
+        raise Failure('preflight-tools')
+    if statuses['kvm'] != 'ready':
+        raise Failure('preflight-kvm')
 
 
 def validate_provenance(sums, metadata):
@@ -88,9 +109,12 @@ class Harness:
         self.children = []
         self.deadline = time.monotonic() + 1200
 
+    def environment(self):
+        return child_env(self.root)
+
     def start(self, args):
         out = tempfile.TemporaryFile(dir=self.root)
-        p = subprocess.Popen(args, cwd=self.root, env=child_env(self.root),
+        p = subprocess.Popen(args, cwd=self.root, env=self.environment(),
                              stdin=subprocess.DEVNULL, stdout=out, stderr=out,
                              start_new_session=True, preexec_fn=limits)
         self.children.append((p, out))
