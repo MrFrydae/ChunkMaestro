@@ -1,0 +1,9 @@
+{
+  "base_url": "https://cloud.debian.org/images/cloud/trixie/20261103-2651/",
+  "filename": "debian-13-genericcloud-amd64-20261103-2651.qcow2",
+  "sha512": "d25999de0770d4cde1be72c299ba3ad94eac7ea8fd4d18f8cc86c69df69337e2e8a91d64465a9bfd8f2a78c566fcbcb0842eacc91c09efdef72d719d9f13b535",
+  "checksums_sha256": "b09e7d86ec8a7d7724ed5c774616fbf68a397d343365a952386020a9a67467f6",
+  "metadata_sha512": "583cc55be3f4e6d4badd96a309f94aabea16c279aaa688482bf8e310449a12e1d829e4297600da466e832fa77bddaf3e868b7e86ee138cdbff6514a795c1eb47",
+  "signature": "not-published; official TLS + reviewed SHA512 pin",
+  "reviewed": "2026-11-23"
+}
