@@ -50,6 +50,41 @@ Q174 requires revocation; Q181/189–195 and the 2026-11-23 testing decision req
 independent QA and truthful evidence. Coverage is diagnostic, with no score gate.
 See [the production ABI and bridge limits](macos-owner-verification-bridge.md).
 
+## Failure-only presentation diagnostics
+
+The single owner-authorized no-prompt run at reviewed main
+`ea9c35151682c9d05a2c8d7777e364b3558c4fa4` returned
+`UNAVAILABLE-presentation` after 1.297 seconds. The owner reported “No window
+appeared.” Raw evidence is preserved at
+`/private/tmp/chunkmaestro-owner-qualification-l8id9yp4/`; no authentication or
+native assertion sequence ran. That one-run permission is consumed.
+
+The fixture now emits `presentation-prerequisite` events with fixed reason labels
+before the existing unavailable result. It reports every failed presentation
+predicate from the same sampled decision, with context refusal preceding any
+window-metadata query. Labels are: `application-inactive`, `window-not-key`,
+`window-off-active-space`, `window-not-visible`, `window-miniaturized`,
+`window-number-unavailable`, `window-occluded`, `window-not-owned`,
+`window-outside-visible-screen`, `presentation-object-unavailable`,
+`not-main-thread`, and `local-session-unavailable`. Main-thread and session
+refusals stop before window sampling. Missing object refusal also stops sampling.
+
+No title, app identity, screen coordinates, window pointer, session bytes or OS
+error description is logged. Labels describe sampled metadata, not independent
+physical visibility or authentication. Multiple labels can describe one refusal;
+none is a success/qualification claim. Existing capture/evaluation prerequisites,
+unavailable exit, one-attempt policy, activation and deadlines remain unchanged.
+No extra activation, retry, focus forcing, screenshot request or automatic Verify
+is introduced.
+
+Offline NSObject-only probes cover exact reasons, combined failures, missing
+objects, all fixed labels, and existing geometry/focus denials without creating
+an NSApplication or NSWindow. This change has NOT been physically verified and
+does not establish the cause or resolution of either prior missing-window attempt.
+Fresh all-role review and explicit unlocked-desktop permission are required before
+any new native presentation or authentication launch. No such launch is authorized
+by this diagnostic change. Issue12 remains open.
+
 ## Safe local execution
 
 From the repository root, using existing Python and Apple compiler only:
