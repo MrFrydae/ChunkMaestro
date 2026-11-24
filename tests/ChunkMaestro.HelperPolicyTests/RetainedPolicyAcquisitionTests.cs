@@ -7,6 +7,7 @@ using Lease = ChunkMaestro.PrivilegedHelper.RetainedPolicyAcquisition.RetainedPo
 
 namespace ChunkMaestro.HelperPolicyTests;
 
+[Collection(ProcessDescriptorTestGroup.Name)]
 public sealed class RetainedPolicyAcquisitionTests
 {
     [Fact]
@@ -242,6 +243,9 @@ public sealed class RetainedPolicyAcquisitionTests
         {
             // Warm managed worker infrastructure before taking the complete descriptor set.
             Parallel.For(0, 16, _ => Thread.Yield());
+            // Drain unrelated finalizers before the baseline as well as after the owned work.
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
             Assert.Equal(0, Bridge.FdSet(before, 65536));
             Parallel.For(0, 16, _ =>
             {
