@@ -64,3 +64,78 @@ if grep -E '[[:space:]](read|pread|pread64|readv|getdents|getdents64|opendir|fdo
 fi
 cat "$build/imports"
 echo 'PASS: production object excludes injected controls'
+
+# Peer facts use a separate production object; injection is compiler-only and
+# confined to a second test object, never an API or conditional in peer.c.
+for instrumentation in plain sanitized; do
+    set --
+    if [ "$instrumentation" = sanitized ]; then
+        set -- -fsanitize=address,undefined -fno-omit-frame-pointer
+    fi
+    for mode in kernel controls; do
+        if [ "$mode" = controls ]; then
+            "$compiler" -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic "$@" \
+                -I"$root/src/ChunkMaestro.Inspector.Native" \
+                -include "$root/tests/ChunkMaestro.InspectorNativeTests/peer_syscall_controls.h" \
+                -DCM_PEER_INTERPOSE \
+                -c "$root/src/ChunkMaestro.Inspector.Native/peer.c" -o "$build/peer.o"
+            set -- "$@" -DCM_PEER_CONTROLS
+        else
+            "$compiler" -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic "$@" \
+                -I"$root/src/ChunkMaestro.Inspector.Native" \
+                -c "$root/src/ChunkMaestro.Inspector.Native/peer.c" -o "$build/peer.o"
+        fi
+        "$compiler" -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic "$@" \
+            -I"$root/src/ChunkMaestro.Inspector.Native" \
+            "$root/tests/ChunkMaestro.InspectorNativeTests/peer_tests.c" "$build/peer.o" \
+            -o "$build/peer-$instrumentation-$mode"
+        ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 \
+            "$build/peer-$instrumentation-$mode"
+    done
+done
+# Small controlled negative: accepting a non-stream socket must be detected.
+test "$(grep -cF 'type != SOCK_STREAM' "$root/src/ChunkMaestro.Inspector.Native/peer.c")" = 1
+sed 's/type != SOCK_STREAM/0/' "$root/src/ChunkMaestro.Inspector.Native/peer.c" > "$build/peer-nonstream.c"
+"$compiler" -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic \
+    -I"$root/src/ChunkMaestro.Inspector.Native" \
+    "$build/peer-nonstream.c" "$root/tests/ChunkMaestro.InspectorNativeTests/peer_tests.c" \
+    -o "$build/peer-nonstream"
+if "$build/peer-nonstream" > "$build/peer-nonstream.log" 2>&1; then
+    echo 'FAIL: controlled non-stream acceptance escaped the peer tests' >&2
+    exit 1
+fi
+grep -F 'status.state == expected && status.error == error' "$build/peer-nonstream.log"
+echo 'PASS: expected non-stream guard failure detected; production source unchanged'
+"$compiler" -std=c11 -Wall -Wextra -Werror -Wpedantic -fstack-protector-strong -c \
+    "$root/src/ChunkMaestro.Inspector.Native/peer.c" -o "$build/peer-production.o"
+nm -u "$build/peer-production.o" > "$build/peer-imports"
+# An allowlist also rejects future payload, socket creation, exec, ioctl, test
+# controls and permission mutation imports, including unanticipated spellings.
+# Keep compiler stack protection enabled; its failure helper is not payload I/O.
+peer_allowed_imports='^(__errno_location|__stack_chk_fail|memset|getsockopt|getsockname|getpeername)$'
+if sed -E 's/^.*[[:space:]]U[[:space:]]+//' "$build/peer-imports" | \
+    grep -Ev "$peer_allowed_imports"; then
+    echo 'FAIL: unexpected peer production import' >&2
+    exit 1
+fi
+cat "$build/peer-imports"
+echo 'PASS: peer production imports contain queries and compiler safety helpers only'
+# A real compiled payload import must still fail the same production allowlist.
+# This object is inspected only, never linked into production or executed.
+cat > "$build/peer-payload.c" <<'EOF'
+#include <sys/socket.h>
+ssize_t cm_peer_payload_probe(int fd, void *buffer, size_t length)
+{
+    return recv(fd, buffer, length, 0);
+}
+EOF
+"$compiler" -std=c11 -Wall -Wextra -Werror -Wpedantic -fstack-protector-strong -c \
+    "$build/peer-payload.c" -o "$build/peer-payload.o"
+nm -u "$build/peer-payload.o" > "$build/peer-payload-imports"
+if ! sed -E 's/^.*[[:space:]]U[[:space:]]+//' "$build/peer-payload-imports" | \
+    grep -Ev "$peer_allowed_imports" > "$build/peer-payload-rejected"; then
+    echo 'FAIL: compiled payload import escaped the peer production allowlist' >&2
+    exit 1
+fi
+grep -Fx 'recv' "$build/peer-payload-rejected"
+echo 'PASS: compiled payload import rejected by peer production allowlist'
