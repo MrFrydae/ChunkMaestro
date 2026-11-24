@@ -71,6 +71,160 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual("first failure\n", (Path(self.scratch.name) / "case0.stdout").read_text())
         self.assertTrue((Path(self.scratch.name) / "case0.command.json").exists())
 
+    def test_child_event_is_readable_before_eof_and_record_publication(self):
+        read = runner.os.read
+        received = False
+        observed = False
+
+        def check_live_file(descriptor, size):
+            nonlocal received, observed
+            if received:
+                self.assertEqual("live-event\n", (Path(self.scratch.name) / "case0.stdout").read_text())
+                self.assertFalse((Path(self.scratch.name) / "case0.command.json").exists())
+                observed = True
+            chunk = read(descriptor, size)
+            if chunk == b"live-event\n":
+                received = True
+            return chunk
+
+        with patch.object(runner.os, "read", side_effect=check_live_file):
+            record = self.run_child("print('live-event', flush=True)")
+        self.assertTrue(observed)
+        self.assertTrue(runner.successful(record))
+
+    @unittest.skipUnless(platform.system() == "Darwin", "No-window presentation probe requires macOS frameworks")
+    def test_presentation_rejects_inactive_offspace_occluded_and_offscreen_windows(self):
+        directory = Path(self.scratch.name)
+        source = directory / "presentation.m"
+        source.write_text('#define main qualification_host_main\n#import ' +
+                          json.dumps(str(runner.ROOT / "tooling/owner-qualification/host.m")) +
+                          '\n#undef main\n' + '''
+@interface ProbeWindow : NSObject
+@property BOOL activeSpace;
+@property BOOL key;
+@property BOOL shown;
+@property BOOL mini;
+@property NSInteger number;
+@property NSWindowOcclusionState occlusionState;
+@property NSRect frame;
+@end
+@implementation ProbeWindow
+- (BOOL)isOnActiveSpace
+{
+    return self.activeSpace;
+}
+- (BOOL)isKeyWindow
+{
+    return self.key;
+}
+- (BOOL)isVisible
+{
+    return self.shown;
+}
+- (BOOL)isMiniaturized
+{
+    return self.mini;
+}
+- (NSInteger)windowNumber
+{
+    return self.number;
+}
+@end
+@interface ProbeApplication : NSObject
+@property BOOL focused;
+@property(strong) NSArray<NSWindow *> *windows;
+@end
+@implementation ProbeApplication
+- (BOOL)isActive
+{
+    return self.focused;
+}
+@end
+@interface ProbeScreen : NSObject
+@property NSRect visibleFrame;
+@end
+@implementation ProbeScreen
+@end
+int main(void)
+{
+    @autoreleasepool
+    {
+        // NSObject doubles only: no NSApplication/NSWindow creation or OS evaluation.
+        ProbeWindow *window = [ProbeWindow new];
+        ProbeApplication *application = [ProbeApplication new];
+        ProbeScreen *screen = [ProbeScreen new];
+        NSWindow *windowBitsOnly = (NSWindow *)(id)window;
+        NSApplication *appBitsOnly = (NSApplication *)(id)application;
+        NSArray<NSScreen *> *screens = @[(NSScreen *)(id)screen];
+        application.windows = @[windowBitsOnly];
+        application.focused = YES;
+        window.activeSpace = YES;
+        window.key = YES;
+        window.shown = YES;
+        window.number = 1;
+        window.occlusionState = NSWindowOcclusionStateVisible;
+        screen.visibleFrame = NSMakeRect(-1600, -900, 1200, 800);
+        window.frame = NSMakeRect(-1500, -800, 760, 250);
+        if (!presentationReady(windowBitsOnly, appBitsOnly, screens))
+        {
+            return 1;
+        }
+        application.focused = NO;
+        if (presentationReady(windowBitsOnly, appBitsOnly, screens))
+        {
+            return 2;
+        }
+        application.focused = YES;
+        window.key = NO;
+        if (presentationReady(windowBitsOnly, appBitsOnly, screens))
+        {
+            return 3;
+        }
+        window.key = YES;
+        window.activeSpace = NO;
+        if (presentationReady(windowBitsOnly, appBitsOnly, screens))
+        {
+            return 4;
+        }
+        window.activeSpace = YES;
+        window.occlusionState = 0;
+        if (presentationReady(windowBitsOnly, appBitsOnly, screens))
+        {
+            return 5;
+        }
+        window.occlusionState = NSWindowOcclusionStateVisible;
+        window.frame = NSMakeRect(160, 160, 760, 250);
+        if (presentationReady(windowBitsOnly, appBitsOnly, screens))
+        {
+            return 6;
+        }
+        window.frame = NSMakeRect(-500, -800, 760, 250);
+        if (presentationReady(windowBitsOnly, appBitsOnly, screens))
+        {
+            return 7;
+        }
+        window.frame = NSMakeRect(-1500, -800, 760, 250);
+        application.windows = @[];
+        if (presentationReady(windowBitsOnly, appBitsOnly, screens))
+        {
+            return 8;
+        }
+        puts("PASS: presentation metadata refusals; no window or authentication");
+    }
+    return 0;
+}
+''')
+        binary = directory / "presentation"
+        build = runner.command(["/usr/bin/clang", "-fobjc-arc", "-fblocks", "-Wall", "-Wextra", "-Werror",
+                                "-I", str(runner.NATIVE), str(source), str(runner.NATIVE / "mac-owner.m"),
+                                "-framework", "Foundation", "-framework", "AppKit",
+                                "-framework", "LocalAuthentication", "-framework", "CoreGraphics",
+                                "-o", str(binary)], self.environment, directory, "presentation-build", 60)
+        self.assertTrue(runner.successful(build), (directory / "presentation-build.stderr").read_text())
+        action = runner.command([str(binary)], self.environment, directory, "presentation-action", 5)
+        self.assertTrue(runner.successful(action), (directory / "presentation-action.stderr").read_text())
+        self.assertIn("PASS: presentation metadata refusals", (directory / "presentation-action.stdout").read_text())
+
     def test_cleanup_error_does_not_erase_primary_failure(self):
         with patch.object(runner, "reap_group", side_effect=runner.subprocess.TimeoutExpired("cleanup", 5)):
             record = self.run_child("import sys; print('original failure', flush=True); sys.exit(9)")

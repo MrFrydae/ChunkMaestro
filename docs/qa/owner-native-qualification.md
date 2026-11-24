@@ -1,5 +1,44 @@
 # Bounded owner native qualification fixture
 
+## Presentation correction after the single interactive timeout
+
+The owner-authorized attempt at reviewed `3f8cddf08c60cc4e81835f74e683a27d4063fc42`
+reached the 180-second host deadline. Its sole retained event was window metadata;
+request creation, evaluation admission, terminal result and phase1 were not observed.
+The owner reported that no diagnostic window appeared. Original evidence remains
+read-only at `/private/tmp/chunkmaestro-owner-qualification-vig46g9s/`. No
+authentication outcome or safe cookie drain follows from that process termination.
+
+The fixture previously used a fixed desktop coordinate and a legacy activation
+request. Those are plausible presentation weaknesses, not a proven cause of this
+specific timeout. It now centers the entire window within the visible frame of
+the screen containing the pointer (main-screen fallback), requests movement to
+the active Space, and uses cooperative `NSApplication.activate`. It never forces
+window level, bypasses OS focus policy, invokes Launch Services to escape process
+supervision, repeats activation or starts evaluation automatically.
+
+Before the fixture proceeds, metadata must show active application, key window,
+active Space, visible/nonminiaturized owned window, visible occlusion state and
+full containment on a screen's visible frame. Failure remains unavailable. Even
+these stronger metadata checks are not independent physical screen evidence or
+proof that a human saw the window. Verify still requires a deliberate owner click;
+its first fixed event now marks handler entry before request creation. All prior
+single-attempt, cancellation, source-binding and 180-second safeguards remain.
+
+The supervisor flushes bounded child output as it arrives, so a live inspection
+does not mistake buffered output for missing events. Offline tests exercise that
+observable file behavior before EOF and a no-window NSObject presentation probe.
+They neither create an NSWindow/NSApplication nor evaluate authentication. Native
+presentation, focus, accessibility and interactive outcomes of this correction
+remain NOT RUN until separately authorized after independent review. The prior
+one-attempt permission is consumed and does not authorize a retry.
+
+Apple's [activation guidance](https://developer.apple.com/documentation/macos-release-notes/appkit-release-notes-for-macos-14)
+states that activation is a request that may not succeed. Its
+[window collection behavior documentation](https://developer.apple.com/documentation/appkit/nswindow/collectionbehavior-swift.struct)
+describes moving to the active Space. These APIs improve placement and diagnostics;
+they cannot establish physical visibility or the cause of the prior failure.
+
 Issue12; frozen accepted main `0df7245e52e910d12be00c4155c53ee03be6f03e`.
 Bridge PR21 is an INTERNAL checkpoint after all three independent QA roles and
 18 CI checks. Actual native authentication remains **NOT AUTHORIZED**. This

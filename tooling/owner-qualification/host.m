@@ -66,11 +66,29 @@ static BOOL localSessionAvailable(void)
         [session[(__bridge NSString *)kCGSessionUserIDKey] unsignedIntValue] == getuid();
 }
 
+static BOOL presentationReady(NSWindow *window, NSApplication *application, NSArray<NSScreen *> *screens)
+{
+    if (!application.isActive || !window.isKeyWindow || !window.isOnActiveSpace ||
+        !window.isVisible || window.isMiniaturized || window.windowNumber <= 0 ||
+        !(window.occlusionState & NSWindowOcclusionStateVisible) ||
+        ![application.windows containsObject:window])
+    {
+        return NO;
+    }
+    for (NSScreen *screen in screens)
+    {
+        if (!NSIsEmptyRect(window.frame) && NSContainsRect(screen.visibleFrame, window.frame))
+        {
+            return YES;
+        }
+    }
+    return NO;
+}
+
 static BOOL visible(void)
 {
-    return NSThread.isMainThread && localSessionAvailable() && fixtureWindow.isVisible &&
-        !fixtureWindow.isMiniaturized && fixtureWindow.windowNumber > 0 &&
-        [NSApp.windows containsObject:fixtureWindow];
+    return NSThread.isMainThread && localSessionAvailable() &&
+        presentationReady(fixtureWindow, NSApp, NSScreen.screens);
 }
 
 static int32_t reply(uint64_t identifier, uint64_t receivedGeneration, uintptr_t window,
@@ -121,6 +139,7 @@ static int32_t reply(uint64_t identifier, uint64_t receivedGeneration, uintptr_t
     // Consume the process's sole attempt even if any subsequent precondition refuses.
     attempted = YES;
     [(NSButton *)sender setEnabled:NO];
+    event("manual-verify", "ATTEMPT-consumed");
     if (!visible())
     {
         event("verify-window", "UNAVAILABLE");
@@ -171,9 +190,34 @@ static int32_t reply(uint64_t identifier, uint64_t receivedGeneration, uintptr_t
 - (void)applicationDidFinishLaunching:(NSNotification *)notification
 {
     (void)notification;
-    fixtureWindow = [[NSWindow alloc] initWithContentRect:NSMakeRect(160, 160, 760, 220)
+    NSScreen *targetScreen = NSScreen.mainScreen;
+    for (NSScreen *screen in NSScreen.screens)
+    {
+        if (NSPointInRect(NSEvent.mouseLocation, screen.frame))
+        {
+            targetScreen = screen;
+            break;
+        }
+    }
+    if (targetScreen == nil)
+    {
+        event("presentation", "UNAVAILABLE-screen");
+        exit(77);
+    }
+    fixtureWindow = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 760, 220)
         styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
-        backing:NSBackingStoreBuffered defer:NO];
+        backing:NSBackingStoreBuffered defer:NO screen:targetScreen];
+    NSRect available = targetScreen.visibleFrame;
+    NSRect frame = fixtureWindow.frame;
+    if (NSIsEmptyRect(available) || frame.size.width > available.size.width ||
+        frame.size.height > available.size.height)
+    {
+        event("presentation", "UNAVAILABLE-screen-geometry");
+        exit(77);
+    }
+    [fixtureWindow setFrameOrigin:NSMakePoint(NSMidX(available) - frame.size.width / 2,
+        NSMidY(available) - frame.size.height / 2)];
+    fixtureWindow.collectionBehavior = NSWindowCollectionBehaviorMoveToActiveSpace;
     fixtureWindow.releasedWhenClosed = NO;
     fixtureWindow.title = @"ChunkMaestro disposable native qualification — diagnostic only";
     fixtureWindow.delegate = self;
@@ -194,13 +238,14 @@ static int32_t reply(uint64_t identifier, uint64_t receivedGeneration, uintptr_t
         [fixtureWindow.contentView addSubview:cancelButton];
     }
     [fixtureWindow makeKeyAndOrderFront:nil];
-    [NSApp activateIgnoringOtherApps:YES];
+    // A cooperative request, not a guarantee or a focus-stealing workaround.
+    [NSApp activate];
     windowBits = (uintptr_t)(__bridge void *)fixtureWindow;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), dispatch_get_main_queue(), ^
     {
         if (!visible())
         {
-            event("actual-owned-visible-window", "UNAVAILABLE");
+            event("actual-owned-visible-window", "UNAVAILABLE-presentation");
             exit(77);
         }
         event("window-evidence", "NSWindow-metadata-only-screen-NOT-OBSERVED");
