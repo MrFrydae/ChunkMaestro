@@ -322,12 +322,24 @@ public sealed class InstalledPolicyCodecTests
         Assert.All(assembly.GetReferencedAssemblies(), reference => Assert.True(reference.Name == "netstandard" || reference.Name!.StartsWith("System.", StringComparison.Ordinal)));
         InternalsVisibleToAttribute friend = Assert.Single(assembly.GetCustomAttributes<InternalsVisibleToAttribute>());
         Assert.Equal("ChunkMaestro.HelperPolicyTests", friend.AssemblyName);
+        HashSet<string> journalImports = new(StringComparer.Ordinal);
         foreach (Type type in assembly.GetTypes())
         {
             foreach (MethodInfo method in type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly))
             {
                 if ((method.Attributes & MethodAttributes.PinvokeImpl) != 0)
                 {
+                    if (type == typeof(LinuxPolicyJournalDurability) || type.DeclaringType == typeof(LinuxPolicyJournalDurability))
+                    {
+                        Assert.False(type.IsPublic);
+                        DllImportAttribute journalImport = Assert.IsType<DllImportAttribute>(method.GetCustomAttribute<DllImportAttribute>());
+                        Assert.Equal("libc.so.6", journalImport.Value);
+                        Assert.True(journalImport.EntryPoint is "open" or "fsync" or "close");
+                        Assert.True(journalImports.Add(journalImport.EntryPoint!));
+                        Assert.Equal(DllImportSearchPath.SafeDirectories,
+                            Assert.IsType<DefaultDllImportSearchPathsAttribute>(method.GetCustomAttribute<DefaultDllImportSearchPathsAttribute>()).Paths);
+                        continue;
+                    }
                     Assert.True(type == typeof(PolicySnapshotNative) || type.DeclaringType == typeof(PolicySnapshotNative));
                     Assert.False(type.IsPublic);
                     DllImportAttribute import = Assert.IsType<DllImportAttribute>(method.GetCustomAttribute<DllImportAttribute>());
@@ -336,6 +348,7 @@ public sealed class InstalledPolicyCodecTests
                 }
             }
         }
+        Assert.Equal(3, journalImports.Count);
         Assert.All(typeof(ParsedData).GetProperties(BindingFlags.NonPublic | BindingFlags.Instance), property => Assert.Null(property.SetMethod));
         foreach (string proof in new[]
         {

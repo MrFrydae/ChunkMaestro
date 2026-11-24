@@ -12,6 +12,10 @@ internal static partial class PolicySnapshotNative
     {
         NativeLibrary.SetDllImportResolver(typeof(PolicySnapshotNative).Assembly, (name, assembly, searchPath) =>
         {
+            if (name == "libc.so.6" && OperatingSystem.IsLinux())
+            {
+                return NativeLibrary.Load(name, assembly, DllImportSearchPath.SafeDirectories);
+            }
             if (name != Library || !OperatingSystem.IsLinux())
             {
                 throw new PlatformNotSupportedException();
