@@ -50,6 +50,15 @@ required. Native Linux integration tests exercise real temp-directory sync,
 missing/file/symlink targets and initialization after the shared loader is active;
 they remain NOT RUN on macOS, where only platform refusal is executed.
 
+The first hosted ARM64 run rejected the original hardcoded x64 open flags: its
+valid-directory and regular-file refusal tests both failed. Linux ARM64 defines
+O_DIRECTORY/O_NOFOLLOW as 0x4000/0x8000; x64 uses 0x10000/0x20000. The adapter now
+selects those values for the two supported ABIs and keeps O_CLOEXEC at 0x80000.
+The original tests and failed evidence are preserved. These values come from
+the [ARM64 Linux header](https://github.com/torvalds/linux/blob/v6.12/arch/arm64/include/uapi/asm/fcntl.h)
+and [generic Linux header](https://github.com/torvalds/linux/blob/v6.12/include/uapi/asm-generic/fcntl.h).
+Current-head hosted ARM64 confirmation is required before accepting the correction.
+
 ## Recovery boundary
 
 Fresh explicit reservation persists Occupied. The original live reservation

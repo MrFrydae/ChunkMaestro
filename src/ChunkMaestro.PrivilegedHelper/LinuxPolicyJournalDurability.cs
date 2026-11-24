@@ -22,9 +22,13 @@ internal sealed partial class LinuxPolicyJournalDurability : IPolicyJournalDurab
         {
             throw new IOException("Invalid journal directory.");
         }
-        // Linux read-only O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW. Final symlinks refuse;
-        // protected descriptor-relative ancestry acquisition remains a separate gate.
-        int descriptor = Open(directory, 0x10000 | 0x80000 | 0x20000);
+        // Linux arm64 overrides O_DIRECTORY/O_NOFOLLOW from asm-generic/fcntl.h.
+        // See arch/arm64/include/uapi/asm/fcntl.h in Linux v6.12. O_CLOEXEC is shared.
+        // Protected descriptor-relative ancestry acquisition remains a separate gate.
+        int directoryFlags = RuntimeInformation.ProcessArchitecture == Architecture.Arm64
+            ? 0x4000 | 0x8000
+            : 0x10000 | 0x20000;
+        int descriptor = Open(directory, directoryFlags | 0x80000);
         if (descriptor < 0)
         {
             throw new IOException("Journal directory open failed.");
