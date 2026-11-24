@@ -104,6 +104,8 @@ class QaCiTests(unittest.TestCase):
                               (['src/ChunkMaestro.Inspector.Native/metadata.c'], []),
                               (['tests/ChunkMaestro.InspectorNativeTests/run.sh'], []),
                               (['src/ChunkMaestro.OwnerVerification/OwnerContext.cs'], []),
+                              (['tooling/owner-qualification/run.py'], []),
+                              (['tooling/inspector-qualification/collector.py'], []),
                               (['src/Core/Enrollment.cs'], []), ([], ['high-risk'])]:
             with self.subTest(files=files, labels=labels), self.assertRaisesRegex(ValueError, 'Missing required'):
                 qa_ci.assess([self.comment()], self.head, files, labels)

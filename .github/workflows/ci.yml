@@ -87,6 +87,14 @@ jobs:
       - name: Pinned SDK and locked restore
         timeout-minutes: 4
         run: python tooling/ci/command.py -- python tooling/build/build.py restore
+      - name: Owner qualification offline cancellation and no-window contracts
+        if: runner.os == 'macOS'
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p .artifacts/ci/owner-fixture-offline
+          python tooling/ci/command.py --timeout-seconds 60 -- /usr/bin/env GITHUB_ACTIONS=true python -B -m unittest discover -s tooling/owner-qualification -p 'test_*.py' -v 2>&1 | tee .artifacts/ci/owner-fixture-offline/run.log
       - name: Release build and generated-inclusive brace/type policy
         timeout-minutes: 4
         run: python tooling/ci/command.py -- python tooling/build/build.py build
@@ -129,6 +137,7 @@ jobs:
             .artifacts/ci/identity-tests
             .artifacts/ci/contract-tests
             .artifacts/ci/owner-tests
+            .artifacts/ci/owner-fixture-offline
             .artifacts/build
           if-no-files-found: warn
           retention-days: 14
