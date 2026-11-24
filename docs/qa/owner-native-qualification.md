@@ -86,7 +86,16 @@ and CoreGraphics are linked. The inherited credential/tool injection environment
 is replaced by a five-key allowlist. Build deadline is 60 seconds; native no-prompt
 deadline is 20 seconds. Combined stdout/stderr limit is 1 MiB per command. Each
 owned process group is killed and leader reaped even when the leader exits first;
-failure to prove group disappearance fails the command. Build directories and logs
+failure to prove group disappearance fails the command. After SIGKILL, leader
+reaping has a five-second bound and strict group-disappearance verification has
+a separate ten-second grace. A three-second grace failed one hosted offline
+orphan-descendant case; that original failure does not identify live versus zombie
+state and is not labeled harmless. Failure-only diagnostics now retain numeric
+PIDs and states of the owned group (no command arguments); their collection has
+a two-second limit and never authorizes success. The exact signal-zero proof and
+strict test assertion remain, with new controls for delayed disappearance and a
+permanently present group. No native window or authentication was run to test this
+supervision correction. Build directories and logs
 are retained for review, never automatically deleted. No shared scratch/live data,
 Credentials, Persistence, owner binding or VM is used. No dependency is installed.
 

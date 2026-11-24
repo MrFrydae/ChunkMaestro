@@ -23,6 +23,7 @@ EXPECTED = {
     "mac-owner.h": "90442d7d4f34e39a2b513bb114b83cc3a13d610fc7ac69a27b7e8d2b0b8a68fc",
 }
 LIMIT = 1024 * 1024
+REAP_GRACE_SECONDS = 10
 
 
 def mode_from(args, environment):
@@ -86,7 +87,7 @@ def reap_group(process):
         pass
     process.wait(timeout=5)
     # Signal zero proves the group is gone, rather than trusting only leader exit.
-    end = time.monotonic() + 3
+    end = time.monotonic() + REAP_GRACE_SECONDS
     while True:
         try:
             os.killpg(process.pid, 0)
@@ -95,6 +96,22 @@ def reap_group(process):
         if time.monotonic() >= end:
             return False
         time.sleep(0.02)
+
+
+def group_diagnostics(group):
+    """Failure-only state of our numeric process group, never command arguments."""
+    try:
+        result = subprocess.run(["/bin/ps", "-axo", "pid=,pgid=,stat="],
+                                capture_output=True, text=True, timeout=2, check=True)
+        members = []
+        for line in result.stdout.splitlines():
+            fields = line.split()
+            if len(fields) == 3 and fields[0].isdigit() and fields[1] == str(group):
+                if re.fullmatch(r"[A-Za-z+<>-]+", fields[2]):
+                    members.append({"pid": int(fields[0]), "state": fields[2]})
+        return {"available": True, "members": members}
+    except (OSError, subprocess.SubprocessError) as error:
+        return {"available": False, "error_category": type(error).__name__}
 
 
 def command(args, env, directory, label, deadline):
@@ -171,11 +188,16 @@ def command(args, env, directory, label, deadline):
         # Repeated cancellation must not interrupt preservation of the first
         # result. Signals remain failures, but are deferred through the record.
         cleaning_up = True
+        cleanup_start = time.monotonic()
+        record["cleanup_grace_seconds"] = REAP_GRACE_SECONDS
         try:
             record["group_reaped"] = reap_group(process) if process else True
         except (OSError, subprocess.SubprocessError, KeyboardInterrupt, CommandInterrupted) as error:
             record["group_reaped"] = False
             record["cleanup_error_category"] = type(error).__name__
+        record["cleanup_seconds"] = round(time.monotonic() - cleanup_start, 3)
+        if process and not record["group_reaped"]:
+            record["cleanup_group_diagnostics"] = group_diagnostics(process.pid)
         record["exit"] = process.returncode if process else None
         record["reason"] = reason
         record["seconds"] = round(time.monotonic() - start, 3)

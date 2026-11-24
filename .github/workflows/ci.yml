@@ -15,9 +15,15 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: '1'
 jobs:
   inspector-metadata:
-    name: inspector-metadata (Linux)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 6
+    name: ${{ matrix.check }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {runner: ubuntu-24.04, check: 'inspector-metadata (Linux)', artifact: inspector-metadata-linux, architecture: x86_64}
+          - {runner: ubuntu-24.04-arm, check: 'inspector-metadata (Linux arm64)', artifact: inspector-metadata-linux-arm64, architecture: aarch64}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
         with:
@@ -25,18 +31,67 @@ jobs:
       - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c
         with:
           python-version: '3.13'
+      - uses: actions/setup-dotnet@d4c94342e560b34958eacfc5d055d21461ed1c5d
+        with:
+          global-json-file: global.json
+      - name: Record actual unprivileged architecture and source identity
+        env:
+          EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}
+        shell: bash
+        run: |
+          set -eu -o pipefail
+          mkdir -p .artifacts/ci/inspector-metadata
+          test "$(id -u)" != 0
+          test "$(uname -m)" = "$EXPECTED_ARCHITECTURE"
+          { uname -a; id; cc --version; dotnet --info; git rev-parse HEAD; } > .artifacts/ci/inspector-metadata/environment.txt
+          sha256sum src/ChunkMaestro.Inspector.Native/* tests/ChunkMaestro.InspectorNativeTests/* src/ChunkMaestro.PrivilegedHelper/*.cs tests/ChunkMaestro.HelperPolicyTests/*.cs > .artifacts/ci/inspector-metadata/source.sha256
       - name: Unprivileged native kernel and separate syscall-control tests
         shell: bash
         run: |
-          set -o pipefail
+          set -eu -o pipefail
           mkdir -p .artifacts/ci/inspector-metadata
           python tooling/ci/command.py --timeout-seconds 180 -- sh tests/ChunkMaestro.InspectorNativeTests/run.sh 2>&1 | tee .artifacts/ci/inspector-metadata/run.log
+      - name: Locked restore of policy test graph
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          set -eu -o pipefail
+          python tooling/ci/command.py --timeout-seconds 150 -- dotnet restore tests/ChunkMaestro.HelperPolicyTests/ChunkMaestro.HelperPolicyTests.csproj --locked-mode --force --no-cache 2>&1 | tee .artifacts/ci/inspector-metadata/restore.log
+      - name: Build native test shim and managed policy boundary
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          set -eu -o pipefail
+          python tooling/ci/command.py --timeout-seconds 150 -- dotnet build tests/ChunkMaestro.HelperPolicyTests/ChunkMaestro.HelperPolicyTests.csproj -c Release --no-restore 2>&1 | tee .artifacts/ci/inspector-metadata/build.log
+          sha256sum tests/ChunkMaestro.HelperPolicyTests/bin/Release/net10.0/libchunkmaestro_policy_snapshot_v1.so > .artifacts/ci/inspector-metadata/test-shim.sha256
+      - name: Execute Linux ownership, cancellation and private handoff cases
+        if: matrix.architecture == 'x86_64'
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          set -eu -o pipefail
+          python tooling/ci/command.py --timeout-seconds 150 -- dotnet test tests/ChunkMaestro.HelperPolicyTests/ChunkMaestro.HelperPolicyTests.csproj -c Release --no-build --no-restore --collect "XPlat Code Coverage" --blame-hang --blame-hang-timeout 60s --logger trx --logger "console;verbosity=normal" --results-directory .artifacts/ci/inspector-metadata/managed 2>&1 | tee .artifacts/ci/inspector-metadata/managed.log
+      - name: Direct pinned xUnit ARM execution with no skipped cases
+        if: matrix.architecture == 'aarch64'
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          set -eu -o pipefail
+          mkdir -p .artifacts/ci/inspector-metadata/managed
+          assembly=tests/ChunkMaestro.HelperPolicyTests/bin/Release/net10.0/ChunkMaestro.HelperPolicyTests.dll
+          results=.artifacts/ci/inspector-metadata/managed
+          # Keep machine JSON separate from supervisor headings/cleanup diagnostics.
+          python tooling/ci/command.py --timeout-seconds 30 -- /bin/sh -c 'exec dotnet "$1" -preEnumerateTheories -noColor -list full/json > "$2"' policy-discovery "$assembly" "$results/discovery.json" > "$results/discovery-supervisor.log"
+          python tooling/ci/command.py --timeout-seconds 120 -- dotnet "$assembly" -preEnumerateTheories -failSkips -noColor -xml "$results/results.xml" -trx "$results/results.trx" -ctrf "$results/results.ctrf.json" 2>&1 | tee .artifacts/ci/inspector-metadata/managed.log
+          python tooling/ci/policy_runner.py "$results"
       - name: Retain native diagnostics including failures
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: inspector-metadata-linux
-          path: .artifacts/ci/inspector-metadata
+          name: ${{ matrix.artifact }}
+          path: |
+            .artifacts/ci/inspector-metadata
+            .artifacts/policy-snapshot
           if-no-files-found: error
           retention-days: 14
 
