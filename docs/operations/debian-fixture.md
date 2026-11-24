@@ -468,3 +468,94 @@ as independent primary/cleanup/deletion errors. Three new regressions reject
 input changed. The old successful VM run remains narrower, separately attributed
 evidence; the corrected main wrapper has not been executed in a fresh VM run.
 Final current-head CI and new independent role verdicts remain required.
+
+## Explicit synthetic policy-session campaign (issue #14)
+
+The ordinary smoke command and `run-debian-fixture` label retain their existing
+scope. Only the new `policy-session` job accepts the distinct manual dispatch
+acknowledgment `RUN-SYNTHETIC-POLICY-SESSION-12-CASES`, owner actor ID `38875853`,
+exact reviewed 40-hex commit equal to the dispatch SHA, and an externally reviewed
+manifest SHA256. No existing label, push or reopen enables the campaign. This is
+isolated test infrastructure, not a product installer/helper or qualified agent.
+
+Before runner setup, CI constructs the external manifest from `git show` of the
+fixed `common.SOURCE_FILES` allowlist at that exact commit. Canonical bytes are
+UTF-8 `json.dumps(value, sort_keys=True, separators=(',', ':'))` without a newline,
+with schema 1, commit and files mapping each relative filename to SHA256. The
+constructed digest must equal the independently supplied review digest. This
+construction does not establish review authority: the owner/independent review
+must supply it after the final signed source commit. The manifest stays outside
+the payload to avoid a self-hash cycle. `prepare` additionally verifies exact
+current payload membership and committed bytes; this uncommitted patch cannot
+activate as reviewed source. No PR-body or ambient environment authorization is
+accepted. Invalid input stops before setup, download, cloud-config or VM effects.
+
+The host CLI accepts `--policy-session-campaign` only alongside the existing
+execution opt-in, `--campaign-acknowledge`, `--reviewed-source-commit`,
+`--reviewed-manifest-sha256`, `--reviewed-manifest` and a private existing
+`--campaign-evidence` directory. `--campaign-preflight` validates this contract
+without execution; `--write-reviewed-manifest` constructs only the external
+manifest and requires the supplied expected digest. Neither command constitutes
+source review. Fixed APT commands, provenance/image pins, nonroot TCG, loopback
+networking, unprivileged fixture SSH, caps and deadlines remain unchanged.
+
+Only campaign mode installs the reviewed static payload in the disposable guest
+and runs the fixed provision entry in cloud-final. Firmware binds nonce, image,
+source and canonical template. Guest guards precede synthetic service effects.
+The fixture login receives neither root SSH nor sudo. It performs the original
+read-only strict SSH smoke plus a deliberate wrong-host-key denial check.
+
+Stage-labelled receipts carry bounded base64 JSON from this invocation's memory,
+including partial/failure reports, before and after signal-handler restoration.
+Provision never reads `campaign.json` for export, so a collision cannot export an
+unknown prior owner's report. There is no arbitrary guest-file extraction. The
+host accepts only fixed schemas, exact identities/case/gap sets, strict duplicate
+rejection, bounded depth/membership/frame/total sizes, ordered stages and one
+nonce/source-bound exit record. Readiness alone never establishes campaign success.
+Raw serial (which may include SSH material), cloud data, disks, private keys and
+environment are never artifacts. Only validated campaign reports and a fixed
+summary are written as `campaign-raw.json` and `campaign-summary.json`.
+The summary remains UNRESOLVED with a separate candidate flag: only a matching
+`campaign-complete` record with `synthetic_protocol: CANDIDATE` in sanitized
+status.jsonl after successful artifact flushes can support a synthetic protocol
+PASS only together with successful terminal host/job exit. The record requires
+host exit0; it never independently publishes PASS. An after-effect artifact-write
+failure or cancellation cannot authorize PASS from a partial file or record.
+
+The host kills/reaps the outer VM on every outcome, before disk deletion and any
+protocol PASS publication. Uncertain death retains the private workspace for
+ephemeral runner destruction. Guest command containment remains UNKNOWN. A narrow
+Synthetic protocol PASS requires two bound receipts, exit2, all twelve raw cases
+individually checked, no guest or host failure, strict SSH and wrong-key denial,
+and successful outer cleanup. Missing/failed/unknown evidence stays UNRESOLVED;
+exit2 alone never passes. `qualification: INCOMPLETE` and eleven NOT RUN gaps
+remain machine-readable even after a protocol PASS. Logs and job names do not
+claim installed-runtime/product qualification or issue14 acceptance.
+
+Host finalization records SIGINT/SIGTERM without throwing while mandatory reaping,
+workspace deletion and artifact writes run. Cancellation is sticky and preserves
+any earlier primary failure. Once mandatory cleanup/publication finishes, terminal
+handlers raise that same first cause, including cancellation during the candidate
+record write or return. A stale summary candidate flag or an already-written
+candidate record never overrides failed host/job exit. No signal handler performs
+I/O. No automatic retry follows cancellation.
+
+Raw pidfd rows require the exact nine-field unsigned tuple, pidfd link type,
+non-thread read/write flags, two distinct device/inode identities, and a common
+epoch matching the retained journal. Internally correlated corrupt journal/case
+records are refused too. Incremental serial reads tolerate a pending frame, but
+cannot authorize completion from it. After outer reaping and before closing the
+private serial descriptor or deleting disks, final validation checks the full
+bounded output and rejects recognized unterminated evidence/exit/receipt frames.
+Every later case tuple and journal identity must match the validated originals
+recursively with exact JSON types. Booleans and floats cannot stand in for unsigned
+integers, and integer/float values cannot stand in for HUP booleans. Ordinary
+Python numeric equality is not evidence equivalence.
+
+All twelve new VM cases remain NOT RUN until parent-owned dispatch after a new
+independent source/artifact preflight. Offline tests and diagnostic metrics are
+not Linux/systemd execution proof. Parent owns signing/shipping, dispatch, new CI
+and native evidence, all three FINAL QA roles and merge. Rollback before shipping
+is removal/reversal of this owned uncommitted patch; after future execution the
+VM/overlay and runner destruction are the rollback boundaries. Never clear
+uncertain escrow or rerun an occupied campaign.

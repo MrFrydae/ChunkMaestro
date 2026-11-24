@@ -1,0 +1,33 @@
+[Unit]
+Description=Disposable CM14 synthetic worker
+[Service]
+Type=exec
+ExecStart=/usr/bin/python3 -I /opt/cm14-fixture/entry.py worker
+DynamicUser=yes
+User=cm14-worker
+Restart=no
+NotifyAccess=none
+FileDescriptorStoreMax=0
+Delegate=no
+RuntimeDirectory=cm14-worker
+RuntimeDirectoryPreserve=yes
+KillMode=control-group
+TimeoutStartSec=8
+TimeoutStopSec=3
+RuntimeMaxSec=90
+MemoryMax=64M
+TasksMax=2
+LimitNOFILE=32
+LimitCORE=0
+OOMPolicy=stop
+ManagedOOMSwap=auto
+ManagedOOMMemoryPressure=auto
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+SystemCallFilter=~io_uring_setup io_uring_enter io_uring_register

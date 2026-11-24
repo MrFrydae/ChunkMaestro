@@ -1,0 +1,48 @@
+--- a/tooling/debian-fixture/fixture.py
++++ b/tooling/debian-fixture/fixture.py
+@@ -267,7 +267,14 @@
+     for key in ('client', 'host'):
+         h.run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', 'synthetic-fixture', '-f', key], 'keys')
+     nonce = secrets.token_hex(16)
+-    (r / 'user-data').write_text(cloud_config(r, nonce))
++    # Explicit issue14 protocol campaign; SSH probe remains unchanged.
++    import importlib.util
++    spec = importlib.util.spec_from_file_location('cm14_prepare',
++        Path(__file__).resolve().parents[1] / 'policy-session-fixture' / 'prepare.py')
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    user_data, policy_fw = module.prepare(cloud_config(r, nonce), nonce)
++    (r / 'user-data').write_text(user_data)
+     (r / 'meta-data').write_text('instance-id: synthetic-fixture\nlocal-hostname: synthetic-fixture\n')
+     h.run(['cloud-localds', 'seed.img', 'user-data', 'meta-data'], 'seed')
+     with socket.socket() as s:
+@@ -282,12 +289,28 @@
+         '-drive', 'file=overlay,format=qcow2,if=virtio',
+         '-drive', 'file=seed.img,format=raw,if=virtio,readonly=on',
+         '-netdev', f'user,id=n,restrict=on,hostfwd=tcp:127.0.0.1:{port}-:22',
+-        '-device', 'virtio-net-pci,netdev=n'])
++        '-device', 'virtio-net-pci,netdev=n'] + policy_fw)
+     wait_ready(h, vm, output, nonce)
+     result = h.run(ssh_args(r, port) + [SMOKE], 'probe', 30)
+     if result != EXPECTED:
+         raise Failure('probe-identity')
+     event('probe', 'debian13-systemd-pid1-manager-query-ok')
++    # Consume real bounded serial evidence; readiness/SSH is not qualification.
++    import base64
++    prefix = ('CM14-RESULT-' + nonce + ':').encode()
++    serial = os.pread(output.fileno(), 1024**2, 0)
++    receipts = [line.removesuffix(b'\r')[len(prefix):] for line in serial.splitlines()
++                if line.startswith(prefix)]
++    if len(receipts) != 1:
++        raise Failure('policy-session-evidence-missing')
++    raw = base64.b64decode(receipts[0], validate=True)
++    if len(raw) > 262144:
++        raise Failure('policy-session-evidence-limit')
++    receipt = json.loads(raw)
++    (r / 'policy-session-campaign.json').write_bytes(raw)
++    event('policy-session-evidence-sha256', hashlib.sha256(raw).hexdigest())
++    if receipt.get('qualification') != 'PASS':
++        raise Failure('policy-session-qualification-incomplete')
+     # No sudo in guest: signal QEMU via ACPI QMP would add control surface.
+     # Termination and mandatory reaping are the bounded disposable shutdown.
+     event('shutdown', 'terminate-disposable-guest')

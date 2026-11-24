@@ -1,0 +1,22 @@
+[Unit]
+Description=Disposable CM14 pidfd escrow protocol fixture
+[Service]
+Type=exec
+ExecStart=/usr/bin/python3 -I /opt/cm14-fixture/entry.py holder
+User=root
+Restart=no
+NotifyAccess=main
+FileDescriptorStoreMax=2
+FileDescriptorStorePreserve=yes
+Delegate=no
+KillMode=control-group
+TimeoutStartSec=8
+TimeoutStopSec=3
+RuntimeMaxSec=80
+MemoryMax=128M
+TasksMax=8
+LimitNOFILE=64
+LimitCORE=0
+OOMPolicy=stop
+ManagedOOMSwap=auto
+ManagedOOMMemoryPressure=auto
