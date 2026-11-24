@@ -59,6 +59,17 @@ the [ARM64 Linux header](https://github.com/torvalds/linux/blob/v6.12/arch/arm64
 and [generic Linux header](https://github.com/torvalds/linux/blob/v6.12/include/uapi/asm-generic/fcntl.h).
 Current-head hosted ARM64 confirmation is required before accepting the correction.
 
+The subsequent x64 run passed the directory-sync cases but failed the older
+process-wide descriptor restoration oracle (302/303). A descriptor present in its
+baseline was absent afterward; the artifact does not establish that descriptor's
+owner. The oracle previously ran concurrently with unrelated journal file and
+child-process tests. Its collection now runs exclusively with respect to other
+test collections, and pending finalizers are drained before the baseline as well
+as after the owned work. The 16-way internal lease exercise, abandoned-lease
+finalizer check and complete 65,536-slot comparison remain unchanged. This corrects
+an isolation gap; hosted full-suite confirmation is still required, and the
+original failure remains an unresolved result until that proof and QA are complete.
+
 ## Recovery boundary
 
 Fresh explicit reservation persists Occupied. The original live reservation
