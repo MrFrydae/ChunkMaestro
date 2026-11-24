@@ -169,10 +169,12 @@ def detach_mac_image(image, mount, log, execute=subprocess.run):
             raise RuntimeError('Fixture mount belongs to an unexpected image')
         return
     code = detach(['hdiutil', 'detach', original])
-    if code == 16:
-        # A normal detach can unmount successfully before eject reports busy.
-        # Only our own prior detach permits an absent, independently unmounted
-        # fixture mount; exact image/device and partition binding still apply.
+    # A forced eject can also return busy after unmounting while the owned
+    # device finishes detaching. Permit one further attempt, with fresh exact
+    # image/device/partition and mount checks before EACH forced operation.
+    for attempt in range(2):
+        if code != 16:
+            break
         current = device(allow_unmounted=True)
         if current == original:
             log.write('Busy fixture: exact image/device and mount state reverified before forced detachment.\n')
@@ -181,6 +183,7 @@ def detach_mac_image(image, mount, log, execute=subprocess.run):
             raise RuntimeError('Disposable image identity changed during cleanup')
         else:
             code = 0
+            break
     if code or device(allow_unmounted=True) is not None or os.path.ismount(mount):
         raise RuntimeError('Disposable image detachment failed or remains mounted')
 

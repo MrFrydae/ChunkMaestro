@@ -196,3 +196,26 @@ compiler/runtime packages are prerequisites, never installed or assumed valid.
 Rollback removes the six additions and the single standalone CI step; no live
 state exists. Parent owns signed shipping, ordinary hosted CI and three fresh
 FINAL independent QA verdicts before merge.
+
+## Hosted storage-fixture corrections
+
+The first native CI head passed 36 plain and 36 sanitized escrow controls and
+the owned pidfd kernel cases on both Linux architectures. Separate unchanged
+storage fixtures failed: Windows identity recovery immediately reopened after
+child exit while the native controller lock still reported contention, and
+macOS reported busy on both normal and forced image detach after its volume
+case passed. Those original failures are retained; no underlying Windows
+process/lock owner or macOS busy-holder identity is established.
+
+The identity death test now shares the existing process-death test's bounded
+lock-only observation before opening SQLite. Only Windows native sharing/lock
+violations qualify for that observation; permanent contention and other errors
+still fail. It never creates/removes the lock or repeats a database operation.
+The child exit wait is bounded. The image harness permits one additional forced
+detach after a second busy result, rechecking the exact owned image/device and
+mount state before every force. Changed identity, unexplained errors and
+exhausted busy cleanup still fail and retain the image. These are fixture
+corrections, not production recovery or general descendant-closure proof.
+Windows execution and actual macOS volume cleanup need current hosted evidence;
+local mocked detach transitions are narrower proof. Existing safety assertions
+and case inventories remain intact.

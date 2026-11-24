@@ -231,6 +231,36 @@ class DriveSelectionTests(unittest.TestCase):
                 self.assertEqual([c for c in commands if '-force' in c],
                                  [['hdiutil', 'detach', '-force', '/dev/disk42']] if busy else [])
 
+    def test_forced_busy_mac_eject_rechecks_identity_before_one_bounded_continuation(self):
+        image, mount = Path('/tmp/owned/fixture.dmg'), Path('/tmp/owned/mount')
+        for outcome in ('complete', 'gone', 'replaced', 'still-busy'):
+            with self.subTest(outcome=outcome):
+                commands = []
+                unmounted = self.info()
+                del unmounted['images'][0]['system-entities'][1]['mount-point']
+                next_state = ({'images': []} if outcome == 'gone' else
+                              self.info(device='/dev/disk43') if outcome == 'replaced' else unmounted)
+                queries = iter([self.info(), unmounted, next_state, {'images': []}])
+                attempts = []
+                def execute(args, **kwargs):
+                    commands.append(args)
+                    if args[1] == 'info':
+                        return SimpleNamespace(returncode=0, stdout=plistlib.dumps(next(queries)))
+                    attempts.append(args)
+                    return SimpleNamespace(returncode=0 if len(attempts) == 3 and
+                                           outcome == 'complete' else 16)
+                with patch('volume.os.path.ismount', return_value=False):
+                    if outcome in ('replaced', 'still-busy'):
+                        with self.assertRaises((RuntimeError, ValueError)):
+                            detach_mac_image(image, mount, io.StringIO(), execute)
+                    else:
+                        detach_mac_image(image, mount, io.StringIO(), execute)
+                self.assertEqual(len(attempts), 3 if outcome in ('complete', 'still-busy') else 2)
+                for index, command in enumerate(commands):
+                    if '-force' in command:
+                        self.assertEqual(commands[index - 1], ['hdiutil', 'info', '-plist'])
+                        self.assertEqual(command[-1], '/dev/disk42')
+
     def test_mac_cleanup_rejects_changed_identity_other_mount_and_unrelated_image(self):
         image, mount = Path('/tmp/owned/fixture.dmg'), Path('/tmp/owned/mount')
         for info in (self.info(mount='/tmp/other'), self.info(device='/dev/physical'),
@@ -299,7 +329,7 @@ class DriveSelectionTests(unittest.TestCase):
                                        stdout=plistlib.dumps(self.info()) if args[1] == 'info' else b'')
             with self.assertRaises(RuntimeError):
                 detach_mac_image(Path('/tmp/owned/fixture.dmg'), Path('/tmp/owned/mount'), io.StringIO(), execute)
-            self.assertEqual(sum('-force' in c for c in commands), 1 if code == 16 else 0)
+            self.assertEqual(sum('-force' in c for c in commands), 2 if code == 16 else 0)
 
     def test_occupied_drive_is_never_selected_even_with_lowercase_inventory(self):
         self.assertEqual(free_drive_letter(['c:\\', 'z:\\']), 'Y')
