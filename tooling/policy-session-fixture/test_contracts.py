@@ -65,6 +65,31 @@ class Contracts(unittest.TestCase):
         for unit in c.UNITS:
             self.assertEqual(c.command('stop', unit), ('/usr/bin/systemctl', 'stop', unit))
 
+    def test_show_includes_empty_values_without_defaulting_absent_properties(self):
+        for unit in c.UNITS:
+            expected = ('/usr/bin/systemctl', 'show', '--all', unit)
+            self.assertEqual(c.command('show', unit), expected)
+            with patch.object(c, '_run_process', return_value='MainPID=0\nInvocationID=\nControlGroup=\nJob=0\n') as run:
+                props = c.properties(unit)
+                run.assert_called_once_with(expected, (0, 1, 4))
+                self.assertEqual(props['InvocationID'], '')
+                self.assertEqual(props['ControlGroup'], '')
+            with patch.object(c, '_run_process', return_value='MainPID=0\n'):
+                with self.assertRaises(KeyError):
+                    c.properties(unit)['InvocationID']
+
+    def test_show_all_keeps_fixed_targets_flags_and_exit_policy(self):
+        for argv in (('/usr/bin/systemctl', 'show', c.UNITS[0]),
+                     ('/usr/bin/systemctl', 'show', '--all', 'minecraft.service'),
+                     ('/usr/bin/systemctl', 'show', '--all', '--value', c.UNITS[0]),
+                     ('/usr/bin/systemctl', 'start', '--all', c.UNITS[0])):
+            with self.subTest(argv=argv), patch.object(c, '_run_process') as run:
+                with self.assertRaises(c.Failure): c.run_raw(argv, (0, 1, 4))
+                run.assert_not_called()
+        with patch.object(c, '_run_process') as run:
+            with self.assertRaises(c.Failure): c.run_raw(c.command('show', c.UNITS[0]), (0,))
+            run.assert_not_called()
+
     def test_no_unit_or_shell_injection(self):
         for unit in ('minecraft.service', '../cm14-worker.service', '--all', 'cm14-worker.service;id'):
             with self.subTest(unit=unit), self.assertRaises(c.Failure):

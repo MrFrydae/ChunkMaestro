@@ -28,6 +28,13 @@ record, strict SSH and successful VM cleanup remain necessary. The 240-second
 campaign and 160-second guest caps are unchanged. No startup label is a product
 or installed-helper qualification claim.
 
+Fixed unit metadata queries use `systemctl show --all` so empty properties remain
+explicit. An inactive unit may have an empty `InvocationID` or `ControlGroup`;
+the consumer still distinguishes these from a missing property and still rejects
+a changed invocation. No defaults, alternate targets, extra flags or new accepted
+exit codes are introduced. The unit/counter assertions remain unchanged.
+This follows the [systemd 257 command contract](https://www.freedesktop.org/software/systemd/man/257/systemctl.html).
+
 ## Files and fixed graph
 
 `common.py` owns refusal, identity/dump comparison, notification bindings and bounded

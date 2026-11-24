@@ -430,6 +430,7 @@ class CampaignContracts(unittest.TestCase):
     def test_real_guest_campaign_projects_holder_facts_before_receipt_round_trip(self):
         f.policy_prepare()
         import guest
+        import common
         c, report = model()
         raw = [copy.deepcopy(report['cases'][name]['raw']) for name in f.CASE_NAMES]
         report['cases'] = {}; report['campaign_completed'] = report['retirement_verified'] = False
@@ -438,10 +439,22 @@ class CampaignContracts(unittest.TestCase):
         # Real systemctl show exposes more members than the closed receipt cap.
         holder = {f'UnneededProperty{index}': 'diagnostic-only' for index in range(300)}
         holder.update(ActiveState='inactive', LoadState='loaded', ControlGroup='/cm14-holder')
+        stopped = False
         def properties(unit):
             if unit == guest.UNITS[0]: return holder.copy()
             if unit == guest.UNITS[3]: return {'ActiveState': 'active'}
-            return {'MainPID': '0', 'InvocationID': 'd' * 32, 'ControlGroup': '/cm14-owned'}
+            return {'MainPID': '0', 'InvocationID': '' if stopped else 'd' * 32,
+                    'ControlGroup': '' if stopped else '/cm14-owned'}
+        def query(argv, accepted_codes):
+            self.assertEqual(accepted_codes, (0, 1, 4))
+            self.assertEqual(argv[:2], ('/usr/bin/systemctl', 'show'))
+            values = properties(argv[-1])
+            # systemctl suppresses empty properties unless the fixed --all flag is used.
+            return ''.join(name + '=' + value + '\n' for name, value in values.items()
+                           if value or '--all' in argv)
+        def control(action, unit):
+            nonlocal stopped
+            if action == 'stop' and unit == guest.UNITS[1]: stopped = True
         def result(phase, *args):
             value = results.popleft(); self.assertEqual(value['phase'], phase)
             (sandbox_state / 'result').write_text('owned synthetic response')
@@ -456,9 +469,9 @@ class CampaignContracts(unittest.TestCase):
             with contextlib.ExitStack() as stack:
                 stack.enter_context(patch.object(guest, 'Path', side_effect=path))
                 stack.enter_context(patch.object(guest, 'STATE', sandbox_state))
-                stack.enter_context(patch.object(guest, 'properties', side_effect=properties))
+                stack.enter_context(patch.object(common, '_run_process', side_effect=query))
                 stack.enter_context(patch.object(guest, 'await_result', side_effect=result))
-                stack.enter_context(patch.object(guest, 'ctl'))
+                stack.enter_context(patch.object(guest, 'ctl', side_effect=control))
                 stack.enter_context(patch.object(guest, 'run_raw', side_effect=lambda argv:
                     self.assertEqual(argv, ('/usr/bin/systemctl', 'daemon-reload'))))
                 stack.enter_context(patch.object(guest, 'write'))

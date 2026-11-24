@@ -264,6 +264,8 @@ def command(action, unit):
     require(action in ('start', 'stop', 'reset-failed', 'show', 'kill'), 'action-membership')
     if action == 'kill':
         return ('/usr/bin/systemctl', 'kill', '--kill-whom=all', '--signal=KILL', unit)
+    if action == 'show':
+        return ('/usr/bin/systemctl', 'show', '--all', unit)
     return ('/usr/bin/systemctl', action, unit)
 
 
