@@ -177,3 +177,24 @@ Diagnostic coverlet results for the new types (line / branch):
 - PolicyWorkerReceipt: 100.00% / 100.00%.
 
 Coverage excludes native proof and is not a merge gate.
+
+## Integration fixture scheduling correction
+
+The initial Windows authority partition at `9ddc67c` recorded 111 passing cases
+and one failure: `BarrierOrdersBothAdmissionAndRevocationWinners(2, true)`
+timed out at its ten-second barrier. The record does not establish why that
+hosted worker missed the rendezvous. No permission or authority assertion failed.
+The original job log and raw TRX remain retained as failure evidence.
+
+An isolated process using the unchanged request implementation and a deliberately
+occupied one-thread pool reproduced the scheduling dependency: the `Task.Run`
+worker missed the barrier, while a dedicated worker completed the same
+admission/revocation assertions. This is a controlled scheduling counterexample,
+not a reconstruction of the hosted runner's exact state.
+
+The four blocking barrier-worker sites in `OwnerAuthorizationOrderingTests` now
+use dedicated long-running tasks with the default scheduler. Barrier phases,
+the ten-second timeout, all authority assertions and the production request code
+are unchanged. No retry or timeout increase is used. This adds one existing test
+file to the six-file model patch; rollback also restores that fixture file.
+Windows execution of this correction remains pending until hosted CI proves it.

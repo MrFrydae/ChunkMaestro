@@ -31,7 +31,7 @@ public sealed class OwnerAuthorizationOrderingTests
         }
         using Barrier boundary = new(2);
         int effects = 0;
-        Task worker = Task.Run(() =>
+        Task worker = StartBarrierWorker(() =>
         {
             if (admissionFirst)
             {
@@ -67,7 +67,7 @@ public sealed class OwnerAuthorizationOrderingTests
         using Barrier queue = new(2);
         int unsafeEffects = 0;
         int admittedEffects = 0;
-        Task worker = Task.Run(() =>
+        Task worker = StartBarrierWorker(() =>
         {
             Meet(queue);
             Meet(queue);
@@ -211,7 +211,7 @@ public sealed class OwnerAuthorizationOrderingTests
         using Barrier start = new(3);
         int admitted = 0;
         Admission? winner = null;
-        Task Worker() => Task.Run(() =>
+        Task Worker() => StartBarrierWorker(() =>
         {
             Meet(start);
             Admission? admission = request.Admit(OwnerEffect.Begin, scope);
@@ -252,7 +252,7 @@ public sealed class OwnerAuthorizationOrderingTests
         OwnerAuthorizationRequest request = new(scope, deadline);
         Assert.True(request.Verified(scope));
         using Barrier queue = new(2);
-        Task worker = Task.Run(() =>
+        Task worker = StartBarrierWorker(() =>
         {
             Meet(queue);
             Meet(queue);
@@ -321,6 +321,14 @@ public sealed class OwnerAuthorizationOrderingTests
     private static void AdmitAndFinish(OwnerAuthorizationRequest request, OwnerEffect effect, OwnerRequestScope scope)
     {
         Assert.True(request.Finish(Admit(request, effect, scope), OwnerEffectCompletion.Completed));
+    }
+
+    // These workers block at a fixed rendezvous. A dedicated task avoids making
+    // the opposing test participant depend on thread-pool injection under load.
+    private static Task StartBarrierWorker(Action action)
+    {
+        return Task.Factory.StartNew(action, CancellationToken.None,
+            TaskCreationOptions.LongRunning, TaskScheduler.Default);
     }
 
     private static void Meet(Barrier barrier)
