@@ -18,6 +18,7 @@ MARKER = '<!-- chunkmaestro-qa-v1 -->'
 LEAD_ID = 38875853
 RISK_PREFIXES = ('src/ChunkMaestro.Inspector.Native/',
                  'tests/ChunkMaestro.InspectorNativeTests/',
+                 'tests/ChunkMaestro.HelperPolicyTests/',
                  'src/ChunkMaestro.Agent/', 'src/ChunkMaestro.Transport/',
                  'src/ChunkMaestro.Contracts/', 'src/ChunkMaestro.OwnerVerification/',
                  'src/ChunkMaestro.PrivilegedHelper/', 'src/ChunkMaestro.Persistence/',

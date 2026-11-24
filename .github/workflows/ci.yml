@@ -131,6 +131,9 @@ jobs:
       - name: Inspection protocol contracts
         timeout-minutes: 2
         run: python tooling/ci/command.py --timeout-seconds 90 -- dotnet test tests/ChunkMaestro.ContractsTests/ChunkMaestro.ContractsTests.csproj -c Release --no-build --no-restore --blame-hang --blame-hang-timeout 60s --logger trx --logger "console;verbosity=normal" --results-directory .artifacts/ci/contract-tests
+      - name: Inspection policy DATA boundaries and malformed-input corpus
+        timeout-minutes: 2
+        run: python tooling/ci/command.py --timeout-seconds 90 -- dotnet test tests/ChunkMaestro.HelperPolicyTests/ChunkMaestro.HelperPolicyTests.csproj -c Release --no-build --no-restore --collect "XPlat Code Coverage" --blame-hang --blame-hang-timeout 60s --logger trx --logger "console;verbosity=normal" --results-directory .artifacts/ci/helper-policy-tests
       - name: Internal owner bridge no-prompt and platform refusal contracts
         timeout-minutes: 2
         run: python tooling/ci/command.py --timeout-seconds 90 -- dotnet test tests/ChunkMaestro.OwnerVerificationTests/ChunkMaestro.OwnerVerificationTests.csproj -c Release --no-build --no-restore --blame-hang --blame-hang-timeout 60s --logger trx --logger "console;verbosity=normal" --results-directory .artifacts/ci/owner-tests
@@ -145,6 +148,7 @@ jobs:
             .artifacts/ci/credential-tests
             .artifacts/ci/identity-tests
             .artifacts/ci/contract-tests
+            .artifacts/ci/helper-policy-tests
             .artifacts/ci/owner-tests
             .artifacts/ci/owner-fixture-offline
             .artifacts/build

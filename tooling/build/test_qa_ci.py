@@ -12,6 +12,14 @@ import qa_ci
 
 
 class QaCiTests(unittest.TestCase):
+    def test_helper_policy_tests_alone_require_all_three_roles(self):
+        files = ['tests/ChunkMaestro.HelperPolicyTests/InstalledPolicyCodecTests.cs']
+        self.assertTrue(qa_ci.high_risk(files, []))
+        with self.assertRaises(ValueError):
+            qa_ci.assess([self.comment()], self.head, files, [])
+        self.report['reviews'].append(self.review('ux-accessibility-performance', 'reviewer-three'))
+        self.assertTrue(qa_ci.assess([self.comment()], self.head, files, [])['high_risk'])
+
     def test_native_failure_blocks_even_a_complete_attestation_and_green_storage(self):
         self.report['reviews'].append(self.review('ux-accessibility-performance', 'reviewer-three'))
 
