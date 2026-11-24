@@ -59,6 +59,15 @@ jobs:
           python -m unittest discover -s tooling/specification -p "test_*.py" -v
           python -m unittest discover -s tooling/build -p "test_*.py" -v
           python -m unittest discover -s tooling/ci -p "test_*.py" -v
+          python tooling/ci/command.py --timeout-seconds 30 -- python -B -m unittest discover -s tooling/inspector-qualification -p "test_*.py" -v
+      - name: Retain real Linux self-context diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: inspector-context-linux
+          path: .artifacts/ci/inspector-context
+          if-no-files-found: warn
+          retention-days: 14
 
   managed:
     name: managed (${{ matrix.os }})
