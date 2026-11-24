@@ -105,6 +105,30 @@ mismatch fails the new static assertion. This is not Linux harness execution or
 independent closure. The original preflight FAIL is preserved; final review is
 still required after actual Linux execution.
 
+## First hosted architecture run and audit correction
+
+At `4b27617335b6acc39de26c7aac55b1da188a8f58`, workflow 45410416405
+compiled and ran all four policy kernel/control variants on Linux x64, including
+the literal ABI vectors and checkpoint controls. It then stopped at the production
+import audit: the non-optimized object references `gnu_dev_major` and
+`gnu_dev_minor`. On arm64, metadata/peer kernel and sanitizer runs completed, but
+the peer audit stopped on `__stack_chk_guard` before the policy variants.
+Later sensitivity, gcov and focused managed steps in those jobs did not execute.
+These are partial results, not architecture acceptance.
+
+The audits now name exactly those glibc device-extraction and compiler canary
+symbols. glibc's [sysmacros declarations](https://github.com/bminor/glibc/blob/master/misc/sys/sysmacros.h)
+map `major`/`minor` to `gnu_dev_major`/`gnu_dev_minor`;
+[GCC 13 AArch64 options](https://gcc.gnu.org/onlinedocs/gcc-13.3.0/gcc/AArch64-Options.html)
+describe the global stack canary. Stack protection remains enabled. No wildcard
+or blanket helper exemption exists. Both peer and policy audits require a
+separately compiled `recv` payload control to be rejected. Raw policy imports and
+negative-control outputs are retained. Portable matcher tests reject network,
+execution, test-control and lookalike symbol names; those tests do not establish
+Linux compilation or native execution of the correction. Corrected hosted results
+and all final roles remain pending. Original failed artifacts and decoded logs
+are retained in the lead evidence bundle.
+
 ## Parent Linux commands
 
 Prerequisites: disposable ordinary-user Ubuntu 24.04 x64 **and** arm64 runners;

@@ -111,8 +111,9 @@ echo 'PASS: expected non-stream guard failure detected; production source unchan
 nm -u "$build/peer-production.o" > "$build/peer-imports"
 # An allowlist also rejects future payload, socket creation, exec, ioctl, test
 # controls and permission mutation imports, including unanticipated spellings.
-# Keep compiler stack protection enabled; its failure helper is not payload I/O.
-peer_allowed_imports='^(__errno_location|__stack_chk_fail|memset|getsockopt|getsockname|getpeername)$'
+# Keep compiler stack protection enabled. AArch64 GCC also references the global
+# canary (__stack_chk_guard); neither canary symbol is payload I/O.
+peer_allowed_imports='^(__errno_location|__stack_chk_fail|__stack_chk_guard|memset|getsockopt|getsockname|getpeername)$'
 if sed -E 's/^.*[[:space:]]U[[:space:]]+//' "$build/peer-imports" | \
     grep -Ev "$peer_allowed_imports"; then
     echo 'FAIL: unexpected peer production import' >&2
@@ -169,16 +170,31 @@ done
 "$compiler" -std=c11 -Wall -Wextra -Werror -Wpedantic -fstack-protector-strong \
     -c "$root/src/ChunkMaestro.Inspector.Native/policy_snapshot.c" -o "$build/policy-production.o"
 nm -u "$build/policy-production.o" > "$build/policy-imports"
-policy_allowed_imports='^(__errno_location|__stack_chk_fail|calloc|close|fcntl|fgetxattr|free|fstat|memcmp|memcpy|pread|syscall)$'
+policy_artifacts="$root/.artifacts/policy-snapshot"
+mkdir -p "$policy_artifacts"
+cp "$build/policy-imports" "$policy_artifacts/production-imports.txt"
+# glibc major/minor are gnu_dev_major/gnu_dev_minor calls in the non-optimized
+# audit object. List exact ABI helpers; no symbol-prefix wildcard is accepted.
+policy_allowed_imports='^(__errno_location|__stack_chk_fail|__stack_chk_guard|gnu_dev_major|gnu_dev_minor|calloc|close|fcntl|fgetxattr|free|fstat|memcmp|memcpy|pread|syscall)$'
 if sed -E 's/^.*[[:space:]]U[[:space:]]+//' "$build/policy-imports" | grep -Ev "$policy_allowed_imports"; then
     echo 'FAIL: unexpected policy production import' >&2
     exit 1
 fi
 cat "$build/policy-imports"
 echo 'PASS: separate policy production imports exclude test controls/mutation/network'
+# Verify the policy allowlist itself rejects a real compiled network/payload
+# import, including on the architecture that requires a global stack canary.
+"$compiler" -std=c11 -Wall -Wextra -Werror -Wpedantic -fstack-protector-strong \
+    -c "$build/peer-payload.c" -o "$build/policy-payload.o"
+nm -u "$build/policy-payload.o" > "$policy_artifacts/payload-imports.txt"
+if ! sed -E 's/^.*[[:space:]]U[[:space:]]+//' "$policy_artifacts/payload-imports.txt" | \
+    grep -Ev "$policy_allowed_imports" > "$policy_artifacts/payload-rejected.txt"; then
+    echo 'FAIL: compiled payload import escaped the policy production allowlist' >&2
+    exit 1
+fi
+grep -Fx 'recv' "$policy_artifacts/payload-rejected.txt"
+echo 'PASS: compiled payload import rejected by policy production allowlist'
 # Direct negative sensitivity: guard bypasses must fail their invariant assertions.
-policy_artifacts="$root/.artifacts/policy-snapshot"
-mkdir -p "$policy_artifacts"
 for mutation in size type bytes cleanup; do
     case "$mutation" in
         size) expression='s/s->file_stat.st_size < 1/0/' ;;
