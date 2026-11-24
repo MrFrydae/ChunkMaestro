@@ -147,6 +147,8 @@ def command(args, env, directory, label, deadline):
                         continue
                     remaining = LIMIT - total
                     streams[key.data].write(chunk[:remaining])
+                    # Operators need the fixed host events while the child is alive.
+                    streams[key.data].flush()
                     total += min(len(chunk), remaining)
                     if len(chunk) > remaining:
                         reason = "output-limit"
