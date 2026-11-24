@@ -608,6 +608,8 @@ class Campaign:
                 return False
             if cases[CASE_NAMES[1]]['raw'].get('barrier') != 'processed':
                 return False
+            if cases[CASE_NAMES[2]]['raw'].get('sender_barrier') != 'processed-before-exit':
+                return False
             for index, dead in ((3, False), (4, True), (7, True)):
                 raw = cases[CASE_NAMES[index]]['raw']
                 if (not phase(index, 'RECOVERED', 2)

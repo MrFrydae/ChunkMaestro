@@ -5,12 +5,95 @@ import json
 from pathlib import Path
 import sys
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.dont_write_bytecode = True
 spec = importlib.util.spec_from_file_location('fixture_common', Path(__file__).with_name('common.py'))
 c = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(c)
+process_spec = importlib.util.spec_from_file_location('fixture_process', Path(__file__).with_name('process.py'))
+p = importlib.util.module_from_spec(process_spec)
+with patch.dict(sys.modules, {'common': c}):
+    process_spec.loader.exec_module(p)
+
+
+class ChildExit(BaseException):
+    def __init__(self, code):
+        self.code = code
+
+
+class RejectedSenderContracts(unittest.TestCase):
+    def test_child_is_alive_when_queued_notification_is_processed(self):
+        for access in ('main', 'all'):
+            events = []
+            state = {'alive': True, 'pending': False, 'attributed': False, 'removed': False}
+            def send(message):
+                self.assertEqual(message, 'FDSTOREREMOVE=1\nFDNAME=worker-' + 'e' * 32)
+                state['pending'] = True
+                events.append('send')
+            def barrier():
+                self.assertTrue(state['pending'])
+                self.assertTrue(state['alive'])
+                state['attributed'] = state['alive']
+                state['removed'] = state['attributed'] and access == 'all'
+                events.append('child-barrier')
+            def exit_child(code):
+                state['alive'] = False
+                events.append(('exit', code))
+                raise ChildExit(code)
+            notify = Mock(send=send, barrier=barrier)
+            with self.subTest(access=access), patch.object(p.os, 'fork', return_value=0), \
+                    patch.object(p.os, '_exit', side_effect=exit_child), patch.object(p.os, 'waitpid') as wait:
+                with self.assertRaises(ChildExit) as exited:
+                    p.rejected_sender(notify, 'e' * 32)
+                self.assertEqual(exited.exception.code, 0)
+                wait.assert_not_called()
+            self.assertEqual(events, ['send', 'child-barrier', ('exit', 0)])
+            self.assertTrue(state['attributed'])
+            self.assertEqual(state['removed'], access == 'all')
+
+    def test_send_or_child_barrier_failure_never_returns_success(self):
+        def exit_child(code):
+            raise ChildExit(code)
+        for stage in ('send', 'barrier'):
+            notify = Mock()
+            getattr(notify, stage).side_effect = c.Failure('notify-' + stage)
+            with self.subTest(stage=stage), patch.object(p.os, 'fork', return_value=0), \
+                    patch.object(p.os, '_exit', side_effect=exit_child) as exit_mock, \
+                    patch.object(p.os, 'waitpid') as wait:
+                with self.assertRaises(ChildExit) as exited:
+                    p.rejected_sender(notify, 'e' * 32)
+                self.assertEqual(exited.exception.code, 2)
+                exit_mock.assert_called_once_with(2)
+                wait.assert_not_called()
+                if stage == 'send': notify.barrier.assert_not_called()
+                else: notify.barrier.assert_called_once_with()
+
+    def test_parent_reaps_exact_child_and_refuses_nonzero_or_signal(self):
+        for status in (0, 2 << 8, 15):
+            notify = Mock()
+            with self.subTest(status=status), patch.object(p.os, 'fork', return_value=321), \
+                    patch.object(p.os, 'waitpid', return_value=(321, status)) as wait:
+                if status == 0:
+                    p.rejected_sender(notify, 'e' * 32)
+                else:
+                    with self.assertRaisesRegex(c.Failure, '^rejection-send$'):
+                        p.rejected_sender(notify, 'e' * 32)
+                wait.assert_called_once_with(321, 0)
+                notify.send.assert_not_called()
+                notify.barrier.assert_not_called()
+
+    def test_fork_and_reap_errors_propagate_without_success(self):
+        for stage in ('fork', 'waitpid'):
+            notify = Mock()
+            with self.subTest(stage=stage), patch.object(p.os, 'fork', return_value=321) as fork, \
+                    patch.object(p.os, 'waitpid', return_value=(321, 0)) as wait:
+                (fork if stage == 'fork' else wait).side_effect = OSError('synthetic')
+                with self.assertRaises(OSError):
+                    p.rejected_sender(notify, 'e' * 32)
+                notify.send.assert_not_called()
+                notify.barrier.assert_not_called()
+                if stage == 'fork': wait.assert_not_called()
 
 
 class Contracts(unittest.TestCase):

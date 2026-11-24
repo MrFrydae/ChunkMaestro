@@ -42,6 +42,16 @@ still compares with exact JSON types; duplicate, missing, extra, renamed or alte
 identities refuse. Raw snapshots retain their original order in evidence. This
 does not change ordering requirements for receipts, stages or other JSON arrays.
 
+The wrong-main-sender control keeps the child alive through its own bounded
+notification barrier before exit. A parent barrier after reaping cannot establish
+child attribution: PID 1 may otherwise ignore an already-dead auxiliary sender
+even with `NotifyAccess=all`. The parent requires successful child exit, retains
+its own barrier and exact unchanged FD-store checks, and only then exports
+`sender_barrier=processed-before-exit`. Both host receipts require this marker;
+older results lacking it cannot qualify this control. Send, barrier, fork and
+reap failures refuse. The existing two-second notification barrier and total
+campaign limits are unchanged. See the [systemd 257 attribution and barrier contract](https://www.freedesktop.org/software/systemd/man/257/sd_notify.html).
+
 ## Files and fixed graph
 
 `common.py` owns refusal, identity/dump comparison, notification bindings and bounded

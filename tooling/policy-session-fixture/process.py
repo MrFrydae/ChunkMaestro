@@ -62,6 +62,21 @@ def terminal(unit, invocation):
 HOLDER_STATE_ID = None
 
 
+def rejected_sender(notify, epoch):
+    # Keep the auxiliary sender alive until PID 1 has processed its message.
+    # A barrier from the parent after reaping cannot prove child attribution.
+    child = os.fork()
+    if child == 0:
+        try:
+            notify.send('FDSTOREREMOVE=1\nFDNAME=worker-' + epoch)
+            notify.barrier()
+            os._exit(0)
+        except Exception:
+            os._exit(2)
+    _, status = os.waitpid(child, 0)
+    require(os.waitstatus_to_exitcode(status) == 0, 'rejection-send')
+
+
 def holder():
     global HOLDER_STATE_ID
     guard()
@@ -130,19 +145,12 @@ def holder():
                         os.close(third)
                 elif action == 'rejected-sender':
                     # Intentional wrong main sender: root child in same service is still rejected.
-                    child = os.fork()
-                    if child == 0:
-                        try:
-                            notify.send('FDSTOREREMOVE=1\nFDNAME=worker-' + journal['epoch'])
-                            os._exit(0)
-                        except Exception:
-                            os._exit(2)
-                    _, status = os.waitpid(child, 0)
-                    require(os.waitstatus_to_exitcode(status) == 0, 'rejection-send')
+                    rejected_sender(notify, journal['epoch'])
                     notify.barrier()
                     rows = dump()
                     confirm(rows, journal['expected'])
-                    write('result', {'phase': 'SENDER_REJECTED', 'raw_dump': rows, 'sequence': sequence})
+                    write('result', {'phase': 'SENDER_REJECTED', 'sender_barrier': 'processed-before-exit',
+                                     'raw_dump': rows, 'sequence': sequence})
                 elif action == 'retire':
                     require(set(fds) == {'worker', 'agent'} and all(hup(fd) for fd in fds.values()),
                             'original-hup-required')

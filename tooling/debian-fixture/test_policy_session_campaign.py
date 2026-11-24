@@ -32,7 +32,8 @@ def model():
             ['agent-' + 'e' * 32, 1, 0, 5, 102, 0, 0, 'anon_inode:[pidfd]', 2]]
     def phase(name, count=2):
         return {'phase': name, 'raw_dump': rows[:count]}
-    raw = [phase('ARMED'), dict(phase('FULL_REJECTED'), barrier='processed'), phase('SENDER_REJECTED'),
+    raw = [phase('ARMED'), dict(phase('FULL_REJECTED'), barrier='processed'),
+           dict(phase('SENDER_REJECTED'), sender_barrier='processed-before-exit'),
            dict(phase('RECOVERED'), hup={'worker': False, 'agent': False}, recovery=True),
            dict(phase('RECOVERED'), hup={'worker': True, 'agent': True}, recovery=True), rows,
            {'holder': {'ActiveState': 'inactive', 'LoadState': 'loaded'}, 'raw_dump': rows},
@@ -57,6 +58,22 @@ def serial(c, report, code=2):
 
 
 class CampaignContracts(unittest.TestCase):
+    def test_rejected_sender_requires_child_processing_before_exit_in_both_receipts(self):
+        c, report = model()
+        c.capture(serial(c, report)); c.ssh = c.cleaned = True
+        self.assertTrue(c.protocol_pass())
+        for value in (None, True, 1, 'processed', 'parent-only', [], {}):
+            for index in (0, 1):
+                c, report = model()
+                c.capture(serial(c, report)); c.ssh = c.cleaned = True
+                c.records[index]['report']['cases'][f.CASE_NAMES[2]]['raw']['sender_barrier'] = value
+                with self.subTest(value=value, receipt=index):
+                    self.assertFalse(c.protocol_pass())
+        c, report = model()
+        del report['cases'][f.CASE_NAMES[2]]['raw']['sender_barrier']
+        c.capture(serial(c, report)); c.ssh = c.cleaned = True
+        self.assertFalse(c.protocol_pass())
+
     def test_fd_store_order_permutations_preserve_every_named_identity(self):
         import itertools
         for reversed_rows in itertools.product((False, True), repeat=8):
