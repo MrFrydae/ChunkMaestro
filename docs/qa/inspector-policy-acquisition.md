@@ -129,6 +129,31 @@ Linux compilation or native execution of the correction. Corrected hosted result
 and all final roles remain pending. Original failed artifacts and decoded logs
 are retained in the lead evidence bundle.
 
+## ARM VSTest post-processing limitation and alternate verification
+
+At `8878d452ffb5fa876ddec5f1ca0845e7e81f4f66`, workflow 45411018184's
+x64 inspector job passed completely. The arm64 native kernel/control, sanitizer,
+ABI, import, negative-sensitivity and gcov stages passed. The arm64 managed TRX
+records 251 executed/passed, zero failures/skips; VSTest then failed its artifact
+post-processing directory verification with errno 22. This is a failed job and
+an unresolved VSTest/platform limitation, not complete CI acceptance or evidence
+that the directory was safely validated. Its original artifact is retained.
+
+Arm64 now executes the same freshly built pinned xUnit v3 assembly directly,
+with theory pre-enumeration, `-failSkips`, raw xUnit XML, TRX and CTRF results.
+A separate discovery pass is matched to execution by exact escaped display names
+and method/case multiplicities;
+duplicate discovery IDs, duplicate execution names, nonpassing outcomes, empty
+runs and inconsistent summaries refuse acceptance. This does not claim stable
+cross-run xUnit IDs or byte-identical display names across report formats.
+The outer existing process supervisor still bounds and reaps the worker.
+No test source, assertion or test filter changes; no SDK/package upgrade or
+VSTest security-disable flag is used. The x64 job retains the original VSTest
+coverage collector; arm64 direct-run managed coverage is NOT measured. The prior
+arm64 coverage remains historical. Native coverage remains separately measured
+on each architecture. Scores are diagnostic. Corrected ARM execution and final
+independent QA remain pending; this alternative does not repair upstream VSTest.
+
 ## Parent Linux commands
 
 Prerequisites: disposable ordinary-user Ubuntu 24.04 x64 **and** arm64 runners;
@@ -147,7 +172,8 @@ Source/compiler/architecture/shim hashes and raw TRX, logs and diagnostic covera
 are uploaded, including failures. Existing direct safety checks remain intact.
 Actual hosted results and independent final QA are still pending at this commit.
 
-For separate reproduction on each architecture from the checkout with the patch applied:
+For separate x64 reproduction from the checkout with the patch applied (use the
+explicit direct-runner workflow commands on arm64 for the limitation above):
 
 ```sh
 set -eu
