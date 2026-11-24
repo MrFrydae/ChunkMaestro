@@ -170,45 +170,100 @@ int main(void)
             return 1;
         }
         application.focused = NO;
-        if (presentationReady(windowBitsOnly, appBitsOnly, screens))
+        if (presentationReady(windowBitsOnly, appBitsOnly, screens) ||
+            presentationFailures(windowBitsOnly, appBitsOnly, screens) != PresentationAppInactive)
         {
             return 2;
         }
         application.focused = YES;
         window.key = NO;
-        if (presentationReady(windowBitsOnly, appBitsOnly, screens))
+        if (presentationReady(windowBitsOnly, appBitsOnly, screens) ||
+            presentationFailures(windowBitsOnly, appBitsOnly, screens) != PresentationNotKey)
         {
             return 3;
         }
         window.key = YES;
         window.activeSpace = NO;
-        if (presentationReady(windowBitsOnly, appBitsOnly, screens))
+        if (presentationReady(windowBitsOnly, appBitsOnly, screens) ||
+            presentationFailures(windowBitsOnly, appBitsOnly, screens) != PresentationOffSpace)
         {
             return 4;
         }
         window.activeSpace = YES;
         window.occlusionState = 0;
-        if (presentationReady(windowBitsOnly, appBitsOnly, screens))
+        if (presentationReady(windowBitsOnly, appBitsOnly, screens) ||
+            presentationFailures(windowBitsOnly, appBitsOnly, screens) != PresentationOccluded)
         {
             return 5;
         }
         window.occlusionState = NSWindowOcclusionStateVisible;
         window.frame = NSMakeRect(160, 160, 760, 250);
-        if (presentationReady(windowBitsOnly, appBitsOnly, screens))
+        if (presentationReady(windowBitsOnly, appBitsOnly, screens) ||
+            presentationFailures(windowBitsOnly, appBitsOnly, screens) != PresentationOutsideScreen)
         {
             return 6;
         }
         window.frame = NSMakeRect(-500, -800, 760, 250);
-        if (presentationReady(windowBitsOnly, appBitsOnly, screens))
+        if (presentationReady(windowBitsOnly, appBitsOnly, screens) ||
+            presentationFailures(windowBitsOnly, appBitsOnly, screens) != PresentationOutsideScreen)
         {
             return 7;
         }
         window.frame = NSMakeRect(-1500, -800, 760, 250);
         application.windows = @[];
-        if (presentationReady(windowBitsOnly, appBitsOnly, screens))
+        if (presentationReady(windowBitsOnly, appBitsOnly, screens) ||
+            presentationFailures(windowBitsOnly, appBitsOnly, screens) != PresentationNotOwned)
         {
             return 8;
         }
+        application.windows = @[windowBitsOnly];
+        window.shown = NO;
+        if (presentationFailures(windowBitsOnly, appBitsOnly, screens) != PresentationNotVisible)
+        {
+            return 9;
+        }
+        window.shown = YES;
+        window.mini = YES;
+        if (presentationFailures(windowBitsOnly, appBitsOnly, screens) != PresentationMiniaturized)
+        {
+            return 10;
+        }
+        window.mini = NO;
+        window.number = 0;
+        if (presentationFailures(windowBitsOnly, appBitsOnly, screens) != PresentationNoWindowNumber)
+        {
+            return 11;
+        }
+        window.number = 1;
+        window.frame = NSZeroRect;
+        if (presentationFailures(windowBitsOnly, appBitsOnly, screens) != PresentationOutsideScreen)
+        {
+            return 12;
+        }
+        window.frame = NSMakeRect(-1500, -800, 760, 250);
+        if (presentationFailures(nil, appBitsOnly, screens) != PresentationMissingObject)
+        {
+            return 13;
+        }
+        if (presentationFailures(windowBitsOnly, nil, screens) != PresentationMissingObject)
+        {
+            return 14;
+        }
+        if (presentationFailures(windowBitsOnly, appBitsOnly, @[]) != PresentationOutsideScreen)
+        {
+            return 15;
+        }
+        reportPresentationFailures(0); // Emits nothing, never a success assertion.
+        application.focused = NO;
+        window.key = NO;
+        uint32_t combined = presentationFailures(windowBitsOnly, appBitsOnly, screens);
+        if (combined != (PresentationAppInactive | PresentationNotKey))
+        {
+            return 16;
+        }
+        reportPresentationFailures(combined);
+        // Exercise every fixed label with synthetic bits only; no OS session query.
+        reportPresentationFailures((1u << 12) - 1);
         puts("PASS: presentation metadata refusals; no window or authentication");
     }
     return 0;
@@ -223,7 +278,16 @@ int main(void)
         self.assertTrue(runner.successful(build), (directory / "presentation-build.stderr").read_text())
         action = runner.command([str(binary)], self.environment, directory, "presentation-action", 5)
         self.assertTrue(runner.successful(action), (directory / "presentation-action.stderr").read_text())
-        self.assertIn("PASS: presentation metadata refusals", (directory / "presentation-action.stdout").read_text())
+        output = (directory / "presentation-action.stdout").read_text()
+        self.assertIn("PASS: presentation metadata refusals", output)
+        diagnostics = [json.loads(line) for line in output.splitlines() if line.startswith("{")]
+        reasons = [row["state"] for row in diagnostics]
+        self.assertEqual(["application-inactive", "window-not-key"], reasons[:2])
+        self.assertEqual(12, len(set(reasons[2:])))
+        self.assertEqual(14, len(reasons))
+        self.assertTrue(all(row["event"] == "presentation-prerequisite" for row in diagnostics))
+        self.assertNotIn("PASS", reasons)
+        self.assertNotIn("FAIL", reasons)
 
     def test_cleanup_error_does_not_erase_primary_failure(self):
         with patch.object(runner, "reap_group", side_effect=runner.subprocess.TimeoutExpired("cleanup", 5)):

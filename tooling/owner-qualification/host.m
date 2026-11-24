@@ -66,23 +66,105 @@ static BOOL localSessionAvailable(void)
         [session[(__bridge NSString *)kCGSessionUserIDKey] unsignedIntValue] == getuid();
 }
 
-static BOOL presentationReady(NSWindow *window, NSApplication *application, NSArray<NSScreen *> *screens)
+enum
 {
-    if (!application.isActive || !window.isKeyWindow || !window.isOnActiveSpace ||
-        !window.isVisible || window.isMiniaturized || window.windowNumber <= 0 ||
-        !(window.occlusionState & NSWindowOcclusionStateVisible) ||
-        ![application.windows containsObject:window])
+    PresentationAppInactive = 1u << 0,
+    PresentationNotKey = 1u << 1,
+    PresentationOffSpace = 1u << 2,
+    PresentationNotVisible = 1u << 3,
+    PresentationMiniaturized = 1u << 4,
+    PresentationNoWindowNumber = 1u << 5,
+    PresentationOccluded = 1u << 6,
+    PresentationNotOwned = 1u << 7,
+    PresentationOutsideScreen = 1u << 8,
+    PresentationMissingObject = 1u << 9,
+    PresentationOffMain = 1u << 10,
+    PresentationNoSession = 1u << 11
+};
+
+static uint32_t presentationFailures(NSWindow *window, NSApplication *application, NSArray<NSScreen *> *screens)
+{
+    if (window == nil || application == nil)
     {
-        return NO;
+        return PresentationMissingObject;
     }
+    uint32_t failed = 0;
+    if (!application.isActive)
+    {
+        failed |= PresentationAppInactive;
+    }
+    if (!window.isKeyWindow)
+    {
+        failed |= PresentationNotKey;
+    }
+    if (!window.isOnActiveSpace)
+    {
+        failed |= PresentationOffSpace;
+    }
+    if (!window.isVisible)
+    {
+        failed |= PresentationNotVisible;
+    }
+    if (window.isMiniaturized)
+    {
+        failed |= PresentationMiniaturized;
+    }
+    if (window.windowNumber <= 0)
+    {
+        failed |= PresentationNoWindowNumber;
+    }
+    if (!(window.occlusionState & NSWindowOcclusionStateVisible))
+    {
+        failed |= PresentationOccluded;
+    }
+    if (![application.windows containsObject:window])
+    {
+        failed |= PresentationNotOwned;
+    }
+    BOOL contained = NO;
     for (NSScreen *screen in screens)
     {
         if (!NSIsEmptyRect(window.frame) && NSContainsRect(screen.visibleFrame, window.frame))
         {
-            return YES;
+            contained = YES;
+            break;
         }
     }
-    return NO;
+    return failed | (contained ? 0 : PresentationOutsideScreen);
+}
+
+static BOOL presentationReady(NSWindow *window, NSApplication *application, NSArray<NSScreen *> *screens)
+{
+    return presentationFailures(window, application, screens) == 0;
+}
+
+static void reportPresentationFailures(uint32_t failed)
+{
+    static const struct
+    {
+        uint32_t bit;
+        const char *reason;
+    } reasons[] = {
+        { PresentationAppInactive, "application-inactive" },
+        { PresentationNotKey, "window-not-key" },
+        { PresentationOffSpace, "window-off-active-space" },
+        { PresentationNotVisible, "window-not-visible" },
+        { PresentationMiniaturized, "window-miniaturized" },
+        { PresentationNoWindowNumber, "window-number-unavailable" },
+        { PresentationOccluded, "window-occluded" },
+        { PresentationNotOwned, "window-not-owned" },
+        { PresentationOutsideScreen, "window-outside-visible-screen" },
+        { PresentationMissingObject, "presentation-object-unavailable" },
+        { PresentationOffMain, "not-main-thread" },
+        { PresentationNoSession, "local-session-unavailable" }
+    };
+    for (size_t index = 0; index < sizeof(reasons) / sizeof(reasons[0]); index++)
+    {
+        if (failed & reasons[index].bit)
+        {
+            event("presentation-prerequisite", reasons[index].reason);
+        }
+    }
 }
 
 static BOOL visible(void)
@@ -243,8 +325,23 @@ static int32_t reply(uint64_t identifier, uint64_t receivedGeneration, uintptr_t
     windowBits = (uintptr_t)(__bridge void *)fixtureWindow;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), dispatch_get_main_queue(), ^
     {
-        if (!visible())
+        // Preserve context refusal before querying AppKit window metadata.
+        uint32_t unavailable = 0;
+        if (!NSThread.isMainThread)
         {
+            unavailable = PresentationOffMain;
+        }
+        else if (!localSessionAvailable())
+        {
+            unavailable = PresentationNoSession;
+        }
+        else
+        {
+            unavailable = presentationFailures(fixtureWindow, NSApp, NSScreen.screens);
+        }
+        if (unavailable != 0)
+        {
+            reportPresentationFailures(unavailable);
             event("actual-owned-visible-window", "UNAVAILABLE-presentation");
             exit(77);
         }
