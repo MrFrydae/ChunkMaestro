@@ -442,15 +442,22 @@ class CampaignContracts(unittest.TestCase):
                                 if completion and stage == 'completion-after': deliver()
                             args = ['fixture.py', '--execute-owner-reviewed-fixture', '--policy-session-campaign',
                                 '--campaign-acknowledge', f.CAMPAIGN_ACK, '--campaign-evidence', d]
-                            with patch.object(sys, 'argv', args), patch.object(f, 'Campaign', return_value=c), \
-                                 patch.object(f, 'prerequisites'), patch.object(f.ctypes, 'CDLL') as libc, \
-                                 patch.object(f.tempfile, 'mkdtemp', return_value=str(root)), \
-                                 patch.object(f.shutil, 'disk_usage', return_value=SimpleNamespace(free=11 * 1024**3)), \
-                                 patch.object(f.signal, 'signal', side_effect=register), patch.object(f.signal, 'alarm'), \
-                                 patch.object(f.os, 'umask'), patch.object(f, 'exercise', side_effect=primary), \
-                                 patch.object(f.Harness, 'cleanup', cleanup), patch.object(f.shutil, 'rmtree', side_effect=delete), \
-                                 patch.object(c, 'persist', side_effect=persist), patch('builtins.print', side_effect=publish), \
-                                 contextlib.redirect_stdout(io.StringIO()) as log:
+                            with contextlib.ExitStack() as stack:
+                                stack.enter_context(patch.object(sys, 'argv', args))
+                                stack.enter_context(patch.object(f, 'Campaign', return_value=c))
+                                stack.enter_context(patch.object(f, 'prerequisites'))
+                                libc = stack.enter_context(patch.object(f.ctypes, 'CDLL'))
+                                stack.enter_context(patch.object(f.tempfile, 'mkdtemp', return_value=str(root)))
+                                stack.enter_context(patch.object(f.shutil, 'disk_usage', return_value=SimpleNamespace(free=11 * 1024**3)))
+                                stack.enter_context(patch.object(f.signal, 'signal', side_effect=register))
+                                stack.enter_context(patch.object(f.signal, 'alarm'))
+                                stack.enter_context(patch.object(f.os, 'umask'))
+                                stack.enter_context(patch.object(f, 'exercise', side_effect=primary))
+                                stack.enter_context(patch.object(f.Harness, 'cleanup', cleanup))
+                                stack.enter_context(patch.object(f.shutil, 'rmtree', side_effect=delete))
+                                stack.enter_context(patch.object(c, 'persist', side_effect=persist))
+                                stack.enter_context(patch('builtins.print', side_effect=publish))
+                                log = stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
                                 libc.return_value.prctl.return_value = 0
                                 with self.assertRaises(f.Failure) as caught: f.main()
                             self.assertEqual(phases, ['cleanup', 'deletion', 'persist'])
