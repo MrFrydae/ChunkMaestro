@@ -120,6 +120,7 @@ internal sealed class PolicyWorkerArbiter
                     Fail(PolicyWorkerFailure.Crash);
                     break;
                 case PolicyWorkerEvent.CleanupFailed:
+                    cleanupFinished = false;
                     RecordCleanupFailure(PolicyWorkerFailure.Cleanup);
                     Fail(PolicyWorkerFailure.Cleanup);
                     state = PolicyWorkerState.Quarantined;

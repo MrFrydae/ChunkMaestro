@@ -198,3 +198,20 @@ the ten-second timeout, all authority assertions and the production request code
 are unchanged. No retry or timeout increase is used. This adds one existing test
 file to the six-file model patch; rollback also restores that fixture file.
 Windows execution of this correction remains pending until hosted CI proves it.
+
+## Stale cleanup-completion correction
+
+Independent security review of `5347eae` found SR-1: a later CleanupFailed kept
+an earlier CleanupFinished flag, so RetirementObserved could incorrectly change
+Quarantined to Retired without fresh cleanup completion. The original FINAL FAIL
+and its reproducer remain immutable at `/tmp/pr30-security-final-5347eae/`.
+
+CleanupFailed now invalidates only the cleanup-complete observation. Leader/domain
+observations and historical first/cleanup failure categories are retained. The
+model must receive CleanupFinished after the latest cleanup fault before it can
+retire. No child packet supplies that event or becomes runtime proof.
+
+Two regression cases cover faults both before and after modeled retirement,
+repeated faults and fresh completion, retained diagnostic categories and denied
+history access. Both failed against the old code with expected Quarantined and
+actual Retired. This correction enables no actual worker or runtime admission.

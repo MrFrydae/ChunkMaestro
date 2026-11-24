@@ -216,6 +216,42 @@ public sealed class PolicyWorkerArbiterTests
         Assert.Equal(PolicyWorkerFailure.Deadline, timeout.FirstFailure);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void LaterCleanupFailureRequiresFreshCompletionBeforeRetirement(bool previouslyRetired)
+    {
+        PolicyWorkerArbiter arbiter = At(PolicyWorkerState.ReadyUnqualified);
+        arbiter.Observe(PolicyWorkerEvent.ReleaseRequested, 10);
+        arbiter.Observe(PolicyWorkerEvent.LeaderReaped, 11);
+        arbiter.Observe(PolicyWorkerEvent.DomainEmpty, 11);
+        arbiter.Observe(PolicyWorkerEvent.CleanupFinished, 12);
+        if (previouslyRetired)
+        {
+            arbiter.Observe(PolicyWorkerEvent.RetirementObserved, 12);
+            Assert.Equal(PolicyWorkerState.Retired, arbiter.State);
+        }
+        arbiter.Observe(PolicyWorkerEvent.CleanupFailed, 13);
+        arbiter.Observe(PolicyWorkerEvent.RetirementObserved, 14);
+        Assert.Equal(PolicyWorkerState.Quarantined, arbiter.State);
+        Assert.Equal(PolicyWorkerFailure.Released, arbiter.FirstFailure);
+        Assert.Equal(PolicyWorkerFailure.Cleanup, arbiter.CleanupFailure);
+        Assert.Null(arbiter.AccessUnqualifiedHistory(14));
+
+        arbiter.Observe(PolicyWorkerEvent.CleanupFinished, 15);
+        arbiter.Observe(PolicyWorkerEvent.RetirementObserved, 16);
+        Assert.Equal(PolicyWorkerState.Retired, arbiter.State);
+        arbiter.Observe(PolicyWorkerEvent.CleanupFailed, 17);
+        arbiter.Observe(PolicyWorkerEvent.RetirementObserved, 18);
+        Assert.Equal(PolicyWorkerState.Quarantined, arbiter.State);
+        arbiter.Observe(PolicyWorkerEvent.CleanupFinished, 19);
+        arbiter.Observe(PolicyWorkerEvent.RetirementObserved, 20);
+        Assert.Equal(PolicyWorkerState.Retired, arbiter.State);
+        Assert.Equal(PolicyWorkerFailure.Released, arbiter.FirstFailure);
+        Assert.Equal(PolicyWorkerFailure.Cleanup, arbiter.CleanupFailure);
+        Assert.Null(arbiter.AccessUnqualifiedHistory(20));
+    }
+
     [Fact]
     public void CheckBudgetEqualityAndRepeatedProgressCannotExtendDeadline()
     {
