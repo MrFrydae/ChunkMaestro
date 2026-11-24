@@ -163,6 +163,20 @@ arm64 coverage remains historical. Native coverage remains separately measured
 on each architecture. Scores are diagnostic. Corrected ARM execution and final
 independent QA remain pending; this alternative does not repair upstream VSTest.
 
+## Shared macOS offline supervisor correction
+
+At `47d45e7`, both inspector architecture jobs passed. The macOS managed job
+failed its existing exited-leader/descendant supervision test: process-group
+disappearance was unproven after the three-second grace. The test's original
+failure is preserved; available evidence does not establish whether a live or
+zombie member remained. The shared offline supervisor now retains failure-only
+numeric group diagnostics and uses a bounded ten-second disappearance grace.
+The group must still actually disappear; neither a diagnostic snapshot nor a
+zero leader exit can satisfy the check. Original native entry/assertion gates
+remain unchanged. Local offline process tests and explicit permanent-group and
+delayed-disappearance controls pass; corrected hosted macOS proof remains pending.
+This changes no native authorization and launches no AppKit/authentication test.
+
 ## Parent Linux commands
 
 Prerequisites: disposable ordinary-user Ubuntu 24.04 x64 **and** arm64 runners;

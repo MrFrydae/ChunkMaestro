@@ -9,7 +9,7 @@ import sys
 import tempfile
 import threading
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 SPEC = importlib.util.spec_from_file_location("qualification_runner", Path(__file__).with_name("run.py"))
 runner = importlib.util.module_from_spec(SPEC)
@@ -516,8 +516,40 @@ int main(void)
         # Child closes inherited pipes; runner must still reap the group after leader exit.
         record = self.run_child("import os,time; pid=os.fork(); "
                                 "os._exit(0) if pid else None; os.close(1); os.close(2); time.sleep(30)")
-        self.assertTrue(record["group_reaped"])
+        self.assertTrue(record["group_reaped"], json.dumps(record))
         self.assertEqual(0, record["exit"])
+
+    def test_reaping_requires_disappearance_even_after_longer_grace(self):
+        process = Mock(pid=12345)
+        with patch.object(runner.os, "killpg") as kill, \
+                patch.object(runner.time, "monotonic", side_effect=[0, 11]), \
+                patch.object(runner.time, "sleep"):
+            self.assertFalse(runner.reap_group(process))
+        self.assertEqual([(12345, signal.SIGKILL), (12345, 0)],
+                         [call.args for call in kill.call_args_list])
+        process.wait.assert_called_once_with(timeout=5)
+
+    def test_delayed_disappearance_after_old_grace_is_proven_not_assumed(self):
+        process = Mock(pid=12345)
+        with patch.object(runner.os, "killpg", side_effect=[None, None, ProcessLookupError()]), \
+                patch.object(runner.time, "monotonic", side_effect=[0, 5]), \
+                patch.object(runner.time, "sleep"):
+            self.assertTrue(runner.reap_group(process))
+
+    def test_cleanup_diagnostics_only_disclose_owned_group_numeric_state(self):
+        result = Mock(stdout="11 55 Z\n12 99 S\n13 55 R+\nmalformed\n")
+        with patch.object(runner.subprocess, "run", return_value=result):
+            self.assertEqual({"available": True, "members": [
+                {"pid": 11, "state": "Z"}, {"pid": 13, "state": "R+"}]},
+                runner.group_diagnostics(55))
+
+    def test_unproven_disappearance_cannot_pass_even_with_no_live_members_in_snapshot(self):
+        with patch.object(runner, "reap_group", return_value=False), \
+                patch.object(runner, "group_diagnostics", return_value={"available": True, "members": []}):
+            record = self.run_child("pass")
+        self.assertEqual(0, record["exit"])
+        self.assertFalse(record["group_reaped"])
+        self.assertFalse(runner.successful(record))
 
     def test_output_limit_is_failure_and_finite(self):
         record = self.run_child("import os; data=b'x'*8192\nwhile True: os.write(1,data)")
