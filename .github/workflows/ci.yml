@@ -51,6 +51,13 @@ jobs:
           set -eu -o pipefail
           mkdir -p .artifacts/ci/inspector-metadata
           python tooling/ci/command.py --timeout-seconds 180 -- sh tests/ChunkMaestro.InspectorNativeTests/run.sh 2>&1 | tee .artifacts/ci/inspector-metadata/run.log
+      - name: Standalone unprivileged session escrow controls and kernel cases
+        timeout-minutes: 4
+        shell: bash
+        run: |
+          set -eu -o pipefail
+          mkdir -p .artifacts/ci/inspector-metadata/session-escrow
+          python tooling/ci/command.py --timeout-seconds 180 -- sh tests/ChunkMaestro.InspectorNativeTests/run_session_escrow.sh --all 2>&1 | tee .artifacts/ci/inspector-metadata/session-escrow/run.log
       - name: Locked restore of policy test graph
         timeout-minutes: 3
         shell: bash
@@ -169,11 +176,18 @@ jobs:
         if: runner.os == 'Linux'
         timeout-minutes: 2
         run: python tooling/ci/command.py -- dotnet test tests/ChunkMaestro.PersistenceTests/ChunkMaestro.PersistenceTests.csproj -c Release --no-build --no-restore --blame-hang --blame-hang-timeout 60s --logger trx --results-directory .artifacts/ci/linux-tests
-      - name: Formatter and Release-discovery negative controls
+      - name: C# policy negative and valid controls (shard 1 of 3)
         timeout-minutes: 3
-        run: |
-          python tooling/build/verify_brace_style.py
-          python tooling/build/verify_release_discovery.py
+        run: python tooling/ci/command.py --timeout-seconds 150 -- python tooling/build/verify_brace_style.py --shard 1
+      - name: C# policy negative and valid controls (shard 2 of 3)
+        timeout-minutes: 3
+        run: python tooling/ci/command.py --timeout-seconds 150 -- python tooling/build/verify_brace_style.py --shard 2
+      - name: C# policy negative and valid controls (shard 3 of 3)
+        timeout-minutes: 3
+        run: python tooling/ci/command.py --timeout-seconds 150 -- python tooling/build/verify_brace_style.py --shard 3
+      - name: Release-discovery negative control
+        timeout-minutes: 3
+        run: python tooling/ci/command.py --timeout-seconds 150 -- python tooling/build/verify_release_discovery.py
       - name: Native desktop headless contracts
         timeout-minutes: 3
         run: python tooling/ci/command.py --timeout-seconds 150 -- dotnet test tests/ChunkMaestro.AvaloniaHeadlessTests/ChunkMaestro.AvaloniaHeadlessTests.csproj -c Release --no-build --no-restore --blame-hang --blame-hang-timeout 60s --logger trx --logger "console;verbosity=normal" --results-directory .artifacts/ci/desktop-tests

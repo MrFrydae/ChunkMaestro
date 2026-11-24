@@ -274,7 +274,7 @@ public sealed class StorageTests : IDisposable
             AssertSafeGuidance(error);
             process.Kill();
             await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(30));
-            await WaitForControllerReleaseAsync();
+            await WaitForControllerReleaseAsync(directory);
             await using LocalFleetStore recovered = await LocalFleetStore.OpenAsync(Location);
             Assert.Empty((await recovered.ReadAsync()).Hosts);
         }
@@ -290,7 +290,7 @@ public sealed class StorageTests : IDisposable
 
     }
 
-    private async Task WaitForControllerReleaseAsync()
+    internal static async Task WaitForControllerReleaseAsync(string directory)
     {
         // Observe the lock itself after process exit, before opening SQLite or
         // retrying any operation that could modify the store. Never remove it.

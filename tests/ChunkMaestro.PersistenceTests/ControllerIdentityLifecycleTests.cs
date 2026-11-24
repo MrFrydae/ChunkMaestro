@@ -229,8 +229,10 @@ public sealed class ControllerIdentityLifecycleTests : IDisposable
             {
                 child.Kill(true);
             }
-            await child.WaitForExitAsync();
+            await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(30));
         }
+        // Observe only native lock release after death before reopening SQLite.
+        await StorageTests.WaitForControllerReleaseAsync(directory);
         await using LocalFleetStore reopened = await LocalFleetStore.OpenAsync(Location);
         ControllerIdentityRow row = (await reopened.ReadIdentityMetadataAsync(fleet))!;
         keychain.OwnWorkerReference(row.Reference);
