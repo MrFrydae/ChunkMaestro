@@ -22,6 +22,7 @@ RISK_PREFIXES = ('src/ChunkMaestro.Inspector.Native/',
                  'src/ChunkMaestro.Contracts/', 'src/ChunkMaestro.OwnerVerification/',
                  'src/ChunkMaestro.PrivilegedHelper/', 'src/ChunkMaestro.Persistence/',
                  'src/ChunkMaestro.Backups/', 'src/ChunkMaestro.Deployments/', 'packaging/',
+                 'tooling/owner-qualification/', 'tooling/inspector-qualification/',
                  'tooling/build/storage_attestation.py', 'tooling/ci/', '.github/workflows/')
 RISK_WORDS = ('enrollment', 'credential', 'secret', 'certificate', 'schedule',
               'restore', 'authorization', 'updater')
