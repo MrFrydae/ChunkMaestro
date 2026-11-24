@@ -186,6 +186,17 @@ class PayloadContracts(unittest.TestCase):
         result = json.loads(raw.removeprefix('#cloud-config\n'))
         self.assertEqual(result['runcmd'][0], ['/usr/bin/python3', '-I', '/opt/cm14-fixture/provision.py'])
         self.assertEqual(result['runcmd'][1], config['runcmd'][0])
+        import base64
+        import io
+        serial = io.BytesIO()
+        from contextlib import nullcontext
+        self.assertEqual(result['bootcmd'][0][:3], ['/usr/bin/python3', '-I', '-c'])
+        with patch('builtins.open', return_value=nullcontext(serial)) as opened:
+            exec(compile(result['bootcmd'][0][3], '<offline-boot-marker>', 'exec'), {})
+        opened.assert_called_once_with('/dev/ttyS0', 'wb', buffering=0)
+        record = json.loads(base64.b64decode(serial.getvalue().strip().removeprefix(b'CM14-BOOT:')))
+        self.assertEqual(record, {'schema': 1, 'nonce': 'a' * 32,
+            'source_sha256': digest, 'phase': 'cloud-init-bootcmd'})
         self.assertEqual(len(args), 8)
         self.assertEqual(args[::2], ['-fw_cfg'] * 4)
         self.assertTrue(all(item['path'].startswith(('/opt/cm14-fixture/', '/run/cm14-authorization-template', '/run/cm14-source-manifest'))
@@ -193,6 +204,85 @@ class PayloadContracts(unittest.TestCase):
         self.assertFalse(result['package_update'])
         with self.assertRaises(Exception):
             module.prepare('#cloud-config\n' + json.dumps(config), 'bad,command')
+
+    def test_provision_progress_is_fixed_and_import_does_not_launch(self):
+        import base64
+        import io
+        spec = importlib.util.spec_from_file_location('offline_provision', Path(__file__).with_name('provision.py'))
+        module = importlib.util.module_from_spec(spec)
+        with patch('subprocess.run') as run:
+            spec.loader.exec_module(module)
+            run.assert_not_called()
+            binding = {'nonce': 'a' * 32, 'source_sha256': 'b' * 64}
+            serial = io.BytesIO()
+            for phase in ('provision-entered', 'template-bound', 'authorization-written',
+                          'guard-passed', 'guest-returned', 'provision-failed', 'guest-timeout'):
+                module.progress(serial, binding, phase)
+            records = [json.loads(base64.b64decode(line.removeprefix(b'CM14-BOOT:')))
+                       for line in serial.getvalue().splitlines() if line]
+            self.assertEqual(len(records), 7)
+            self.assertTrue(all(set(record) == {'schema', 'nonce', 'source_sha256', 'phase'}
+                and record['nonce'] == binding['nonce'] and record['source_sha256'] == binding['source_sha256']
+                for record in records))
+            with self.assertRaises(module.Failure):
+                module.progress(serial, binding, 'PRIVATE_SENTINEL')
+            from unittest.mock import Mock
+            for written in (0, 1, None):
+                with self.subTest(short_write=written), self.assertRaises(module.Failure):
+                    module.progress(Mock(write=Mock(return_value=written)), binding, 'provision-entered')
+            with patch.object(module.platform, 'system', return_value='Darwin'), \
+                    patch('builtins.open') as opened, patch.object(module, 'run') as child:
+                with self.assertRaises(module.Failure): module.main()
+                opened.assert_not_called(); child.assert_not_called()
+
+    def test_provision_failure_after_entry_retains_stage_without_spawning(self):
+        import base64
+        import io
+        spec = importlib.util.spec_from_file_location('offline_provision_failure', Path(__file__).with_name('provision.py'))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        serial = io.BytesIO()
+        with patch.object(module, 'trusted', side_effect=module.Failure('template-refused')), \
+                patch.object(module.subprocess, 'run') as run:
+            with self.assertRaises(module.Failure):
+                module.run(serial, {'nonce': 'a' * 32, 'source_sha256': 'b' * 64})
+            run.assert_not_called()
+        record = json.loads(base64.b64decode(serial.getvalue().strip().removeprefix(b'CM14-BOOT:')))
+        self.assertEqual(record['phase'], 'provision-entered')
+
+    def test_provision_main_reports_only_fixed_failure_or_timeout_after_binding(self):
+        import base64
+        import io
+        import tempfile
+        import subprocess
+        from contextlib import nullcontext
+        spec = importlib.util.spec_from_file_location('offline_provision_main', Path(__file__).with_name('provision.py'))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            files = {'/sys/class/dmi/id/sys_vendor': 'QEMU',
+                     '/sys/firmware/qemu_fw_cfg/by_name/opt/cm14/accelerator/raw': 'tcg',
+                     '/sys/firmware/qemu_fw_cfg/by_name/opt/cm14/nonce/raw': 'a' * 32,
+                     '/sys/firmware/qemu_fw_cfg/by_name/opt/cm14/source-sha256/raw': 'b' * 64}
+            for name, value in files.items():
+                path = root / name.lstrip('/'); path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(value)
+            for error, phase in ((module.Failure('PRIVATE_SENTINEL'), 'provision-failed'),
+                    (subprocess.TimeoutExpired('PRIVATE_SENTINEL', 160), 'guest-timeout')):
+                serial = io.BytesIO()
+                with patch.object(module.sys, 'argv', ['provision.py']), \
+                        patch.object(module.platform, 'system', return_value='Linux'), \
+                        patch.object(module.os, 'geteuid', return_value=0), \
+                        patch.object(module, 'Path', side_effect=lambda value: root / str(value).lstrip('/')), \
+                        patch('builtins.open', return_value=nullcontext(serial)) as opened, \
+                        patch.object(module, 'run', side_effect=error) as run:
+                    self.assertEqual(module.main(), 3)
+                    opened.assert_called_once_with('/dev/ttyS0', 'wb', buffering=0)
+                    run.assert_called_once_with(serial, {'nonce': 'a' * 32, 'source_sha256': 'b' * 64})
+                self.assertNotIn(b'PRIVATE_SENTINEL', serial.getvalue())
+                record = json.loads(base64.b64decode(serial.getvalue().strip().removeprefix(b'CM14-BOOT:')))
+                self.assertEqual(record['phase'], phase)
 
     def test_static_parse_all_sources(self):
         import ast

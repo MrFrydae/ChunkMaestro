@@ -16,6 +16,18 @@ The synthetic processes never receive policy input. Worker units deny all three
 io_uring calls from exec, but inherited rings and real managed startup remain
 unqualified. No product admission path calls this fixture.
 
+Startup diagnostics use at most eight distinct, nonce/source-bound `CM14-BOOT`
+labels: cloud-init bootcmd, provision entry, template binding, authorization write,
+guard completion, guest return, provision failure or guest timeout. They contain
+no raw console, exception messages, package output or credentials. The host
+retains only these fixed labels in the existing summary; malformed, repeated,
+unbound or truncated frames refuse. They are diagnostic observations, never case
+evidence or authority; a failure/timeout label additionally blocks candidacy.
+Both ordered reports, all twelve raw cases, the exit
+record, strict SSH and successful VM cleanup remain necessary. The 240-second
+campaign and 160-second guest caps are unchanged. No startup label is a product
+or installed-helper qualification claim.
+
 ## Files and fixed graph
 
 `common.py` owns refusal, identity/dump comparison, notification bindings and bounded

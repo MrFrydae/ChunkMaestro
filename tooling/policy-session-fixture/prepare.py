@@ -37,6 +37,14 @@ def prepare(cloud_config, nonce, manifest_path=None, manifest_sha256=None):
     config = json.loads(cloud_config.removeprefix('#cloud-config\n'))
     require(config.get('package_update') is False and config.get('package_upgrade') is False,
             'no-package-mutation')
+    # Diagnostic only: cloud-init reached bootcmd before write_files/runcmd. No
+    # command, package, service or authentication authority follows from this frame.
+    boot = {'schema': 1, 'nonce': nonce, 'source_sha256': source, 'phase': 'cloud-init-bootcmd'}
+    marker = b'\nCM14-BOOT:' + base64.b64encode(json.dumps(boot).encode()) + b'\n'
+    script = ('with open("/dev/ttyS0", "wb", buffering=0) as serial:\n    '
+              'if serial.write(' + repr(marker) + ') != ' + str(len(marker)) + ':\n'
+              '        raise OSError("serial-short-write")\n')
+    config.setdefault('bootcmd', []).append(['/usr/bin/python3', '-I', '-c', script])
     for name, data in payload.items():
         config['write_files'].append({'path': '/opt/cm14-fixture/' + name,
             'owner': 'root:root', 'permissions': '0644', 'encoding': 'b64',

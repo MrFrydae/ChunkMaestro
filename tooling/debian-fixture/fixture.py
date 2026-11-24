@@ -434,6 +434,7 @@ class Campaign:
         self.manifest, self.digest, self.commit = path, digest, commit
         self.nonce = secrets.token_hex(16)
         self.records = []
+        self.startup_diagnostics = []
         self.exit_record = None
         self.parse_error = None
         self.pending_frame = False
@@ -457,9 +458,10 @@ class Campaign:
         if len(data) > 1024**2:
             raise Failure('campaign-serial-limit')
         self.records = []
+        self.startup_diagnostics = []
         self.exit_record = None
         lines = data.split(b'\n')
-        self.pending_frame = lines[-1].startswith((b'CM14-EVIDENCE:', b'CM14-EXIT:', b'{"cm14_evidence":'))
+        self.pending_frame = lines[-1].startswith((b'CM14-EVIDENCE:', b'CM14-EXIT:', b'CM14-BOOT:', b'{"cm14_evidence":'))
         if final and self.pending_frame:
             self.parse_error = 'campaign-frame-truncated'
             raise Failure(self.parse_error)
@@ -475,7 +477,7 @@ class Campaign:
                 if not isinstance(wrapper['cm14_evidence'], str):
                     raise Failure('campaign-export-missing')
                 line = b'CM14-EVIDENCE:' + wrapper['cm14_evidence'].encode('ascii')
-            prefix = next((p for p in (b'CM14-EVIDENCE:', b'CM14-EXIT:') if line.startswith(p)), None)
+            prefix = next((p for p in (b'CM14-EVIDENCE:', b'CM14-EXIT:', b'CM14-BOOT:') if line.startswith(p)), None)
             if prefix is None:
                 continue
             if len(line) > 262200:
@@ -489,7 +491,18 @@ class Campaign:
             obj = strict_json(raw)
             if not isinstance(obj, dict) or obj.get('schema') != 1 or type(obj.get('schema')) is not int:
                 raise Failure('campaign-schema')
-            if prefix == b'CM14-EXIT:':
+            if prefix == b'CM14-BOOT:':
+                phases = ('cloud-init-bootcmd', 'provision-entered', 'template-bound',
+                    'authorization-written', 'guard-passed', 'guest-returned',
+                    'provision-failed', 'guest-timeout')
+                if (set(obj) != {'schema', 'nonce', 'source_sha256', 'phase'}
+                        or obj['nonce'] != self.nonce or obj['source_sha256'] != self.digest
+                        or not isinstance(obj['phase'], str) or obj['phase'] not in phases
+                        or obj['phase'] in self.startup_diagnostics or self.exit_record is not None):
+                    raise Failure('campaign-startup-diagnostic')
+                # Fixed labels only; never evidence for protocol_pass or guest authority.
+                self.startup_diagnostics.append(obj['phase'])
+            elif prefix == b'CM14-EXIT:':
                 if self.exit_record is not None or set(obj) != {'schema', 'nonce', 'source_sha256', 'exit'}:
                     raise Failure('campaign-exit-members')
                 if obj['nonce'] != self.nonce or obj['source_sha256'] != self.digest or type(obj['exit']) is not int:
@@ -613,6 +626,7 @@ class Campaign:
 
     def protocol_pass(self):
         if (self.parse_error or getattr(self, 'pending_frame', False) or getattr(self, 'cancelled', False)
+                or {'provision-failed', 'guest-timeout'}.intersection(getattr(self, 'startup_diagnostics', []))
                 or not self.ssh or not self.cleaned or len(self.records) != 2
                 or self.exit_record is None or self.exit_record['exit'] != 2):
             return False
@@ -648,7 +662,8 @@ class Campaign:
             'required_completion_receipt': 'campaign-complete',
             'strict_ssh': self.ssh, 'outer_cleanup_confirmed': self.cleaned,
             'host_failure': failure_name(primary) if primary is not None else None,
-            'parser_failure': self.parse_error, 'guest_exit': self.exit_record}
+            'parser_failure': self.parse_error, 'guest_exit': self.exit_record,
+            'startup_diagnostics': getattr(self, 'startup_diagnostics', [])}
         for name, obj in (('campaign-raw.json', self.records), ('campaign-summary.json', summary)):
             fd = os.open(Path(directory) / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
             with os.fdopen(fd, 'w') as stream:

@@ -57,6 +57,59 @@ def serial(c, report, code=2):
 
 
 class CampaignContracts(unittest.TestCase):
+    def test_startup_diagnostics_are_bound_fixed_labels_and_never_case_evidence(self):
+        c, r = model()
+        phases = ('cloud-init-bootcmd', 'provision-entered', 'template-bound',
+            'authorization-written', 'guard-passed', 'guest-returned',
+            'provision-failed', 'guest-timeout')
+        data = b''.join(frame({'schema': 1, 'nonce': c.nonce, 'source_sha256': c.digest,
+            'phase': phase}, b'CM14-BOOT:') for phase in phases)
+        c.capture(data)
+        self.assertEqual(c.startup_diagnostics, list(phases))
+        self.assertEqual(c.records, [])
+        self.assertIsNone(c.exit_record)
+        c.ssh = c.cleaned = True
+        self.assertFalse(c.protocol_pass())
+        with tempfile.TemporaryDirectory() as directory:
+            c.persist(directory, f.Failure('campaign-exit-missing'))
+            summary = json.loads((Path(directory) / 'campaign-summary.json').read_text())
+            self.assertEqual(summary['startup_diagnostics'], list(phases))
+            self.assertFalse(summary['candidate_protocol_pass'])
+            self.assertEqual(summary['qualification'], 'INCOMPLETE')
+        c.capture(data + serial(c, r)); self.assertFalse(c.protocol_pass())
+        normal = b''.join(frame({'schema': 1, 'nonce': c.nonce, 'source_sha256': c.digest,
+            'phase': phase}, b'CM14-BOOT:') for phase in phases[:-2])
+        c.capture(normal + serial(c, r)); self.assertTrue(c.protocol_pass())
+        for tail in (serial(c, r).split(b'\n', 1)[1], serial(c, r).rsplit(b'CM14-EXIT:', 1)[0]):
+            try:
+                c.capture(normal + tail)
+            except f.Failure:
+                pass
+            else:
+                self.assertFalse(c.protocol_pass())
+
+    def test_startup_diagnostic_types_bindings_members_and_repetition_refuse(self):
+        c, r = model()
+        record = {'schema': 1, 'nonce': c.nonce, 'source_sha256': c.digest,
+                  'phase': 'provision-entered'}
+        for key, value in (('schema', True), ('schema', 1.0), ('nonce', 'wrong'),
+                ('source_sha256', 'wrong'), ('phase', 'PRIVATE_SENTINEL'),
+                ('phase', 1), ('phase', []), ('extra', 'PRIVATE_SENTINEL')):
+            with self.subTest(key=key, value=value), self.assertRaises(f.Failure):
+                c.capture(frame(dict(record, **{key: value}), b'CM14-BOOT:'))
+        for key in record:
+            missing = dict(record); del missing[key]
+            with self.subTest(missing=key), self.assertRaises(f.Failure):
+                c.capture(frame(missing, b'CM14-BOOT:'))
+        marker = frame(record, b'CM14-BOOT:')
+        for data in (marker * 2, serial(c, r) + marker):
+            with self.assertRaises(f.Failure): c.capture(data)
+        c.capture(marker[:-1]); self.assertEqual(c.startup_diagnostics, [])
+        with self.assertRaisesRegex(f.Failure, 'campaign-frame-truncated'):
+            c.capture(marker[:-1], final=True)
+        c.capture(b'PRIVATE_SENTINEL\n')
+        self.assertEqual(c.startup_diagnostics, [])
+
     def test_mode_authorization_before_prerequisites(self):
         for args in (['--policy-session-campaign'], ['--execute-owner-reviewed-fixture', '--policy-session-campaign'],
                      ['--execute-owner-reviewed-fixture', '--reviewed-source-commit', 'a' * 40],
