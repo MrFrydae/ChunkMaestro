@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><OutputType>Exe</OutputType><IsTestProject>true</IsTestProject></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/ChunkMaestro.PrivilegedHelper/ChunkMaestro.PrivilegedHelper.csproj" />
+    <ProjectReference Include="../../src/ChunkMaestro.Contracts/ChunkMaestro.Contracts.csproj" />
+    <PackageReference Include="coverlet.collector" PrivateAssets="all" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup><EmbeddedResource Include="classification-cases.json" /></ItemGroup>
+</Project>

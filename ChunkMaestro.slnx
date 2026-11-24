@@ -8,10 +8,12 @@
   <Project Path="src/ChunkMaestro.OwnerVerification/ChunkMaestro.OwnerVerification.csproj" />
   <Project Path="src/ChunkMaestro.Persistence/ChunkMaestro.Persistence.csproj" />
   <Project Path="src/ChunkMaestro.Presentation/ChunkMaestro.Presentation.csproj" />
+  <Project Path="src/ChunkMaestro.PrivilegedHelper/ChunkMaestro.PrivilegedHelper.csproj" />
   <Project Path="tests/ChunkMaestro.AvaloniaHeadlessTests/ChunkMaestro.AvaloniaHeadlessTests.csproj" />
   <Project Path="tests/ChunkMaestro.ContractsTests/ChunkMaestro.ContractsTests.csproj" />
   <Project Path="tests/ChunkMaestro.ControllerIdentityTests/ChunkMaestro.ControllerIdentityTests.csproj" />
   <Project Path="tests/ChunkMaestro.CredentialsTests/ChunkMaestro.CredentialsTests.csproj" />
+  <Project Path="tests/ChunkMaestro.HelperPolicyTests/ChunkMaestro.HelperPolicyTests.csproj" />
   <Project Path="tests/ChunkMaestro.OwnerVerificationTests/ChunkMaestro.OwnerVerificationTests.csproj" />
   <Project Path="tests/ChunkMaestro.PersistenceTests/ChunkMaestro.PersistenceTests.csproj" />
   <Project Path="tooling/build/StyleCheck/StyleCheck.csproj" />
