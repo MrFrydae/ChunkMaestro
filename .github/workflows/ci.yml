@@ -80,9 +80,8 @@ jobs:
           mkdir -p .artifacts/ci/inspector-metadata/managed
           assembly=tests/ChunkMaestro.HelperPolicyTests/bin/Release/net10.0/ChunkMaestro.HelperPolicyTests.dll
           results=.artifacts/ci/inspector-metadata/managed
-          python tooling/ci/command.py --timeout-seconds 30 -- dotnet "$assembly" -preEnumerateTheories -list full/json > "$results/discovery-with-command.log"
-          # command.py writes a fixed command heading before the runner JSON.
-          sed '1d' "$results/discovery-with-command.log" > "$results/discovery.json"
+          # Keep machine JSON separate from supervisor headings/cleanup diagnostics.
+          python tooling/ci/command.py --timeout-seconds 30 -- /bin/sh -c 'exec dotnet "$1" -preEnumerateTheories -noColor -list full/json > "$2"' policy-discovery "$assembly" "$results/discovery.json" > "$results/discovery-supervisor.log"
           python tooling/ci/command.py --timeout-seconds 120 -- dotnet "$assembly" -preEnumerateTheories -failSkips -noColor -xml "$results/results.xml" -trx "$results/results.trx" -ctrf "$results/results.ctrf.json" 2>&1 | tee .artifacts/ci/inspector-metadata/managed.log
           python tooling/ci/policy_runner.py "$results"
       - name: Retain native diagnostics including failures

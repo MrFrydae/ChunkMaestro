@@ -146,6 +146,15 @@ and method/case multiplicities;
 duplicate discovery IDs, duplicate execution names, nonpassing outcomes, empty
 runs and inconsistent summaries refuse acceptance. This does not claim stable
 cross-run xUnit IDs or byte-identical display names across report formats.
+The first direct ARM run at `655eae0` executed all 251 cases successfully, but
+its discovery JSON had a trailing ANSI reset. Strict JSON decoding correctly
+failed. Discovery now explicitly uses `-noColor` and redirects runner stdout to
+a dedicated JSON file inside the supervised child; supervisor messages go to a
+separate log. No prefix/suffix stripping or relaxed JSON parsing is used. Local
+execution of this exact command produced 251 discoverable cases that match the
+retained ARM CTRF identities. That crosscheck is historical evidence reuse, not a
+fresh ARM execution. Original ANSI failure evidence is retained.
+
 The outer existing process supervisor still bounds and reaps the worker.
 No test source, assertion or test filter changes; no SDK/package upgrade or
 VSTest security-disable flag is used. The x64 job retains the original VSTest
