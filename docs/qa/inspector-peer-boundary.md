@@ -59,8 +59,30 @@ check exact outcome/errno, deterministic failure fields and no retry/fallback.
 These doubles prove control flow, not kernel identity. A disposable copy with
 the stream guard removed must fail the refusal assertion. This is one diagnostic
 sensitivity check, not a mutation score/campaign. A separate production-object
-import allowlist permits only getsockopt/getsockname/getpeername, memset and errno
-access, excluding payload/network creation/exec/ioctl/mutation and test imports.
+import allowlist permits only getsockopt/getsockname/getpeername, memset, errno
+access and the compiler's exact stack-protector failure helper. Stack protection
+is explicitly enabled for the inspected object. Payload/network creation/exec/
+ioctl/mutation and test imports remain excluded; a compiled `recv` object must
+be rejected by the same allowlist without executing that object.
+
+## First Linux execution and test-header correction
+
+At signed head `73219a708752990f49f3402eb862e333c6c633a1`, Linux CI run
+`45313662951` passed all four existing metadata variants, its descriptor-leak
+control and the plain peer kernel fixture. The injected peer object then failed
+strict compilation: command-line function remapping renamed glibc's GNU
+transparent-union socket declarations before the pointer-based test declarations.
+Original log and artifact `14884007719` remain retained. No passing injected or
+sanitized peer execution is claimed from that run.
+
+The test-only header now loads the real system declarations first and remaps
+calls only under `CM_PEER_INTERPOSE`, used solely for the injected production
+object. The separate controls translation unit retains real libc calls. No
+production C source, assertion, strict warning or sanitizer option is removed.
+See [glibc socket declarations](https://raw.githubusercontent.com/bminor/glibc/release/2.39/master/socket/sys/socket.h).
+The same runner's metadata production object included `__stack_chk_fail`;
+the peer import audit explicitly accounts for that compiler safety helper rather
+than disabling stack protection. Fresh Linux execution remains required.
 
 ## Delivery and remaining work
 

@@ -77,9 +77,7 @@ for instrumentation in plain sanitized; do
             "$compiler" -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic "$@" \
                 -I"$root/src/ChunkMaestro.Inspector.Native" \
                 -include "$root/tests/ChunkMaestro.InspectorNativeTests/peer_syscall_controls.h" \
-                -Dgetsockopt=cm_peer_test_getsockopt \
-                -Dgetsockname=cm_peer_test_getsockname \
-                -Dgetpeername=cm_peer_test_getpeername \
+                -DCM_PEER_INTERPOSE \
                 -c "$root/src/ChunkMaestro.Inspector.Native/peer.c" -o "$build/peer.o"
             set -- "$@" -DCM_PEER_CONTROLS
         else
@@ -108,15 +106,36 @@ if "$build/peer-nonstream" > "$build/peer-nonstream.log" 2>&1; then
 fi
 grep -F 'status.state == expected && status.error == error' "$build/peer-nonstream.log"
 echo 'PASS: expected non-stream guard failure detected; production source unchanged'
-"$compiler" -std=c11 -Wall -Wextra -Werror -Wpedantic -c \
+"$compiler" -std=c11 -Wall -Wextra -Werror -Wpedantic -fstack-protector-strong -c \
     "$root/src/ChunkMaestro.Inspector.Native/peer.c" -o "$build/peer-production.o"
 nm -u "$build/peer-production.o" > "$build/peer-imports"
 # An allowlist also rejects future payload, socket creation, exec, ioctl, test
 # controls and permission mutation imports, including unanticipated spellings.
+# Keep compiler stack protection enabled; its failure helper is not payload I/O.
+peer_allowed_imports='^(__errno_location|__stack_chk_fail|memset|getsockopt|getsockname|getpeername)$'
 if sed -E 's/^.*[[:space:]]U[[:space:]]+//' "$build/peer-imports" | \
-    grep -Ev '^(__errno_location|memset|getsockopt|getsockname|getpeername)$'; then
+    grep -Ev "$peer_allowed_imports"; then
     echo 'FAIL: unexpected peer production import' >&2
     exit 1
 fi
 cat "$build/peer-imports"
-echo 'PASS: peer production imports contain queries only'
+echo 'PASS: peer production imports contain queries and compiler safety helpers only'
+# A real compiled payload import must still fail the same production allowlist.
+# This object is inspected only, never linked into production or executed.
+cat > "$build/peer-payload.c" <<'EOF'
+#include <sys/socket.h>
+ssize_t cm_peer_payload_probe(int fd, void *buffer, size_t length)
+{
+    return recv(fd, buffer, length, 0);
+}
+EOF
+"$compiler" -std=c11 -Wall -Wextra -Werror -Wpedantic -fstack-protector-strong -c \
+    "$build/peer-payload.c" -o "$build/peer-payload.o"
+nm -u "$build/peer-payload.o" > "$build/peer-payload-imports"
+if ! sed -E 's/^.*[[:space:]]U[[:space:]]+//' "$build/peer-payload-imports" | \
+    grep -Ev "$peer_allowed_imports" > "$build/peer-payload-rejected"; then
+    echo 'FAIL: compiled payload import escaped the peer production allowlist' >&2
+    exit 1
+fi
+grep -Fx 'recv' "$build/peer-payload-rejected"
+echo 'PASS: compiled payload import rejected by peer production allowlist'
