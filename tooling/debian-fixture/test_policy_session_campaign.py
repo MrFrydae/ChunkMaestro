@@ -57,6 +57,41 @@ def serial(c, report, code=2):
 
 
 class CampaignContracts(unittest.TestCase):
+    def test_fd_store_order_permutations_preserve_every_named_identity(self):
+        import itertools
+        for reversed_rows in itertools.product((False, True), repeat=8):
+            c, report = model()
+            for index, reverse in enumerate(reversed_rows):
+                if reverse:
+                    raw = report['cases'][f.CASE_NAMES[index]]['raw']
+                    if index == 5: report['cases'][f.CASE_NAMES[index]]['raw'] = raw[::-1]
+                    else: raw['raw_dump'] = raw['raw_dump'][::-1]
+            c.capture(serial(c, report)); c.ssh = c.cleaned = True
+            with self.subTest(reversed_rows=reversed_rows):
+                self.assertTrue(c.protocol_pass())
+            # Comparing must not rewrite the raw wire ordering retained for review.
+            self.assertEqual(c.records[0]['report']['cases'], report['cases'])
+
+    def test_fd_store_order_comparison_refuses_duplicates_shapes_and_coercions(self):
+        _, report = model(); original = report['cases'][f.CASE_NAMES[0]]['raw']['raw_dump']
+        self.assertTrue(f.same_fd_rows(original[::-1], original))
+        self.assertTrue(f.same_fd_rows([], []))
+        for value in (None, {}, tuple(original), original[:1], original * 2,
+                      [original[0], original[0]], [original[0][:-1], original[1]],
+                      [tuple(original[0]), original[1]], [[], original[1]]):
+            self.assertFalse(f.same_fd_rows(value, original))
+            self.assertFalse(f.same_fd_rows(original, value))
+        for row_index in (0, 1):
+            for column in range(9):
+                for replacement in (None, True, False, 1.0, 'changed', [], {}):
+                    changed = copy.deepcopy(original[::-1]); changed[row_index][column] = replacement
+                    with self.subTest(row=row_index, column=column, replacement=replacement):
+                        self.assertFalse(f.same_fd_rows(changed, original))
+        # A duplicate cannot collapse into one surviving name or hide changed facts.
+        duplicate = copy.deepcopy(original); duplicate[1][0] = duplicate[0][0]
+        self.assertFalse(f.same_fd_rows(duplicate, duplicate))
+        self.assertFalse(f.same_json(original[::-1], original))
+
     def test_startup_diagnostics_are_bound_fixed_labels_and_never_case_evidence(self):
         c, r = model()
         phases = ('cloud-init-bootcmd', 'provision-entered', 'template-bound',

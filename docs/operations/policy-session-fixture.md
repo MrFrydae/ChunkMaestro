@@ -35,6 +35,13 @@ a changed invocation. No defaults, alternate targets, extra flags or new accepte
 exit codes are introduced. The unit/counter assertions remain unchanged.
 This follows the [systemd 257 command contract](https://www.freedesktop.org/software/systemd/man/257/systemctl.html).
 
+FD-store snapshots compare exact named entries, allowing the manager to return
+the same rows in a different order after recovery. Both sides must retain equal
+cardinality (at most two), unique names and complete nine-field rows. Every field
+still compares with exact JSON types; duplicate, missing, extra, renamed or altered
+identities refuse. Raw snapshots retain their original order in evidence. This
+does not change ordering requirements for receipts, stages or other JSON arrays.
+
 ## Files and fixed graph
 
 `common.py` owns refusal, identity/dump comparison, notification bindings and bounded

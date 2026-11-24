@@ -391,6 +391,18 @@ def same_json(value, expected):
     return value == expected
 
 
+def same_fd_rows(value, expected):
+    """Compare named FD-store entries without imposing manager list order."""
+    if type(value) is not list or type(expected) is not list or len(value) != len(expected) or len(value) > 2:
+        return False
+    for rows in (value, expected):
+        if any(type(row) is not list or len(row) != 9 or type(row[0]) is not str for row in rows):
+            return False
+        if len({row[0] for row in rows}) != len(rows):
+            return False
+    return same_json(sorted(value, key=lambda row: row[0]), sorted(expected, key=lambda row: row[0]))
+
+
 def policy_prepare():
     import importlib.util
     spec = importlib.util.spec_from_file_location('cm14_prepare', HERE.parent / 'policy-session-fixture/prepare.py')
@@ -590,7 +602,7 @@ class Campaign:
             if len({tuple(row[2:5]) for row in original}) != 2:
                 return False
             for index in (1, 2, 3, 4, 7):
-                if not same_json(cases[CASE_NAMES[index]]['raw'].get('raw_dump'), original):
+                if not same_fd_rows(cases[CASE_NAMES[index]]['raw'].get('raw_dump'), original):
                     return False
             if not phase(0, 'ARMED', 2) or not phase(1, 'FULL_REJECTED', 2) or not phase(2, 'SENDER_REJECTED', 2):
                 return False
@@ -604,7 +616,7 @@ class Campaign:
                     return False
             rows = cases[CASE_NAMES[5]]['raw']
             anchor = cases[CASE_NAMES[6]]['raw']
-            if not same_json(rows, original) or not same_json(anchor.get('raw_dump'), rows):
+            if not same_fd_rows(rows, original) or not same_fd_rows(anchor.get('raw_dump'), rows):
                 return False
             holder = anchor['holder']
             if holder.get('ActiveState') != 'inactive' or holder.get('LoadState') != 'loaded':
@@ -616,8 +628,8 @@ class Campaign:
             if partial['partial']['phase'] != 'PARTIAL' or len(partial['partial']['raw_dump']) != 1 or partial['recovered']['phase'] != 'RECOVERED' or len(partial['recovered']['raw_dump']) != 1:
                 return False
             remaining = [row for row in original if row[0].startswith('agent-')]
-            if (not same_json(partial['partial']['raw_dump'], remaining)
-                    or not same_json(partial['recovered']['raw_dump'], remaining)
+            if (not same_fd_rows(partial['partial']['raw_dump'], remaining)
+                    or not same_fd_rows(partial['recovered']['raw_dump'], remaining)
                     or partial['recovered'].get('recovery') is not True):
                 return False
             return phase(10, 'EMPTY', 0) and phase(11, 'EMPTY', 0)
