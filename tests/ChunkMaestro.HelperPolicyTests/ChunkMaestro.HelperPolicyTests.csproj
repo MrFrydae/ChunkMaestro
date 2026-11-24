@@ -9,4 +9,11 @@
     <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
   </ItemGroup>
   <ItemGroup><EmbeddedResource Include="classification-cases.json" /></ItemGroup>
+  <!-- Test-only shim; no helper packaging or product activation. -->
+  <Target Name="BuildPolicySnapshotTestShim" AfterTargets="Build" Condition="$([MSBuild]::IsOSPlatform('Linux'))">
+    <MakeDir Directories="$(IntermediateOutputPath)policy-snapshot" />
+    <Exec Command="cc -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic -fPIC -I../../src/ChunkMaestro.Inspector.Native -include ../ChunkMaestro.InspectorNativeTests/policy_snapshot_syscall_controls.h -DCM_POLICY_INTERPOSE -DCM_POLICY_BRIDGE_INTERPOSE -c ../../src/ChunkMaestro.Inspector.Native/policy_snapshot.c -o $(IntermediateOutputPath)policy-snapshot/snapshot.o" />
+    <Exec Command="cc -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic -fPIC -pthread -DCM_POLICY_BRIDGE -I../../src/ChunkMaestro.Inspector.Native -I../ChunkMaestro.InspectorNativeTests -c ../ChunkMaestro.InspectorNativeTests/policy_snapshot_tests.c -o $(IntermediateOutputPath)policy-snapshot/bridge.o" />
+    <Exec Command="cc -shared -pthread $(IntermediateOutputPath)policy-snapshot/snapshot.o $(IntermediateOutputPath)policy-snapshot/bridge.o -o $(TargetDir)libchunkmaestro_policy_snapshot_v1.so" />
+  </Target>
 </Project>

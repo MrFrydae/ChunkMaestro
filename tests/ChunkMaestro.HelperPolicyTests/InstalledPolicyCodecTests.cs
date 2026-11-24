@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -325,7 +326,14 @@ public sealed class InstalledPolicyCodecTests
         {
             foreach (MethodInfo method in type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly))
             {
-                Assert.False((method.Attributes & MethodAttributes.PinvokeImpl) != 0);
+                if ((method.Attributes & MethodAttributes.PinvokeImpl) != 0)
+                {
+                    Assert.True(type == typeof(PolicySnapshotNative) || type.DeclaringType == typeof(PolicySnapshotNative));
+                    Assert.False(type.IsPublic);
+                    DllImportAttribute import = Assert.IsType<DllImportAttribute>(method.GetCustomAttribute<DllImportAttribute>());
+                    Assert.Equal("chunkmaestro_policy_snapshot_v1", import.Value);
+                    Assert.StartsWith("cm_policy_snapshot_v1_", import.EntryPoint, StringComparison.Ordinal);
+                }
             }
         }
         Assert.All(typeof(ParsedData).GetProperties(BindingFlags.NonPublic | BindingFlags.Instance), property => Assert.Null(property.SetMethod));

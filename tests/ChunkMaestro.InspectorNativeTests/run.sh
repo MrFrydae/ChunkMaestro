@@ -139,3 +139,85 @@ if ! sed -E 's/^.*[[:space:]]U[[:space:]]+//' "$build/peer-payload-imports" | \
 fi
 grep -Fx 'recv' "$build/peer-payload-rejected"
 echo 'PASS: compiled payload import rejected by peer production allowlist'
+
+# Policy snapshot is a separate ABI/object: never widen metadata/peer audits.
+for instrumentation in plain sanitized; do
+    set --
+    if [ "$instrumentation" = sanitized ]; then
+        set -- -fsanitize=address,undefined -fno-omit-frame-pointer
+    fi
+    for mode in kernel controls; do
+        if [ "$mode" = controls ]; then
+            "$compiler" -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic "$@" \
+                -I"$root/src/ChunkMaestro.Inspector.Native" \
+                -include "$root/tests/ChunkMaestro.InspectorNativeTests/policy_snapshot_syscall_controls.h" \
+                -DCM_POLICY_INTERPOSE -c "$root/src/ChunkMaestro.Inspector.Native/policy_snapshot.c" -o "$build/policy.o"
+            set -- "$@" -DCM_POLICY_CONTROLS
+        else
+            "$compiler" -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic "$@" \
+                -I"$root/src/ChunkMaestro.Inspector.Native" \
+                -c "$root/src/ChunkMaestro.Inspector.Native/policy_snapshot.c" -o "$build/policy.o"
+        fi
+        "$compiler" -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic "$@" \
+            -I"$root/src/ChunkMaestro.Inspector.Native" \
+            -I"$root/tests/ChunkMaestro.InspectorNativeTests" \
+            "$root/tests/ChunkMaestro.InspectorNativeTests/policy_snapshot_tests.c" "$build/policy.o" \
+            -o "$build/policy-$instrumentation-$mode"
+        ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 "$build/policy-$instrumentation-$mode"
+    done
+done
+"$compiler" -std=c11 -Wall -Wextra -Werror -Wpedantic -fstack-protector-strong \
+    -c "$root/src/ChunkMaestro.Inspector.Native/policy_snapshot.c" -o "$build/policy-production.o"
+nm -u "$build/policy-production.o" > "$build/policy-imports"
+policy_allowed_imports='^(__errno_location|__stack_chk_fail|calloc|close|fcntl|fgetxattr|free|fstat|memcmp|memcpy|pread|syscall)$'
+if sed -E 's/^.*[[:space:]]U[[:space:]]+//' "$build/policy-imports" | grep -Ev "$policy_allowed_imports"; then
+    echo 'FAIL: unexpected policy production import' >&2
+    exit 1
+fi
+cat "$build/policy-imports"
+echo 'PASS: separate policy production imports exclude test controls/mutation/network'
+# Direct negative sensitivity: guard bypasses must fail their invariant assertions.
+policy_artifacts="$root/.artifacts/policy-snapshot"
+mkdir -p "$policy_artifacts"
+for mutation in size type bytes cleanup; do
+    case "$mutation" in
+        size) expression='s/s->file_stat.st_size < 1/0/' ;;
+        type) expression='s/!S_ISREG(s->file_stat.st_mode)/0/' ;;
+        bytes) expression='s/memcmp(s->bytes, second, s->length) != 0/0/' ;;
+        cleanup) expression='s/close(s->parent);/(void)0;/' ;;
+    esac
+    sed "$expression" "$root/src/ChunkMaestro.Inspector.Native/policy_snapshot.c" > "$build/policy-$mutation.c"
+    "$compiler" -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic \
+        -I"$root/src/ChunkMaestro.Inspector.Native" -I"$root/tests/ChunkMaestro.InspectorNativeTests" \
+        -include "$root/tests/ChunkMaestro.InspectorNativeTests/policy_snapshot_syscall_controls.h" \
+        -DCM_POLICY_INTERPOSE -c "$build/policy-$mutation.c" -o "$build/policy-mutant.o"
+    "$compiler" -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic \
+        -I"$root/src/ChunkMaestro.Inspector.Native" -I"$root/tests/ChunkMaestro.InspectorNativeTests" \
+        -DCM_POLICY_CONTROLS "$root/tests/ChunkMaestro.InspectorNativeTests/policy_snapshot_tests.c" \
+        "$build/policy-mutant.o" -o "$build/policy-$mutation"
+    if "$build/policy-$mutation" > "$policy_artifacts/mutation-$mutation.log" 2>&1; then
+        echo "FAIL: $mutation bypass escaped policy tests" >&2
+        exit 1
+    fi
+    # A crash or timeout alone is not credit: require the intended assertion.
+    case "$mutation" in
+        size) expected='take(&s) == 1 && !s' ;;
+        type) expected='actual == 1' ;;
+        bytes) expected='actual == 3' ;;
+        cleanup) expected='memcmp(before, after, sizeof(before)) == 0' ;;
+    esac
+    grep -F "$expected" "$policy_artifacts/mutation-$mutation.log"
+done
+# Diagnostic branch/line accounting, no numeric acceptance threshold.
+"$compiler" -std=c11 -O0 -g --coverage -Wall -Wextra -Werror -Wpedantic \
+    -I"$root/src/ChunkMaestro.Inspector.Native" \
+    -include "$root/tests/ChunkMaestro.InspectorNativeTests/policy_snapshot_syscall_controls.h" \
+    -DCM_POLICY_INTERPOSE -c "$root/src/ChunkMaestro.Inspector.Native/policy_snapshot.c" -o "$build/policy-coverage.o"
+"$compiler" -std=c11 -O0 -g --coverage -Wall -Wextra -Werror -Wpedantic \
+    -I"$root/src/ChunkMaestro.Inspector.Native" -I"$root/tests/ChunkMaestro.InspectorNativeTests" \
+    -DCM_POLICY_CONTROLS "$root/tests/ChunkMaestro.InspectorNativeTests/policy_snapshot_tests.c" \
+    "$build/policy-coverage.o" -o "$build/policy-coverage"
+"$build/policy-coverage" > "$policy_artifacts/fault-controls.log" 2>&1
+cp "$build"/*.gcno "$build"/*.gcda "$policy_artifacts/"
+(cd "$policy_artifacts" && gcov -b -c policy-coverage.gcno > coverage.log 2>&1)
+cat "$policy_artifacts/coverage.log"
