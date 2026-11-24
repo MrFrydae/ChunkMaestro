@@ -1,4 +1,5 @@
 """Full-verify regressions for ordinary and checked-in generated C# policy."""
+import argparse
 import os
 from pathlib import Path
 import shutil
@@ -68,6 +69,10 @@ CASES = [
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--shard', type=int, choices=(1, 2, 3),
+                        help='Run one disjoint third of the nine policy controls; omit for all.')
+    options = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix='chunkmaestro-style-policy-') as temporary:
         root = Path(temporary)
         for name in ('global.json', 'Directory.Build.props', 'Directory.Build.targets',
@@ -97,7 +102,10 @@ def main():
             ('ordinary-valid', VALID, None, ''),
             ('generated-valid', VALID, None, HEADER),
         ])
+        if options.shard is not None:
+            cases = cases[options.shard - 1::3]
         for name, code, diagnostic, header in cases:
+            print('Policy control: ' + name, flush=True)
             source.unlink()
             source = project / ('Fixture.g.cs' if header else 'Fixture.cs')
             expected = (header + code).encode('utf-8')
@@ -112,7 +120,7 @@ def main():
                     raise RuntimeError('C# policy fixture was not rejected for the expected reason: ' + name)
             elif result.returncode:
                 raise RuntimeError('Valid C# policy control was rejected; inspect fixture log.')
-        print('PASS: full verify rejects ordinary/generated block namespaces, generated var, declaration-line braces, multiple statements, empty blocks and compact properties; ordinary/generated file-scoped controls with interpolation/comments accepted; source unchanged.')
+        print(f'PASS: {len(cases)} selected full-verify policy controls; expected refusals/valid outcomes confirmed; source unchanged.')
 
 
 if __name__ == '__main__':

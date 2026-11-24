@@ -219,3 +219,13 @@ corrections, not production recovery or general descendant-closure proof.
 Windows execution and actual macOS volume cleanup need current hosted evidence;
 local mocked detach transitions are narrower proof. Existing safety assertions
 and case inventories remain intact.
+
+The next macOS managed run built and formatted successfully, then exhausted the
+combined three-minute policy/Release-discovery step just as all nine policy
+controls completed. Release discovery and later suites did not run. CI now runs
+the same nine policy controls in three disjoint shards, followed by a separate
+Release-discovery control. Each uses the unchanged credential-stripped command
+supervisor with a 150-second local deadline and a three-minute runner deadline.
+The unsharded local command still executes all nine controls. No policy assertion,
+test case or supervisor deadline limit is removed or relaxed. Hosted completion
+is required before this scheduling correction can be accepted.
