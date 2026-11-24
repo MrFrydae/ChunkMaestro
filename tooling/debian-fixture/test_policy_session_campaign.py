@@ -8,6 +8,7 @@ import json
 import signal
 from pathlib import Path
 from types import SimpleNamespace
+from collections import deque
 import sys
 import tempfile
 import unittest
@@ -372,6 +373,61 @@ class CampaignContracts(unittest.TestCase):
                         self.assertFalse(c.protocol_pass())
         c, r = model(); c.capture(serial(c, r), final=True); c.ssh = c.cleaned = True
         self.assertTrue(c.protocol_pass())
+
+    def test_real_guest_campaign_projects_holder_facts_before_receipt_round_trip(self):
+        f.policy_prepare()
+        import guest
+        c, report = model()
+        raw = [copy.deepcopy(report['cases'][name]['raw']) for name in f.CASE_NAMES]
+        report['cases'] = {}; report['campaign_completed'] = report['retirement_verified'] = False
+        results = deque([raw[0], raw[1], raw[2], raw[3], raw[4], {'phase': 'RETIRED'},
+                         raw[9]['partial'], raw[9]['recovered'], raw[10], raw[11]])
+        # Real systemctl show exposes more members than the closed receipt cap.
+        holder = {f'UnneededProperty{index}': 'diagnostic-only' for index in range(300)}
+        holder.update(ActiveState='inactive', LoadState='loaded', ControlGroup='/cm14-holder')
+        def properties(unit):
+            if unit == guest.UNITS[0]: return holder.copy()
+            if unit == guest.UNITS[3]: return {'ActiveState': 'active'}
+            return {'MainPID': '0', 'InvocationID': 'd' * 32, 'ControlGroup': '/cm14-owned'}
+        def result(phase, *args):
+            value = results.popleft(); self.assertEqual(value['phase'], phase)
+            (sandbox_state / 'result').write_text('owned synthetic response')
+            return value
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); counter = root / 'starts'; counter.write_text('1')
+            sandbox_state = root / 'state'; sandbox_state.mkdir()
+            def path(value):
+                if str(value) == '/run/cm14-worker/starts': return counter
+                if str(value).startswith('/sys'): return root / str(value).lstrip('/')
+                return Path(value)
+            with contextlib.ExitStack() as stack:
+                stack.enter_context(patch.object(guest, 'Path', side_effect=path))
+                stack.enter_context(patch.object(guest, 'STATE', sandbox_state))
+                stack.enter_context(patch.object(guest, 'properties', side_effect=properties))
+                stack.enter_context(patch.object(guest, 'await_result', side_effect=result))
+                stack.enter_context(patch.object(guest, 'ctl'))
+                stack.enter_context(patch.object(guest, 'run_raw', side_effect=lambda argv:
+                    self.assertEqual(argv, ('/usr/bin/systemctl', 'daemon-reload'))))
+                stack.enter_context(patch.object(guest, 'write'))
+                stack.enter_context(patch.object(guest, 'read', return_value=report['journal_snapshot']))
+                stack.enter_context(patch.object(guest, 'dump', side_effect=[raw[5], []]))
+                guest.campaign(report, 10**12)
+            self.assertFalse(results)
+            self.assertEqual(set(report['cases']), set(f.CASE_NAMES))
+            self.assertTrue(report['retirement_verified'])
+            report['campaign_completed'] = True
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                for stage in f.STAGES: guest.receipt(report, stage)
+            data = output.getvalue().encode() + frame({'schema': 1, 'nonce': c.nonce,
+                'source_sha256': c.digest, 'exit': 2}, b'CM14-EXIT:')
+            c.capture(data, final=True); c.ssh = c.cleaned = True
+            self.assertTrue(c.protocol_pass())
+            self.assertEqual(report['cases'][f.CASE_NAMES[6]]['raw']['holder'],
+                             {'ActiveState': 'inactive', 'LoadState': 'loaded'})
+            self.assertNotIn('UnneededProperty', json.dumps(c.records))
+        # The parser bound itself remains enforced for oversized untrusted maps.
+        with self.assertRaisesRegex(f.Failure, 'campaign-members'):
+            f.strict_json(json.dumps(holder))
 
     def test_cleanup_validates_last_serial_bytes_after_reaping_before_closing(self):
         for tail in (b'', b'CM14-EVIDENCE:truncated', b'x' * (1024**2 + 1)):

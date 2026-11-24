@@ -110,7 +110,8 @@ def campaign(report, end):
     retained = dump()
     require(len(retained) == 2, 'hup-store-lost')
     passed(CASES[5], retained)
-    passed(CASES[6], {'holder': props, 'raw_dump': retained})
+    passed(CASES[6], {'holder': {name: props[name] for name in ('ActiveState', 'LoadState')},
+                     'raw_dump': retained})
     (STATE / 'result').unlink()
     (STATE / 'control').unlink(missing_ok=True)
     ctl('start', UNITS[0])
