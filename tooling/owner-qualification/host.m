@@ -6,6 +6,7 @@
 #include <unistd.h>
 
 static BOOL interactive;
+static BOOL initialPresentationReady;
 static BOOL attempted;
 static BOOL transferred;
 static BOOL terminal;
@@ -214,7 +215,7 @@ static int32_t reply(uint64_t identifier, uint64_t receivedGeneration, uintptr_t
 - (void)verify:(id)sender
 {
     (void)sender;
-    if (!interactive || attempted)
+    if (!NSThread.isMainThread || !interactive || attempted || !initialPresentationReady)
     {
         return;
     }
@@ -244,6 +245,10 @@ static int32_t reply(uint64_t identifier, uint64_t receivedGeneration, uintptr_t
 - (void)cancel:(id)sender
 {
     (void)sender;
+    if (!NSThread.isMainThread)
+    {
+        return;
+    }
     // Cancel revokes the prepared attempt too, before any native request exists.
     attempted = YES;
     verifyButton.enabled = NO;
@@ -313,6 +318,7 @@ static int32_t reply(uint64_t identifier, uint64_t receivedGeneration, uintptr_t
     {
         verifyButton = [NSButton buttonWithTitle:@"Verify — one OS authentication attempt"
             target:self action:@selector(verify:)];
+        verifyButton.enabled = NO;
         verifyButton.frame = NSMakeRect(20, 70, 440, 40);
         [fixtureWindow.contentView addSubview:verifyButton];
         NSButton *cancelButton = [NSButton buttonWithTitle:@"Cancel / revoke" target:self action:@selector(cancel:)];
@@ -346,6 +352,11 @@ static int32_t reply(uint64_t identifier, uint64_t receivedGeneration, uintptr_t
             exit(77);
         }
         event("window-evidence", "NSWindow-metadata-only-screen-NOT-OBSERVED");
+        if (interactive && !attempted)
+        {
+            initialPresentationReady = YES;
+            verifyButton.enabled = YES;
+        }
         if (!interactive)
         {
             [self noPrompt];
