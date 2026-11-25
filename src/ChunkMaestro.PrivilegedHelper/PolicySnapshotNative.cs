@@ -6,23 +6,11 @@ namespace ChunkMaestro.PrivilegedHelper;
 
 internal static partial class PolicySnapshotNative
 {
-    private const string Library = "chunkmaestro_policy_snapshot_v1";
+    private const string Library = InspectorNativeLibrary.Snapshot;
 
     static PolicySnapshotNative()
     {
-        NativeLibrary.SetDllImportResolver(typeof(PolicySnapshotNative).Assembly, (name, assembly, searchPath) =>
-        {
-            if (name == "libc.so.6" && OperatingSystem.IsLinux())
-            {
-                return NativeLibrary.Load(name, assembly, DllImportSearchPath.SafeDirectories);
-            }
-            if (name != Library || !OperatingSystem.IsLinux())
-            {
-                throw new PlatformNotSupportedException();
-            }
-            // Tests alone build this owned output. No environment or policy search.
-            return NativeLibrary.Load(Path.Combine(AppContext.BaseDirectory, "libchunkmaestro_policy_snapshot_v1.so"));
-        });
+        InspectorNativeLibrary.Initialize();
     }
 
     internal static void RequireLinux()
