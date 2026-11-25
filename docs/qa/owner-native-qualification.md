@@ -85,6 +85,33 @@ Fresh all-role review and explicit unlocked-desktop permission are required befo
 any new native presentation or authentication launch. No such launch is authorized
 by this diagnostic change. Issue12 remains open.
 
+## Initial presentation readiness before Verify
+
+The interactive Verify control starts disabled. Its handler independently refuses
+ingress until the existing single initial presentation sample passes; disabled UI
+alone is not the admission boundary. The sample latches readiness and enables the
+control only if Cancel has not consumed the attempt. Early direct ingress queues
+no work. Cancel before readiness stays consumed, and every refusal after a ready
+Verify still consumes the single attempt before any reentrant call. Verify and
+Cancel refuse off-main ingress before reading or changing fixture state.
+
+This prevents a distinct lifecycle race: previously an early Verify could queue
+evaluation before the delayed initial sample, whose refusal then exited 77 even
+with transfer pending. The unchanged initial refusal can now run only before
+interactive admission. Per-click presentation/capture checks, callback validation,
+unknown-until-phase1 drain, pending close classification, supervisor deadline and
+no-prompt behavior are retained. This is not a physical missing-window fix, and
+the historical cause remains UNKNOWN.
+
+`test_readiness.py` extracts the actual handler, initial refusal/readiness commit,
+and callback code into a Foundation-only scaffold. All presentation and native
+functions are inert stubs; it links no AppKit or LocalAuthentication implementation.
+It checks early/direct/off-main ingress, Cancel/readiness order, repeated and
+reentrant Verify, refusal paths, and close/callback classification. Those results
+are offline source-bound evidence, not a window, authentication, callback-delivery
+or native-drain qualification. Fresh independent implementation QA and separately
+authorized physical qualification remain required. No new launch is authorized.
+
 ## Safe local execution
 
 From the repository root, using existing Python and Apple compiler only:
