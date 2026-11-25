@@ -71,6 +71,21 @@ jobs:
           set -eu -o pipefail
           python tooling/ci/command.py --timeout-seconds 150 -- dotnet build tests/ChunkMaestro.HelperPolicyTests/ChunkMaestro.HelperPolicyTests.csproj -c Release --no-restore 2>&1 | tee .artifacts/ci/inspector-metadata/build.log
           sha256sum tests/ChunkMaestro.HelperPolicyTests/bin/Release/net10.0/libchunkmaestro_policy_snapshot_v1.so > .artifacts/ci/inspector-metadata/test-shim.sha256
+      - name: Inspect exact additive escrow exports and binary provenance
+        shell: bash
+        run: |
+          set -eu -o pipefail
+          library=tests/ChunkMaestro.HelperPolicyTests/bin/Release/net10.0/libchunkmaestro_session_escrow_v1.so
+          output=.artifacts/ci/inspector-metadata/session-escrow
+          sha256sum "$library" > "$output/escrow-dso.sha256"
+          readelf -h -d -V -Ws "$library" > "$output/escrow-dso.elf.txt"
+          nm -D --defined-only --extern-only --format=posix "$library" > "$output/escrow-dso.symbols.txt"
+          # Every defined dynamic export must be a strong text symbol; do not
+          # silently drop weak, IFUNC, object or other unexpected export types.
+          awk 'NF < 2 || $2 != "T" {exit 1} {print $1}' "$output/escrow-dso.symbols.txt" | LC_ALL=C sort > "$output/exports.actual"
+          printf '%s\n' cm_escrow_bind cm_escrow_close cm_escrow_error cm_escrow_handback cm_escrow_measure_original_v1 cm_escrow_metadata cm_escrow_observe cm_escrow_upload | LC_ALL=C sort > "$output/exports.expected"
+          diff -u "$output/exports.expected" "$output/exports.actual"
+          if grep -F cm_control_ "$output/escrow-dso.symbols.txt"; then exit 1; fi
       - name: Execute Linux ownership, cancellation and private handoff cases
         if: matrix.architecture == 'x86_64'
         timeout-minutes: 3

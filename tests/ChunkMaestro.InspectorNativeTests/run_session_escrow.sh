@@ -48,10 +48,10 @@ for instrumentation in plain sanitized; do
     fi
     if [ "$mode" != --kernel ]; then
         echo "BEGIN: fake API controls $instrumentation (no manager library)"
-        "$compiler" -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic "$@" \
+        "$compiler" -pthread -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic "$@" \
             -I"$root/src/ChunkMaestro.Inspector.Native" \
             -include "$controls" -DCM_ESCROW_INTERPOSE -c "$source_file" -o "$build/controls-$instrumentation.o"
-        "$compiler" -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic "$@" \
+        "$compiler" -pthread -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic "$@" \
             -I"$root/src/ChunkMaestro.Inspector.Native" -DCM_ESCROW_CONTROLS \
             "$test_file" "$build/controls-$instrumentation.o" -o "$build/controls-$instrumentation"
         ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 "$build/controls-$instrumentation"
@@ -60,7 +60,7 @@ for instrumentation in plain sanitized; do
         echo "BEGIN: owned-resource kernel $instrumentation (no notify/handback calls)"
         # No development headers or libsystemd.so linker symlink required.
         # Missing runtime SONAME/symbol version is a prerequisite failure.
-        "$compiler" -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic "$@" \
+        "$compiler" -pthread -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic "$@" \
             -I"$root/src/ChunkMaestro.Inspector.Native" "$source_file" "$test_file" \
             -Wl,-l:libsystemd.so.0 -o "$build/kernel-$instrumentation"
         readelf -h -d -V -Ws "$build/kernel-$instrumentation" > "$build/kernel-$instrumentation.elf.txt"
@@ -74,17 +74,22 @@ for instrumentation in plain sanitized; do
     fi
 done
 if [ "$mode" != --kernel ]; then
-    for mutation in close fdpoll; do
+    for mutation in close fdpoll measurement-close measurement-borrowed measurement-retry measurement-publish measurement-flags; do
         echo "BEGIN: invariant sensitivity $mutation (fake API only)"
         case "$mutation" in
+            measurement-borrowed) expression='s/close(owned)/close(borrowed)/g'; expected='fd >= 0' ;;
+            measurement-retry) expression='s/close(owned) < 0/(close(owned) < 0 \&\& close(owned) < 0)/g'; expected='fd >= 0' ;;
+            measurement-close) expression='s/close(owned)/0/g'; expected='closes == (fault == 1' ;;
+            measurement-publish) expression='s/if (result == CM_ESCROW_OK)/if (result == CM_ESCROW_OK || result == CM_ESCROW_IO)/g'; expected='memcmp(&value, &zero' ;;
+            measurement-flags) expression='s/identity_profile(owned, &measured, 1)/identity_profile(owned, \&measured, 0)/g'; expected='result == expected' ;;
             close) expression='s/close(s->fd\[i\])/0/g'; expected='!live[i]' ;;
             fdpoll) expression='s/FDPOLL=0/FDPOLL=1/g'; expected='strstr(state, "FDSTORE=1' ;;
         esac
         sed "$expression" "$source_file" > "$build/mutant-$mutation.c"
-        "$compiler" -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic \
+        "$compiler" -pthread -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic \
             -I"$root/src/ChunkMaestro.Inspector.Native" -include "$controls" \
             -DCM_ESCROW_INTERPOSE -c "$build/mutant-$mutation.c" -o "$build/mutant-$mutation.o"
-        "$compiler" -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic \
+        "$compiler" -pthread -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic \
             -I"$root/src/ChunkMaestro.Inspector.Native" -DCM_ESCROW_CONTROLS \
             "$test_file" "$build/mutant-$mutation.o" -o "$build/mutant-$mutation"
         if "$build/mutant-$mutation" > "$build/$mutation.log" 2>&1; then
@@ -96,7 +101,7 @@ if [ "$mode" != --kernel ]; then
     done
 fi
 # Separately inspect production; compiler-only injection must not leak.
-"$compiler" -std=c11 -O1 -Wall -Wextra -Werror -Wpedantic -fPIC \
+"$compiler" -pthread -std=c11 -O1 -Wall -Wextra -Werror -Wpedantic -fPIC \
     -I"$root/src/ChunkMaestro.Inspector.Native" -c "$source_file" -o "$build/production.o"
 nm "$build/production.o" > "$build/production.symbols.txt"
 if grep 'cm_control_' "$build/production.symbols.txt"; then

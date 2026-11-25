@@ -4,6 +4,7 @@
 #error "session escrow requires qualified Linux pidfs and public libsystemd.so.0"
 #endif
 #include <errno.h>
+#include <stddef.h>
 #include <fcntl.h>
 #include <poll.h>
 #include <stdio.h>
@@ -27,11 +28,25 @@ __asm__(".symver sd_listen_fds_with_names,sd_listen_fds_with_names@LIBSYSTEMD_22
 #endif
 #if defined(__x86_64__)
 #define CM_RAW_LARGEFILE 0100000
+#define CM_ARCHITECTURE 1
 #elif defined(__aarch64__)
 #define CM_RAW_LARGEFILE 0400000
+#define CM_ARCHITECTURE 2
 #else
 #error "session escrow supports Linux x64/arm64 only"
 #endif
+_Static_assert(sizeof(void *) == 8 && sizeof(long) == 8, "LP64 required");
+_Static_assert(sizeof(uint64_t) == 8 && sizeof(uint32_t) == 4, "fixed widths");
+_Static_assert(sizeof(dev_t) <= 8 && sizeof(ino_t) <= 8, "identity widths");
+_Static_assert(sizeof(cm_original_measurement_v1) == 24, "measurement size");
+_Static_assert(_Alignof(cm_original_measurement_v1) == 8, "measurement alignment");
+_Static_assert(offsetof(cm_original_measurement_v1, device) == 0, "device offset");
+_Static_assert(offsetof(cm_original_measurement_v1, inode) == 8, "inode offset");
+_Static_assert(offsetof(cm_original_measurement_v1, flags) == 16, "flags offset");
+_Static_assert(offsetof(cm_original_measurement_v1, architecture) == 20, "architecture offset");
+_Static_assert(offsetof(cm_original_measurement_v1, normalization) == 21, "normalization offset");
+_Static_assert(offsetof(cm_original_measurement_v1, source) == 22, "source offset");
+_Static_assert(offsetof(cm_original_measurement_v1, reserved) == 23, "reserved offset");
 #define CM_PIDFS_MAGIC 0x50494446
 #define CM_PIDFD_THREAD O_EXCL
 #define CM_NAME_SIZE 48
@@ -68,7 +83,7 @@ static int names(cm_escrow *s, const char *epoch)
     return snprintf(s->name[0], CM_NAME_SIZE, "cm-worker-%s", epoch) == 42 &&
         snprintf(s->name[1], CM_NAME_SIZE, "cm-agent-%s", epoch) == 41;
 }
-static cm_escrow_result identity(int fd, cm_escrow_identity *out)
+static cm_escrow_result identity_profile(int fd, cm_escrow_identity *out, int strict)
 {
     struct stat st;
     struct statfs fs;
@@ -83,11 +98,56 @@ static cm_escrow_result identity(int fd, cm_escrow_identity *out)
     {
         return CM_ESCROW_IDENTITY;
     }
+    if (strict && (st.st_dev == 0 || st.st_rdev != 0 ||
+        ((flags & ~CM_RAW_LARGEFILE) != 2 && (flags & ~CM_RAW_LARGEFILE) != 0x802)))
+    {
+        return CM_ESCROW_IDENTITY;
+    }
     out->device = (uint64_t)st.st_dev;
     out->inode = (uint64_t)st.st_ino;
     /* Match manager DumpFileDescriptorStore: O_LARGEFILE is masked there. */
     out->flags = (uint32_t)(flags & ~CM_RAW_LARGEFILE);
     return CM_ESCROW_OK;
+}
+static cm_escrow_result identity(int fd, cm_escrow_identity *out)
+{
+    return identity_profile(fd, out, 0);
+}
+cm_escrow_result cm_escrow_measure_original_v1(int borrowed, cm_original_measurement_v1 *out)
+{
+    if (!out)
+    {
+        return CM_ESCROW_INVALID;
+    }
+    memset(out, 0, sizeof(*out));
+    if (borrowed < 0)
+    {
+        return CM_ESCROW_INVALID;
+    }
+    int owned = fcntl(borrowed, F_DUPFD_CLOEXEC, 3);
+    if (owned < 0)
+    {
+        return CM_ESCROW_IO;
+    }
+    cm_escrow_identity measured = {0};
+    cm_escrow_result result = identity_profile(owned, &measured, 1);
+    /* Never retry close, including EINTR; preserve the first refusal. */
+    if (close(owned) < 0 && result == CM_ESCROW_OK)
+    {
+        result = CM_ESCROW_IO;
+    }
+    if (result == CM_ESCROW_OK)
+    {
+        cm_original_measurement_v1 value = {0};
+        value.device = measured.device;
+        value.inode = measured.inode;
+        value.flags = measured.flags;
+        value.architecture = CM_ARCHITECTURE;
+        value.normalization = 1;
+        value.source = 1;
+        *out = value;
+    }
+    return result;
 }
 /* Process identity excludes per-file-description status flags. Two original
  * pidfds for the same task must never occupy the two independent roles. */

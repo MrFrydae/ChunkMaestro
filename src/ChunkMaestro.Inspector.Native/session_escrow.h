@@ -13,6 +13,18 @@ typedef struct
     uint64_t inode;
     uint32_t flags;
 } cm_escrow_identity;
+/* Snapshot only; source is a claim under protected-holder preconditions,
+ * never acquisition authentication or liveness. Distinct from identity padding. */
+typedef struct
+{
+    uint64_t device;
+    uint64_t inode;
+    uint32_t flags;
+    uint8_t architecture;
+    uint8_t normalization;
+    uint8_t source;
+    uint8_t reserved;
+} cm_original_measurement_v1;
 typedef enum
 {
     CM_ESCROW_OK = 0,
@@ -30,6 +42,10 @@ typedef struct
     int hup;
 } cm_escrow_observation;
 
+/* Borrows original, duplicates CLOEXEC>=3 once, measures, closes duplicate once.
+ * All 24 output bytes zero on refusal; NULL out causes no syscall. Caller must
+ * exclude mutation/replacement and retain first refusal in its generation owner. */
+cm_escrow_result cm_escrow_measure_original_v1(int borrowed, cm_original_measurement_v1 *out);
 /* Duplicate borrowed independently bound ORIGINAL non-thread worker/agent
  * pidfds. Does not open a PID, bind invocation, or accept numeric reconstruction.
  * epoch is exactly 32 lowercase hex bytes plus NUL. out reset on failure.
