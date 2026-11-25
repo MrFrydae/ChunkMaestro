@@ -102,6 +102,23 @@ measurement, ancestry, pre-CLR acquisition, whole-owner closure, manager
 qualification and cancellation-to-send serialization. No operational migration,
 production success, independent FINAL, merge or full-issue acceptance is claimed.
 
+## Disposable-volume CI correction
+
+The initial `591a94c` run executed all 413 HelperPolicy cases on Linux x64 and
+ARM64 with no skips, including the real V2 directory-fsync case. Its separate
+Darwin disk-full case passed the storage test but reported cleanup failure after
+three busy detach results. The artifact contains no final attachment inspection,
+so the owned image's final state and actual busy holder remain unknown.
+
+The cleanup collector now reconciles a final busy result with a fresh exact-image
+inspection and mount check. It accepts cleanup only when the image is absent and
+the mount is inactive; attached/replaced/malformed/unknown state still refuses.
+Other detach errors still fail. No retry, force target or timeout was added.
+Synthetic regression controls reproduce the old short-circuit failure and retain
+the ownership checks before both forced operations. These tests do not establish
+actual image detachment. Fresh hosted Darwin execution is required; the original
+failed artifact remains unchanged.
+
 Rollback before integration is removal of these four new files. If qualified
 future code ever creates operational V2 state, retain quarantine or drain using
 compatible qualified code; never downgrade, reset, restore an older record,

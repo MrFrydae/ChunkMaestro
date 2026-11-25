@@ -184,7 +184,16 @@ def detach_mac_image(image, mount, log, execute=subprocess.run):
         else:
             code = 0
             break
-    if code or device(allow_unmounted=True) is not None or os.path.ismount(mount):
+    if code not in (0, 16):
+        raise RuntimeError('Disposable image detachment failed or remains mounted')
+    # The final busy status can precede completion, just like earlier attempts.
+    # Never infer cleanup from that status: inspect this exact owned image again.
+    current = device(allow_unmounted=True)
+    mounted = os.path.ismount(mount)
+    log.write(f'Final owned-image check: detach_status={code}; '
+              f'image_attached={current is not None}; mount_active={mounted}\n')
+    log.flush()
+    if current is not None or mounted:
         raise RuntimeError('Disposable image detachment failed or remains mounted')
 
 
