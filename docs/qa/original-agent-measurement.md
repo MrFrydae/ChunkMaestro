@@ -74,6 +74,15 @@ never proves cleanup. Unresolved denial retains the first error, including when
 waiting for the leader fails. This fixes premature refusal without qualifying
 the unknown cause of the original hosted PermissionError or any physical window.
 
+The storage CI plan separates identity metadata/lifecycle integrity into its own
+82-case partition on each controller OS, leaving 88 cases in general integrity.
+The prior 170-case Windows command reached its 150-second deadline without a
+complete TRX. No failing assertion was reported before termination; this does not
+establish the cause of the slowdown. All classes and case identities remain
+required exactly once, including both new matrix jobs, with the same deadlines,
+raw TRX/coverage checks and fail-closed aggregate gate. Total safety inventory
+remains 793 cases; the timeout is retained as a historical failed execution.
+
 All eleven product gaps, G1–G6, ENODATA, protected ancestry, pre-CLR/TSYNC/old-ring
 exclusion, whole-Agent/all-descendant closure, callback/free and cancellation-send
 atomicity, authenticated manager and qualified acquisition remain unresolved.

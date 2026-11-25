@@ -247,10 +247,12 @@ jobs:
         include:
           - {os: windows-2025, system: Windows, group: inventory}
           - {os: windows-2025, system: Windows, group: integrity}
+          - {os: windows-2025, system: Windows, group: identity-integrity}
           - {os: windows-2025, system: Windows, group: recovery}
           - {os: windows-2025, system: Windows, group: authority}
           - {os: macos-15-intel, system: Darwin, group: inventory}
           - {os: macos-15-intel, system: Darwin, group: integrity}
+          - {os: macos-15-intel, system: Darwin, group: identity-integrity}
           - {os: macos-15-intel, system: Darwin, group: recovery}
           - {os: macos-15-intel, system: Darwin, group: authority}
     runs-on: ${{ matrix.os }}
