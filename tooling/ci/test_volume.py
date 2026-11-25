@@ -240,7 +240,8 @@ class DriveSelectionTests(unittest.TestCase):
                 del unmounted['images'][0]['system-entities'][1]['mount-point']
                 next_state = ({'images': []} if outcome == 'gone' else
                               self.info(device='/dev/disk43') if outcome == 'replaced' else unmounted)
-                queries = iter([self.info(), unmounted, next_state, {'images': []}])
+                final_state = unmounted if outcome == 'still-busy' else {'images': []}
+                queries = iter([self.info(), unmounted, next_state, final_state])
                 attempts = []
                 def execute(args, **kwargs):
                     commands.append(args)
@@ -260,6 +261,44 @@ class DriveSelectionTests(unittest.TestCase):
                     if '-force' in command:
                         self.assertEqual(commands[index - 1], ['hdiutil', 'info', '-plist'])
                         self.assertEqual(command[-1], '/dev/disk42')
+
+    def test_final_busy_result_requires_fresh_absence_and_unmounted_path(self):
+        image, mount = Path('/tmp/owned/fixture.dmg'), Path('/tmp/owned/mount')
+        for outcome in ('gone', 'attached', 'replaced', 'mounted', 'inspection-error', 'malformed'):
+            with self.subTest(outcome=outcome):
+                commands = []
+                inspections = []
+                def execute(args, **kwargs):
+                    commands.append(args)
+                    if args[1] != 'info':
+                        return SimpleNamespace(returncode=16)
+                    inspections.append(args)
+                    if len(inspections) < 4:
+                        return SimpleNamespace(returncode=0, stdout=plistlib.dumps(self.info()))
+                    if outcome == 'inspection-error':
+                        return SimpleNamespace(returncode=1, stdout=b'')
+                    if outcome == 'malformed':
+                        return SimpleNamespace(returncode=0, stdout=b'not a property list')
+                    state = self.info() if outcome == 'attached' else (
+                        self.info(device='/dev/disk43') if outcome == 'replaced' else {'images': []})
+                    return SimpleNamespace(returncode=0, stdout=plistlib.dumps(state))
+                log = io.StringIO()
+                with patch('volume.os.path.ismount', return_value=outcome == 'mounted'):
+                    if outcome == 'gone':
+                        detach_mac_image(image, mount, log, execute)
+                        self.assertIn('detach_status=16', log.getvalue())
+                        self.assertIn('image_attached=False; mount_active=False', log.getvalue())
+                    else:
+                        with self.assertRaises((RuntimeError, ValueError)):
+                            detach_mac_image(image, mount, log, execute)
+                self.assertEqual(4, len(inspections))
+                self.assertEqual([command for command in commands if command[1] == 'detach'], [
+                    ['hdiutil', 'detach', '/dev/disk42'],
+                    ['hdiutil', 'detach', '-force', '/dev/disk42'],
+                    ['hdiutil', 'detach', '-force', '/dev/disk42']])
+                for index, command in enumerate(commands):
+                    if '-force' in command:
+                        self.assertEqual(['hdiutil', 'info', '-plist'], commands[index - 1])
 
     def test_mac_cleanup_rejects_changed_identity_other_mount_and_unrelated_image(self):
         image, mount = Path('/tmp/owned/fixture.dmg'), Path('/tmp/owned/mount')
