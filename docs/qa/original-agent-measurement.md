@@ -67,6 +67,13 @@ object exports; they do not prove actual Linux ELF contents. Existing risk
 prefixes classify all implementation paths as high risk.
 No package/project/dependency changes are part of this patch.
 
+The CI owner-fixture supervisor also retains its one SIGKILL attempt and finite
+cleanup deadline after a permission denial. Only a later signal-zero ESRCH for
+the same group proves disappearance; a denied probe or empty process snapshot
+never proves cleanup. Unresolved denial retains the first error, including when
+waiting for the leader fails. This fixes premature refusal without qualifying
+the unknown cause of the original hosted PermissionError or any physical window.
+
 All eleven product gaps, G1–G6, ENODATA, protected ancestry, pre-CLR/TSYNC/old-ring
 exclusion, whole-Agent/all-descendant closure, callback/free and cancellation-send
 atomicity, authenticated manager and qualified acquisition remain unresolved.

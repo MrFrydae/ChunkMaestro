@@ -81,11 +81,21 @@ def clean_environment(build):
 
 def reap_group(process):
     """Kill the owned session even if its leader already exited, then reap leader."""
+    permission_error = None
     try:
         os.killpg(process.pid, signal.SIGKILL)
     except ProcessLookupError:
         pass
-    process.wait(timeout=5)
+    except PermissionError as error:
+        # A denial is not absence. Reap the leader and require a later ESRCH
+        # from the same group's signal-zero probe; never retry SIGKILL.
+        permission_error = error
+    try:
+        process.wait(timeout=5)
+    except (OSError, subprocess.SubprocessError) as error:
+        if permission_error is not None:
+            raise permission_error from error
+        raise
     # Signal zero proves the group is gone, rather than trusting only leader exit.
     end = time.monotonic() + REAP_GRACE_SECONDS
     while True:
@@ -93,7 +103,11 @@ def reap_group(process):
             os.killpg(process.pid, 0)
         except ProcessLookupError:
             return True
+        except PermissionError as error:
+            permission_error = permission_error or error
         if time.monotonic() >= end:
+            if permission_error is not None:
+                raise permission_error
             return False
         time.sleep(0.02)
 

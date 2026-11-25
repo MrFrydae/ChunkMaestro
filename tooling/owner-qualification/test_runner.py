@@ -600,6 +600,52 @@ int main(void)
                 patch.object(runner.time, "sleep"):
             self.assertTrue(runner.reap_group(process))
 
+    def test_permission_denial_needs_later_explicit_group_absence(self):
+        for signals in ([PermissionError("kill denied"), ProcessLookupError()],
+                        [None, PermissionError("probe denied"), ProcessLookupError()],
+                        [PermissionError("kill denied"), PermissionError("probe denied"), ProcessLookupError()]):
+            with self.subTest(signals=signals):
+                process = Mock(pid=12345)
+                with patch.object(runner.os, "killpg", side_effect=signals) as kill, \
+                        patch.object(runner.time, "monotonic", side_effect=[0, 1]), \
+                        patch.object(runner.time, "sleep") as sleep:
+                    self.assertTrue(runner.reap_group(process))
+                process.wait.assert_called_once_with(timeout=5)
+                self.assertEqual([(12345, signal.SIGKILL)] + [(12345, 0)] * (len(signals) - 1),
+                                 [call.args for call in kill.call_args_list])
+                self.assertEqual(len(signals) - 2, sleep.call_count)
+
+    def test_permission_denial_without_disappearance_preserves_first_error(self):
+        for initial_denial, probe_denial in ((True, False), (False, True), (True, True)):
+            with self.subTest(initial_denial=initial_denial, probe_denial=probe_denial):
+                first = PermissionError("kill denied")
+                second = PermissionError("probe denied")
+                process = Mock(pid=12345)
+                with patch.object(runner.os, "killpg", side_effect=[first if initial_denial else None,
+                                                                   second if probe_denial else None]) as kill, \
+                        patch.object(runner.time, "monotonic", side_effect=[0, 11]), \
+                        patch.object(runner.time, "sleep") as sleep:
+                    with self.assertRaises(PermissionError) as caught:
+                        runner.reap_group(process)
+                self.assertIs(first if initial_denial else second, caught.exception)
+                process.wait.assert_called_once_with(timeout=5)
+                self.assertEqual([(12345, signal.SIGKILL), (12345, 0)],
+                                 [call.args for call in kill.call_args_list])
+                sleep.assert_not_called()
+
+    def test_denied_kill_preserves_first_error_if_leader_wait_fails(self):
+        denied = PermissionError("kill denied")
+        timeout = runner.subprocess.TimeoutExpired("owned child", 5)
+        process = Mock(pid=12345)
+        process.wait.side_effect = timeout
+        with patch.object(runner.os, "killpg", side_effect=denied) as kill:
+            with self.assertRaises(PermissionError) as caught:
+                runner.reap_group(process)
+        self.assertIs(denied, caught.exception)
+        self.assertIs(timeout, caught.exception.__cause__)
+        process.wait.assert_called_once_with(timeout=5)
+        kill.assert_called_once_with(12345, signal.SIGKILL)
+
     def test_cleanup_diagnostics_only_disclose_owned_group_numeric_state(self):
         result = Mock(stdout="11 55 Z\n12 99 S\n13 55 R+\nmalformed\n")
         with patch.object(runner.subprocess, "run", return_value=result):
