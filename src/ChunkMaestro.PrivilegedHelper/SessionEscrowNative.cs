@@ -1,0 +1,86 @@
+using System.Runtime.InteropServices;
+
+namespace ChunkMaestro.PrivilegedHelper;
+
+// Native C ABI on supported Linux x64/arm64: sizeof(identity)=24, alignment=8.
+// These labels have no authentication, manager acceptance or cleanup authority.
+[StructLayout(LayoutKind.Explicit, Size = 24)]
+internal struct SessionEscrowIdentityUnqualified
+{
+    [FieldOffset(0)] internal ulong Device;
+    [FieldOffset(8)] internal ulong Inode;
+    [FieldOffset(16)] internal uint Flags;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct SessionEscrowObservationUnqualified
+{
+    internal int Readable;
+    internal int Hup;
+}
+
+// Internal dispatch seam for managed lifetime/fault tests; production always uses Native.
+internal interface ISessionEscrowAbi
+{
+    int Bind(int worker, int agent, byte[] epoch, out nint session);
+    int Handback(byte[] epoch, SessionEscrowIdentityUnqualified[] expected, out nint session);
+    int Metadata(nint session, SessionEscrowIdentityUnqualified[] identities);
+    int Upload(nint session, ulong deadline);
+    int Observe(nint session, uint role, out SessionEscrowObservationUnqualified observation);
+    int Close(ref nint session);
+}
+
+internal sealed partial class SessionEscrowNative : ISessionEscrowAbi
+{
+    internal static readonly SessionEscrowNative Instance = new();
+
+    private SessionEscrowNative()
+    {
+        InspectorNativeLibrary.Initialize();
+    }
+
+    public int Bind(int worker, int agent, byte[] epoch, out nint session)
+    {
+        PolicySnapshotNative.RequireLinux();
+        return BindNative(worker, agent, epoch, out session);
+    }
+
+    public int Handback(byte[] epoch, SessionEscrowIdentityUnqualified[] expected, out nint session)
+    {
+        PolicySnapshotNative.RequireLinux();
+        return HandbackNative(epoch, expected, out session);
+    }
+
+    public int Metadata(nint session, SessionEscrowIdentityUnqualified[] identities)
+    {
+        return MetadataNative(session, identities);
+    }
+
+    public int Upload(nint session, ulong deadline)
+    {
+        return UploadNative(session, deadline);
+    }
+
+    public int Observe(nint session, uint role, out SessionEscrowObservationUnqualified observation)
+    {
+        return ObserveNative(session, role, out observation);
+    }
+
+    public int Close(ref nint session)
+    {
+        return CloseNative(ref session);
+    }
+
+    [LibraryImport(InspectorNativeLibrary.SessionEscrow, EntryPoint = "cm_escrow_bind")]
+    private static partial int BindNative(int worker, int agent, byte[] epoch, out nint session);
+    [LibraryImport(InspectorNativeLibrary.SessionEscrow, EntryPoint = "cm_escrow_handback")]
+    private static partial int HandbackNative(byte[] epoch, [In] SessionEscrowIdentityUnqualified[] expected, out nint session);
+    [LibraryImport(InspectorNativeLibrary.SessionEscrow, EntryPoint = "cm_escrow_metadata")]
+    private static partial int MetadataNative(nint session, [Out] SessionEscrowIdentityUnqualified[] identities);
+    [LibraryImport(InspectorNativeLibrary.SessionEscrow, EntryPoint = "cm_escrow_upload")]
+    private static partial int UploadNative(nint session, ulong deadline);
+    [LibraryImport(InspectorNativeLibrary.SessionEscrow, EntryPoint = "cm_escrow_observe")]
+    private static partial int ObserveNative(nint session, uint role, out SessionEscrowObservationUnqualified observation);
+    [LibraryImport(InspectorNativeLibrary.SessionEscrow, EntryPoint = "cm_escrow_close")]
+    private static partial int CloseNative(ref nint session);
+}

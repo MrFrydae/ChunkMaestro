@@ -323,6 +323,7 @@ public sealed class InstalledPolicyCodecTests
         InternalsVisibleToAttribute friend = Assert.Single(assembly.GetCustomAttributes<InternalsVisibleToAttribute>());
         Assert.Equal("ChunkMaestro.HelperPolicyTests", friend.AssemblyName);
         HashSet<string> journalImports = new(StringComparer.Ordinal);
+        HashSet<string> escrowImports = new(StringComparer.Ordinal);
         foreach (Type type in assembly.GetTypes())
         {
             foreach (MethodInfo method in type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly))
@@ -340,6 +341,16 @@ public sealed class InstalledPolicyCodecTests
                             Assert.IsType<DefaultDllImportSearchPathsAttribute>(method.GetCustomAttribute<DefaultDllImportSearchPathsAttribute>()).Paths);
                         continue;
                     }
+                    if (type == typeof(SessionEscrowNative) || type.DeclaringType == typeof(SessionEscrowNative))
+                    {
+                        Assert.False(type.IsPublic);
+                        DllImportAttribute escrowImport = Assert.IsType<DllImportAttribute>(method.GetCustomAttribute<DllImportAttribute>());
+                        Assert.Equal("chunkmaestro_session_escrow_v1", escrowImport.Value);
+                        Assert.True(escrowImport.EntryPoint is "cm_escrow_bind" or "cm_escrow_metadata" or
+                            "cm_escrow_upload" or "cm_escrow_handback" or "cm_escrow_observe" or "cm_escrow_close");
+                        Assert.True(escrowImports.Add(escrowImport.EntryPoint!));
+                        continue;
+                    }
                     Assert.True(type == typeof(PolicySnapshotNative) || type.DeclaringType == typeof(PolicySnapshotNative));
                     Assert.False(type.IsPublic);
                     DllImportAttribute import = Assert.IsType<DllImportAttribute>(method.GetCustomAttribute<DllImportAttribute>());
@@ -349,6 +360,7 @@ public sealed class InstalledPolicyCodecTests
             }
         }
         Assert.Equal(3, journalImports.Count);
+        Assert.Equal(6, escrowImports.Count);
         Assert.All(typeof(ParsedData).GetProperties(BindingFlags.NonPublic | BindingFlags.Instance), property => Assert.Null(property.SetMethod));
         foreach (string proof in new[]
         {
