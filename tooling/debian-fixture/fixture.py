@@ -431,6 +431,12 @@ def reviewed_manifest(commit, expected):
     return raw
 
 
+BOOT_PHASES = ('cloud-init-bootcmd', 'provision-entered', 'template-bound',
+    'authorization-written', 'guard-passed', 'guest-returned',
+    'provision-failed', 'guest-timeout', 'guest-entered', 'sender-control-entered',
+    'sender-control-returned', 'campaign-finalizing')
+
+
 class Campaign:
     def __init__(self, manifest, digest, commit):
         if not re.fullmatch('[0-9a-f]{40}', commit or '') or not re.fullmatch('[0-9a-f]{64}', digest or '') or not manifest:
@@ -447,6 +453,7 @@ class Campaign:
         self.nonce = secrets.token_hex(16)
         self.records = []
         self.startup_diagnostics = []
+        self.startup_first_observed_ms = {}
         self.exit_record = None
         self.parse_error = None
         self.pending_frame = False
@@ -504,12 +511,10 @@ class Campaign:
             if not isinstance(obj, dict) or obj.get('schema') != 1 or type(obj.get('schema')) is not int:
                 raise Failure('campaign-schema')
             if prefix == b'CM14-BOOT:':
-                phases = ('cloud-init-bootcmd', 'provision-entered', 'template-bound',
-                    'authorization-written', 'guard-passed', 'guest-returned',
-                    'provision-failed', 'guest-timeout')
                 if (set(obj) != {'schema', 'nonce', 'source_sha256', 'phase'}
                         or obj['nonce'] != self.nonce or obj['source_sha256'] != self.digest
-                        or not isinstance(obj['phase'], str) or obj['phase'] not in phases
+                        or not isinstance(obj['phase'], str) or obj['phase'] not in BOOT_PHASES
+                        or len(self.startup_diagnostics) >= 12
                         or obj['phase'] in self.startup_diagnostics or self.exit_record is not None):
                     raise Failure('campaign-startup-diagnostic')
                 # Fixed labels only; never evidence for protocol_pass or guest authority.
@@ -677,7 +682,8 @@ class Campaign:
             'strict_ssh': self.ssh, 'outer_cleanup_confirmed': self.cleaned,
             'host_failure': failure_name(primary) if primary is not None else None,
             'parser_failure': self.parse_error, 'guest_exit': self.exit_record,
-            'startup_diagnostics': getattr(self, 'startup_diagnostics', [])}
+            'startup_diagnostics': getattr(self, 'startup_diagnostics', []),
+            'startup_first_observed_ms': getattr(self, 'startup_first_observed_ms', {})}
         for name, obj in (('campaign-raw.json', self.records), ('campaign-summary.json', summary)):
             fd = os.open(Path(directory) / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
             with os.fdopen(fd, 'w') as stream:
@@ -687,11 +693,17 @@ class Campaign:
 
 
 def wait_campaign(h, vm, output, campaign):
-    end = min(time.monotonic() + 240, h.deadline)
+    start = time.monotonic()
+    end = min(start + 240, h.deadline)
     while True:
         h.check_output_limits('campaign')
         data = os.pread(output.fileno(), 1024**2, 0)
         campaign.capture(data)
+        # Whole-output reparsing must not reset first live observations. Final-only
+        # capture (including post-reap cleanup) cannot invent historical arrivals.
+        elapsed_ms = int((time.monotonic() - start) * 1000)
+        for phase in campaign.startup_diagnostics:
+            campaign.startup_first_observed_ms.setdefault(phase, elapsed_ms)
         if campaign.exit_record is not None:
             return
         if vm.poll() is not None or time.monotonic() >= end:

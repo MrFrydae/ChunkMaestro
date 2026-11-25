@@ -27,6 +27,7 @@ def model():
     c.template = {'schema': 1, 'nonce': c.nonce, 'source_sha256': c.digest,
                   'image_sha512': f.PIN['sha512'], 'packages': {'systemd': '257'}, 'kernel_release': 'test'}
     c.records, c.exit_record, c.parse_error = [], None, None
+    c.startup_first_observed_ms = {}
     c.ssh = c.cleaned = False
     rows = [['worker-' + 'e' * 32, 1, 0, 5, 101, 0, 0, 'anon_inode:[pidfd]', 2],
             ['agent-' + 'e' * 32, 1, 0, 5, 102, 0, 0, 'anon_inode:[pidfd]', 2]]
@@ -113,7 +114,10 @@ class CampaignContracts(unittest.TestCase):
         c, r = model()
         phases = ('cloud-init-bootcmd', 'provision-entered', 'template-bound',
             'authorization-written', 'guard-passed', 'guest-returned',
-            'provision-failed', 'guest-timeout')
+            'guest-entered', 'sender-control-entered', 'sender-control-returned',
+            'campaign-finalizing', 'provision-failed', 'guest-timeout')
+        self.assertEqual(len(f.BOOT_PHASES), 12)
+        self.assertEqual(set(phases), set(f.BOOT_PHASES))
         data = b''.join(frame({'schema': 1, 'nonce': c.nonce, 'source_sha256': c.digest,
             'phase': phase}, b'CM14-BOOT:') for phase in phases)
         c.capture(data)
@@ -161,6 +165,59 @@ class CampaignContracts(unittest.TestCase):
             c.capture(marker[:-1], final=True)
         c.capture(b'PRIVATE_SENTINEL\n')
         self.assertEqual(c.startup_diagnostics, [])
+
+    def test_live_wait_first_observation_survives_reparse_and_final_capture(self):
+        c, r = model()
+        def boot(phase):
+            return frame({'schema': 1, 'nonce': c.nonce, 'source_sha256': c.digest,
+                          'phase': phase}, b'CM14-BOOT:')
+        first = boot('guard-passed')
+        second = boot('guest-entered')
+        captures = deque([first, first, first + second + serial(c, r)])
+        now = [10.0]
+        with tempfile.TemporaryFile() as output:
+            def check(label):
+                self.assertEqual(label, 'campaign')
+                now[0] += 0.125
+                output.seek(0); output.truncate(); output.write(captures.popleft()); output.flush()
+            h = SimpleNamespace(deadline=250, check_output_limits=check)
+            vm = SimpleNamespace(poll=lambda: None)
+            with patch.object(f.time, 'monotonic', side_effect=lambda: now[0]), \
+                    patch.object(f.time, 'sleep'):
+                f.wait_campaign(h, vm, output, c)
+            expected = {'guard-passed': 125, 'guest-entered': 375}
+            self.assertEqual(c.startup_first_observed_ms, expected)
+            c.capture(first + second + serial(c, r), final=True)
+            self.assertEqual(c.startup_first_observed_ms, expected)
+            with tempfile.TemporaryDirectory() as directory:
+                c.persist(directory, f.Failure('campaign-exit-missing'))
+                summary = json.loads((Path(directory) / 'campaign-summary.json').read_text())
+                self.assertEqual(summary['startup_first_observed_ms'], expected)
+                self.assertFalse(summary['candidate_protocol_pass'])
+        historical, report = model()
+        historical.capture(first + second + serial(historical, report), final=True)
+        self.assertEqual(historical.startup_first_observed_ms, {})
+
+    def test_live_wait_timing_cannot_accept_malformed_or_missing_exit(self):
+        for tail in (b'', b'CM14-BOOT:bad\n', b'CM14-BOOT:partial'):
+            c, r = model()
+            marker = frame({'schema': 1, 'nonce': c.nonce, 'source_sha256': c.digest,
+                            'phase': 'campaign-finalizing'}, b'CM14-BOOT:')
+            with tempfile.TemporaryFile() as output:
+                output.write(marker + tail); output.flush()
+                h = SimpleNamespace(deadline=240, check_output_limits=lambda label: None)
+                vm = SimpleNamespace(poll=lambda: 0)
+                with patch.object(f.time, 'monotonic', return_value=0):
+                    with self.assertRaises(f.Failure): f.wait_campaign(h, vm, output, c)
+                c.ssh = c.cleaned = True
+                self.assertFalse(c.protocol_pass())
+                if tail.endswith(b'partial'):
+                    with self.assertRaisesRegex(f.Failure, 'campaign-frame-truncated'):
+                        c.capture(marker + tail, final=True)
+                elif tail:
+                    self.assertEqual(c.startup_first_observed_ms, {})
+                else:
+                    self.assertEqual(c.startup_first_observed_ms, {'campaign-finalizing': 0})
 
     def test_mode_authorization_before_prerequisites(self):
         for args in (['--policy-session-campaign'], ['--execute-owner-reviewed-fixture', '--policy-session-campaign'],
@@ -508,6 +565,9 @@ class CampaignContracts(unittest.TestCase):
             nonlocal stopped
             if action == 'stop' and unit == guest.UNITS[1]: stopped = True
         def result(phase, *args):
+            if phase == 'SENDER_REJECTED':
+                self.assertEqual([json.loads(base64.b64decode(line.split(':', 1)[1]))['phase']
+                    for line in progress_output.getvalue().splitlines()], ['sender-control-entered'])
             value = results.popleft(); self.assertEqual(value['phase'], phase)
             (sandbox_state / 'result').write_text('owned synthetic response')
             return value
@@ -529,7 +589,11 @@ class CampaignContracts(unittest.TestCase):
                 stack.enter_context(patch.object(guest, 'write'))
                 stack.enter_context(patch.object(guest, 'read', return_value=report['journal_snapshot']))
                 stack.enter_context(patch.object(guest, 'dump', side_effect=[raw[5], []]))
-                guest.campaign(report, 10**12)
+                with contextlib.redirect_stdout(io.StringIO()) as progress_output:
+                    guest.campaign(report, 10**12)
+                labels = [json.loads(base64.b64decode(line.split(':', 1)[1]))['phase']
+                          for line in progress_output.getvalue().splitlines()]
+                self.assertEqual(labels, ['sender-control-entered', 'sender-control-returned'])
             self.assertFalse(results)
             self.assertEqual(set(report['cases']), set(f.CASE_NAMES))
             self.assertTrue(report['retirement_verified'])
@@ -546,6 +610,44 @@ class CampaignContracts(unittest.TestCase):
         # The parser bound itself remains enforced for oversized untrusted maps.
         with self.assertRaisesRegex(f.Failure, 'campaign-members'):
             f.strict_json(json.dumps(holder))
+
+    def test_sender_boundaries_stop_at_real_campaign_failure(self):
+        f.policy_prepare()
+        import guest
+        for failure, expected in (('ARMED', []), ('FULL_REJECTED', []),
+                ('SENDER_REJECTED', ['sender-control-entered']),
+                ('RECOVERED', ['sender-control-entered', 'sender-control-returned'])):
+            c, report = model()
+            armed = report['cases'][f.CASE_NAMES[0]]['raw']
+            report['cases'] = {}
+            report['campaign_completed'] = False
+            def result(phase, *args):
+                if phase == failure: raise guest.Failure('injected-boundary')
+                return armed
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory); counter = root / 'starts'; counter.write_text('1')
+                def path(value):
+                    if str(value) == '/run/cm14-worker/starts': return counter
+                    if str(value).startswith('/sys'): return root / str(value).lstrip('/')
+                    return Path(value)
+                with contextlib.ExitStack() as stack:
+                    stack.enter_context(patch.object(guest, 'Path', side_effect=path))
+                    stack.enter_context(patch.object(guest, 'STATE', root))
+                    stack.enter_context(patch.object(guest, 'ctl'))
+                    stack.enter_context(patch.object(guest, 'write'))
+                    stack.enter_context(patch.object(guest, 'properties', return_value={
+                        'MainPID': '0', 'ControlGroup': '/owned', 'InvocationID': 'd' * 32}))
+                    stack.enter_context(patch.object(guest, 'await_result', side_effect=result))
+                    output = stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+                    with self.assertRaisesRegex(guest.Failure, 'injected-boundary'):
+                        guest.campaign(report, 10**12)
+                labels = [json.loads(base64.b64decode(line.split(':', 1)[1]))['phase']
+                          for line in output.getvalue().splitlines()]
+                self.assertEqual(labels, expected)
+                self.assertFalse(report['campaign_completed'])
+                # No failed boundary manufactures its case's PASS observation.
+                failed_case = {'ARMED': 0, 'FULL_REJECTED': 1, 'SENDER_REJECTED': 2, 'RECOVERED': 3}[failure]
+                self.assertNotIn(f.CASE_NAMES[failed_case], report['cases'])
 
     def test_cleanup_validates_last_serial_bytes_after_reaping_before_closing(self):
         for tail in (b'', b'CM14-EVIDENCE:truncated', b'x' * (1024**2 + 1)):

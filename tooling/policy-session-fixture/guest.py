@@ -24,6 +24,14 @@ GAPS = ('worker-early-exit-no-work-proof', 'exited-readable-without-hup', 'pid-r
         'pre-clr-tsync-and-no-old-rings', 'real-product-policy-protocol')
 
 
+def progress(identity, phase):
+    require(phase in ('guest-entered', 'sender-control-entered',
+                      'sender-control-returned', 'campaign-finalizing'), 'progress-phase')
+    record = {'schema': 1, 'nonce': identity['nonce'],
+              'source_sha256': identity['source_sha256'], 'phase': phase}
+    print('CM14-BOOT:' + base64.b64encode(json.dumps(record).encode()).decode(), flush=True)
+
+
 def await_result(phase, end, sequence=None):
     while time.monotonic() < end:
         if (STATE / 'result').exists():
@@ -95,7 +103,10 @@ def campaign(report, end):
     starts = counter.read_text()
     require(starts == '1', 'worker-start-count')
     passed(CASES[1], control('full', 'FULL_REJECTED'))
-    passed(CASES[2], control('rejected-sender', 'SENDER_REJECTED'))
+    progress(report['authorization'], 'sender-control-entered')
+    rejected = control('rejected-sender', 'SENDER_REJECTED')
+    progress(report['authorization'], 'sender-control-returned')
+    passed(CASES[2], rejected)
     recovered = recover()
     require(recovered['hup'] == {'worker': False, 'agent': False}, 'alive-handback')
     passed(CASES[3], recovered)
@@ -266,6 +277,7 @@ def finalize(report, installed, started, owned, cancellation):
 def main():
     require(len(sys.argv) == 1, 'no-arguments')
     identity = guard()  # No mutations or service calls before authorization.
+    progress(identity, 'guest-entered')
     report = {'kind': 'PROTOCOL_FIXTURE_ONLY', 'authorization': identity, 'cases': {},
               'gaps': {name: 'NOT RUN' for name in GAPS}, 'primary_failure': None,
               'cleanup_failures': [], 'qualification': 'INCOMPLETE',
@@ -320,6 +332,10 @@ def main():
     except BaseException as error:
         first_failure(report, error)
     finally:
+        try:
+            progress(identity, 'campaign-finalizing')
+        except BaseException as error:
+            first_failure(report, error, publication=True)
         finalize(report, installed, started, owned, cancellation)
     return 1 if report['primary_failure'] or report['cleanup_failures'] else 2
 

@@ -96,6 +96,46 @@ class RejectedSenderContracts(unittest.TestCase):
                 if stage == 'fork': wait.assert_not_called()
 
 
+class GuestProgressContracts(unittest.TestCase):
+    def test_guest_guard_and_failure_finalization_boundaries(self):
+        import contextlib
+        import io
+        import base64
+        guest_spec = importlib.util.spec_from_file_location('diagnostic_guest', Path(__file__).with_name('guest.py'))
+        guest = importlib.util.module_from_spec(guest_spec)
+        with patch.dict(sys.modules, {'common': c}):
+            guest_spec.loader.exec_module(guest)
+        identity = {'nonce': 'a' * 32, 'source_sha256': 'b' * 64}
+        for guarded in (False, True):
+            with contextlib.ExitStack() as stack:
+                stack.enter_context(patch.object(sys, 'argv', ['guest.py']))
+                stack.enter_context(patch.object(guest, 'guard', side_effect=None if guarded else c.Failure('guard'),
+                                               return_value=identity))
+                owner = stack.enter_context(patch.object(guest, 'OwnedState'))
+                stack.enter_context(patch.object(guest, 'Cancellation'))
+                stack.enter_context(patch.object(guest, 'Notify', side_effect=RuntimeError('PRIVATE_SENTINEL')))
+                final = stack.enter_context(patch.object(guest, 'finalize'))
+                output = stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+                if guarded:
+                    self.assertEqual(guest.main(), 1)
+                    final.assert_called_once()
+                    self.assertEqual(final.call_args.args[0]['primary_failure'], 'runtime-unavailable')
+                else:
+                    with self.assertRaises(c.Failure): guest.main()
+                    owner.assert_not_called(); final.assert_not_called()
+            records = [json.loads(base64.b64decode(line.split(':', 1)[1]))
+                       for line in output.getvalue().splitlines()]
+            self.assertEqual([record['phase'] for record in records],
+                             ['guest-entered', 'campaign-finalizing'] if guarded else [])
+            self.assertNotIn('PRIVATE_SENTINEL', output.getvalue())
+            for record in records:
+                self.assertEqual(set(record), {'schema', 'nonce', 'source_sha256', 'phase'})
+                self.assertEqual(record['nonce'], identity['nonce'])
+                self.assertEqual(record['source_sha256'], identity['source_sha256'])
+        with self.assertRaisesRegex(c.Failure, 'progress-phase'):
+            guest.progress(identity, 'PRIVATE_SENTINEL')
+
+
 class Contracts(unittest.TestCase):
     def setUp(self):
         self.versions = {'systemd': '257.13-1~deb13u1', 'libsystemd0': '257.13-1~deb13u1',

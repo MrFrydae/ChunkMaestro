@@ -16,7 +16,7 @@ The synthetic processes never receive policy input. Worker units deny all three
 io_uring calls from exec, but inherited rings and real managed startup remain
 unqualified. No product admission path calls this fixture.
 
-Startup diagnostics use at most eight distinct, nonce/source-bound `CM14-BOOT`
+Startup diagnostics use at most twelve distinct, nonce/source-bound `CM14-BOOT`
 labels: cloud-init bootcmd, provision entry, template binding, authorization write,
 guard completion, guest return, provision failure or guest timeout. They contain
 no raw console, exception messages, package output or credentials. The host
@@ -27,6 +27,18 @@ Both ordered reports, all twelve raw cases, the exit
 record, strict SSH and successful VM cleanup remain necessary. The 240-second
 campaign and 160-second guest caps are unchanged. No startup label is a product
 or installed-helper qualification claim.
+
+Four guest labels add boundaries after the guest's own guard (`guest-entered`),
+immediately before and after rejected-sender control (`sender-control-entered`,
+`sender-control-returned`), and on entering campaign finalization
+(`campaign-finalizing`, including campaign failure). The host summary's
+`startup_first_observed_ms` map contains only fixed labels validated during
+`wait_campaign`, with integer monotonic milliseconds since that wait began
+(immediately after VM launch). Repeated whole-output captures retain the first
+observation. Final-only parsing leaves this map empty; cleanup parsing adds no
+historical timestamps. Polling delay and buffered output mean these are host
+observation times, not guest execution times. They can locate budget consumption
+or a missing boundary, but cannot establish its cause or authorize success.
 
 Fixed unit metadata queries use `systemctl show --all` so empty properties remain
 explicit. An inactive unit may have an empty `InvocationID` or `ControlGroup`;
