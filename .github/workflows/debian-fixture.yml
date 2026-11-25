@@ -4,6 +4,8 @@ on:
     types: [opened, reopened, synchronize, labeled]
     paths:
       - 'tooling/debian-fixture/**'
+      - 'tooling/policy-session-fixture/**'
+      - 'docs/operations/policy-session-fixture.md'
       - '.github/workflows/debian-fixture.yml'
       - 'docs/operations/debian-fixture.md'
   workflow_dispatch:
@@ -11,6 +13,14 @@ on:
       acknowledge:
         description: 'Enter RUN-SYNTHETIC-DEBIAN-13 after reviewing fixture scope and unsigned upstream checksum provenance'
         required: true
+        type: string
+      reviewed_source_commit:
+        description: 'Campaign only: independently reviewed exact 40 hex signed source commit; must equal dispatch ref SHA'
+        required: false
+        type: string
+      reviewed_manifest_sha256:
+        description: 'Campaign only: externally reviewed deterministic source manifest SHA256'
+        required: false
         type: string
 permissions:
   contents: read
@@ -24,6 +34,7 @@ jobs:
         with:
           persist-credentials: false
       - run: python3 -B -m unittest discover -s tooling/debian-fixture -p 'test_*.py' -v
+      - run: python3 -B -m unittest discover -s tooling/policy-session-fixture -p 'test_*.py' -v
   fixture:
     name: Debian fixture owner-reviewed smoke
     needs: offline
@@ -83,5 +94,79 @@ jobs:
             ${{ runner.temp }}/debian-fixture-evidence/setup.jsonl
             ${{ runner.temp }}/debian-fixture-evidence/post-setup.jsonl
             ${{ runner.temp }}/debian-fixture-evidence/status.jsonl
+          if-no-files-found: warn
+          retention-days: 7
+
+  policy-session:
+    name: Synthetic 12-case protocol infrastructure (qualification incomplete)
+    needs: offline
+    # Manual campaign only. Existing smoke labels never authorize this job.
+    if: >-
+      github.repository == 'MrFrydae/ChunkMaestro' && github.actor_id == '38875853' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.acknowledge == 'RUN-SYNTHETIC-POLICY-SESSION-12-CASES' &&
+      inputs.reviewed_source_commit == github.sha && inputs.reviewed_manifest_sha256 != ''
+    concurrency:
+      group: debian-fixture
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5, same reviewed baseline as repository CI
+        with:
+          persist-credentials: false
+      - name: Offline contracts
+        run: python3 -B -m unittest discover -s tooling/debian-fixture -p 'test_*.py' -v
+      - name: Bind reviewed setup inputs
+        run: |
+          mkdir -m 700 "$RUNNER_TEMP/debian-fixture-evidence"
+          sha256sum tooling/debian-fixture/*.py tooling/debian-fixture/image.json tooling/debian-fixture/SHA512SUMS .github/workflows/debian-fixture.yml > "$RUNNER_TEMP/debian-fixture-evidence/inputs.sha256"
+      - name: Bind external review authority before runner setup
+        shell: bash
+        env:
+          REVIEWED_COMMIT: ${{ inputs.reviewed_source_commit }}
+          REVIEWED_DIGEST: ${{ inputs.reviewed_manifest_sha256 }}
+        run: |
+          set -euo pipefail
+          python3 -B tooling/debian-fixture/fixture.py --write-reviewed-manifest --reviewed-source-commit "$REVIEWED_COMMIT" --reviewed-manifest-sha256 "$REVIEWED_DIGEST" --reviewed-manifest "$RUNNER_TEMP/cm14-reviewed-manifest.json"
+          python3 -B tooling/debian-fixture/fixture.py --execute-owner-reviewed-fixture --policy-session-campaign --campaign-preflight --campaign-acknowledge RUN-SYNTHETIC-POLICY-SESSION-12-CASES --reviewed-source-commit "$REVIEWED_COMMIT" --reviewed-manifest-sha256 "$REVIEWED_DIGEST" --reviewed-manifest "$RUNNER_TEMP/cm14-reviewed-manifest.json" --campaign-evidence "$RUNNER_TEMP/debian-fixture-evidence"
+      - name: Read-only prerequisite inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tooling/debian-fixture/runner_setup.py inventory | tee "$RUNNER_TEMP/debian-fixture-evidence/inventory.jsonl"
+      - name: Fixed official Ubuntu runner dependencies
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tooling/debian-fixture/runner_setup.py setup | tee "$RUNNER_TEMP/debian-fixture-evidence/setup.jsonl"
+      - name: Nonroot post-setup prerequisites
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tooling/debian-fixture/runner_setup.py check | tee "$RUNNER_TEMP/debian-fixture-evidence/post-setup.jsonl"
+      - name: Fixed TCG synthetic campaign; product qualification remains incomplete
+        env:
+          REVIEWED_COMMIT: ${{ inputs.reviewed_source_commit }}
+          REVIEWED_DIGEST: ${{ inputs.reviewed_manifest_sha256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          env -i PATH=/usr/bin:/bin LANG=C LC_ALL=C /usr/bin/python3 -B tooling/debian-fixture/fixture.py --execute-owner-reviewed-fixture --policy-session-campaign --campaign-acknowledge RUN-SYNTHETIC-POLICY-SESSION-12-CASES --reviewed-source-commit "$REVIEWED_COMMIT" --reviewed-manifest-sha256 "$REVIEWED_DIGEST" --reviewed-manifest "$RUNNER_TEMP/cm14-reviewed-manifest.json" --campaign-evidence "$RUNNER_TEMP/debian-fixture-evidence" 2>&1 | tee "$RUNNER_TEMP/debian-fixture-evidence/status.jsonl"
+      - name: Upload fixed sanitized evidence only
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, repository baseline
+        with:
+          name: policy-session-synthetic-evidence
+          path: |
+            ${{ runner.temp }}/debian-fixture-evidence/inputs.sha256
+            ${{ runner.temp }}/debian-fixture-evidence/inventory.jsonl
+            ${{ runner.temp }}/debian-fixture-evidence/setup.jsonl
+            ${{ runner.temp }}/debian-fixture-evidence/post-setup.jsonl
+            ${{ runner.temp }}/debian-fixture-evidence/status.jsonl
+            ${{ runner.temp }}/debian-fixture-evidence/campaign-raw.json
+            ${{ runner.temp }}/debian-fixture-evidence/campaign-summary.json
           if-no-files-found: warn
           retention-days: 7
