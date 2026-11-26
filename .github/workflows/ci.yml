@@ -80,6 +80,15 @@ jobs:
           set -o pipefail
           mkdir -p .artifacts/ci/inspector-metadata/agent-candidate
           python tooling/ci/command.py --timeout-seconds 180 -- sh tests/ChunkMaestro.InspectorNativeTests/run_agent_candidate.sh 2>&1 | tee .artifacts/ci/inspector-metadata/agent-candidate/run.log
+      - name: Private accepted-connection owner plain sanitizer and kernel cases
+        timeout-minutes: 4
+        env:
+          CM_N1_ARTIFACTS: ${{ github.workspace }}/.artifacts/ci/inspector-metadata/agent-connection-owner
+        shell: bash
+        run: |
+          set -eu -o pipefail
+          mkdir -p "$CM_N1_ARTIFACTS"
+          python tooling/ci/command.py --timeout-seconds 180 -- /usr/bin/env CM_N1_ARTIFACTS="$CM_N1_ARTIFACTS" sh tests/ChunkMaestro.InspectorNativeTests/run_agent_connection_owner.sh 2>&1 | tee "$CM_N1_ARTIFACTS/supervisor.log"
       - name: Inspect exact additive escrow exports and binary provenance
         shell: bash
         run: |
