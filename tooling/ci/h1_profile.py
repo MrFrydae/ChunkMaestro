@@ -1,6 +1,8 @@
 """Collect bounded installed Linux identities; never qualifies an H1 runtime."""
 import argparse
 import base64
+from collections import deque
+from contextlib import ExitStack, contextmanager
 import hashlib
 import json
 import os
@@ -16,6 +18,12 @@ import time
 ROOTS = (Path('/usr'), Path('/lib'), Path('/lib64'), Path('/etc'), Path('/var/lib/dpkg'))
 TOOLS = {'readelf': '/usr/bin/readelf', 'cc': '/usr/bin/cc',
          'ld': '/usr/bin/ld', 'dpkg-query': '/usr/bin/dpkg-query'}
+SDK_ROOTS = (Path('/usr/share/dotnet'), Path('/usr/lib/dotnet'))
+SDK_FILES = ('dotnet', 'sdk/10.0.404/dotnet.runtimeconfig.json',
+             'sdk/10.0.404/Microsoft.NETCoreSdk.BundledVersions.props',
+             'sdk/10.0.404/Roslyn/bincore/csc.dll',
+             'sdk/10.0.404/Roslyn/bincore/csc.deps.json',
+             'packs/Microsoft.NETCore.App.Ref/10.0.15/data/FrameworkList.xml')
 UNKNOWN = [
     'No H1 host/application/CLR was executed; loaded-module graph absent.',
     'No servicing absence, fallback exclusion, runtime lifetime or sandbox proof.',
@@ -60,27 +68,36 @@ def bounded_read(path, budget, limit=128 * 1024 * 1024):
     limit = min(limit, budget.total)
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     try:
-        before = os.fstat(fd)
-        if not stat.S_ISREG(before.st_mode) or before.st_size > limit:
-            raise Refusal('nonregular or oversized input')
-        data = bytearray()
-        while True:
-            budget.check()
-            chunk = os.read(fd, min(65536, limit + 1 - len(data)))
-            if not chunk:
-                break
-            data.extend(chunk)
-            if len(data) > limit:
-                raise Refusal('input byte limit')
-        after = os.fstat(fd)
-        if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns,
-                before.st_ctime_ns) != (after.st_dev, after.st_ino, after.st_size,
-                                       after.st_mtime_ns, after.st_ctime_ns):
-            raise Refusal('input changed during read')
-        budget.charge(len(data))
-        return bytes(data)
+        return bounded_read_fd(fd, budget, limit)
     finally:
         os.close(fd)
+
+
+def bounded_read_fd(fd, budget, limit=128 * 1024 * 1024):
+    """Read a borrowed open descriptor; the caller owns its closure."""
+    budget.check()
+    if budget.count <= 0:
+        raise Refusal('aggregate read budget')
+    limit = min(limit, budget.total)
+    before = os.fstat(fd)
+    if not stat.S_ISREG(before.st_mode) or before.st_size > limit:
+        raise Refusal('nonregular or oversized input')
+    data = bytearray()
+    while True:
+        budget.check()
+        chunk = os.read(fd, min(65536, limit + 1 - len(data)))
+        if not chunk:
+            break
+        data.extend(chunk)
+        if len(data) > limit:
+            raise Refusal('input byte limit')
+    after = os.fstat(fd)
+    if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns,
+            before.st_ctime_ns) != (after.st_dev, after.st_ino, after.st_size,
+                                   after.st_mtime_ns, after.st_ctime_ns):
+        raise Refusal('input changed during read')
+    budget.charge(len(data))
+    return bytes(data)
 
 
 def trusted(path, roots=ROOTS):
@@ -94,7 +111,8 @@ def trusted(path, roots=ROOTS):
     for base in (original, *original.parents, resolved, *resolved.parents):
         info = base.lstat()
         if info.st_uid != 0 or (not stat.S_ISLNK(info.st_mode) and info.st_mode & 0o022):
-            raise Refusal('untrusted installed ownership/mode')
+            raise Refusal('untrusted installed ownership/mode: ' + str(base) +
+                          ' uid=' + str(info.st_uid) + ' mode=' + oct(stat.S_IMODE(info.st_mode)))
     return resolved
 
 
@@ -108,6 +126,149 @@ def identity(path, budget):
     return {'path': str(path), 'resolved': str(resolved), 'bytes': len(data),
             'sha256': hashlib.sha256(data).hexdigest(),
             'origin': 'installed root-owned bytes; package association collected separately'}
+
+
+@contextmanager
+def sdk_handles():
+    """Close every acquired handle once without replacing the first refusal."""
+    cleanup = []
+    first = None
+    try:
+        with ExitStack() as handles:
+            def close(descriptor):
+                try:
+                    os.close(descriptor)
+                except OSError as error:
+                    cleanup.append(str(error))
+            def opened(name, flags, parent=None):
+                descriptor = os.open(name, flags, dir_fd=parent)
+                handles.callback(close, descriptor)
+                return descriptor
+            try:
+                yield opened
+            except BaseException as error:
+                first = error
+                raise
+    except BaseException as error:
+        if first is not None and error is not first:
+            cleanup.append('SDK cleanup interrupted: ' + type(error).__name__ + ': ' + str(error))
+            first.sdk_cleanup_uncertainty = '; '.join(cleanup)
+            raise first from error
+        if cleanup or first is None:
+            error.sdk_cleanup_uncertainty = '; '.join(cleanup) or ('SDK cleanup interrupted: ' + type(error).__name__)
+        raise
+    if cleanup:
+        error = Refusal('SDK descriptor cleanup')
+        error.sdk_cleanup_uncertainty = '; '.join(cleanup)
+        raise error
+
+
+def sdk_observation(sdk_root, relative, budget):
+    """Passive fixed SDK bytes only; ownership is observed, never trusted."""
+    root = Path(sdk_root)
+    if root not in SDK_ROOTS or relative not in SDK_FILES:
+        raise Refusal('SDK observation outside fixed allowlist')
+    budget.check()
+    if budget.count <= 0:
+        raise Refusal('aggregate read budget')
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NONBLOCK
+    with sdk_handles() as opened:
+        # Bind the selected root from / without following a substituted ancestor.
+        canonical_root = root
+        seen_roots = set()
+        while True:
+            budget.check()
+            if canonical_root in seen_roots:
+                raise Refusal('SDK root symlink limit')
+            seen_roots.add(canonical_root)
+            anchor = opened('/', directory_flags)
+            for component in canonical_root.parts[1:-1]:
+                budget.check()
+                anchor = opened(component, directory_flags, anchor)
+            info = os.stat(canonical_root.name, dir_fd=anchor, follow_symlinks=False)
+            if stat.S_ISLNK(info.st_mode):
+                target = os.readlink(canonical_root.name, dir_fd=anchor)
+                if len(os.fsencode(target)) > 4096:
+                    raise Refusal('SDK root symlink size')
+                target_path = Path(target)
+                if not target_path.is_absolute():
+                    target_path = canonical_root.parent / target_path
+                canonical_root = Path(os.path.normpath(target_path))
+                if canonical_root not in SDK_ROOTS:
+                    raise Refusal('SDK root escape')
+                continue
+            anchor = opened(canonical_root.name, directory_flags, anchor)
+            bound = os.fstat(anchor)
+            if (info.st_dev, info.st_ino, info.st_mode, info.st_uid) != (
+                    bound.st_dev, bound.st_ino, bound.st_mode, bound.st_uid):
+                raise Refusal('SDK root changed during open')
+            break
+        root_info = os.fstat(anchor)
+        directories = [anchor]
+        names = []
+        pending = deque(Path(relative).parts)
+        observed = []
+        requested_leaf = None
+        links = 0
+        steps = 0
+        while pending:
+            budget.check()
+            steps += 1
+            if steps > 128 or len(pending) > 128:
+                raise Refusal('SDK traversal limit')
+            component = pending.popleft()
+            if component in ('', '.'):
+                continue
+            if component == '..':
+                if not names:
+                    raise Refusal('SDK member escape')
+                names.pop()
+                directories.pop()
+                continue
+            info = os.stat(component, dir_fd=directories[-1], follow_symlinks=False)
+            record = {'path': str(canonical_root.joinpath(*names, component)),
+                      'uid': info.st_uid, 'mode': oct(stat.S_IMODE(info.st_mode)),
+                      'symlink': stat.S_ISLNK(info.st_mode)}
+            observed.append(record)
+            if not pending and requested_leaf is None:
+                requested_leaf = record
+            if stat.S_ISLNK(info.st_mode):
+                links += 1
+                if links > 40:
+                    raise Refusal('SDK symlink limit')
+                target = os.readlink(component, dir_fd=directories[-1])
+                if len(os.fsencode(target)) > 4096:
+                    raise Refusal('SDK symlink size')
+                target_path = Path(target)
+                if target_path.is_absolute():
+                    if not target_path.is_relative_to(canonical_root):
+                        raise Refusal('SDK member escape')
+                    target_path = target_path.relative_to(canonical_root)
+                    names.clear()
+                    directories = [anchor]
+                pending.extendleft(reversed(target_path.parts))
+                continue
+            flags = directory_flags if pending else os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+            descriptor = opened(component, flags, directories[-1])
+            bound = os.fstat(descriptor)
+            if (info.st_dev, info.st_ino, info.st_mode, info.st_uid) != (
+                    bound.st_dev, bound.st_ino, bound.st_mode, bound.st_uid):
+                raise Refusal('SDK member changed during open')
+            if pending:
+                directories.append(descriptor)
+                names.append(component)
+                continue
+            data = bounded_read_fd(descriptor, budget)
+            observations = [requested_leaf] + [item for item in observed if item is not requested_leaf]
+            return {'path': str(root / relative), 'resolved': str(canonical_root.joinpath(*names, component)),
+                    'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest(),
+                    'trust': 'UNQUALIFIED_SDK_OBSERVATION', 'execution_authorized': False,
+                    'ownership_observed_before_read': observations,
+                    'bound_root': {'device': root_info.st_dev, 'inode': root_info.st_ino},
+                    'bound_file': {'device': bound.st_dev, 'inode': bound.st_ino},
+                    'resolution_semantics': 'Names resolved against held directory handles; later renames do not redirect reads.',
+                    'origin': 'Passive bytes only; mutable ownership and setup origin do not qualify SDK/compiler/runtime.'}
+        raise Refusal('SDK member is not a file')
 
 
 def command(argv, budget, output_limit=2 * 1024 * 1024):
@@ -232,12 +393,8 @@ def collect(report, architecture, sdk_root):
         raise Refusal('SDK root outside fixed allowlist')
     package_paths = [str(trusted(path)) for path in TOOLS.values()]
     package_paths += [str(trusted(path)) for path in [loader] + ['/usr/lib/' + triplet + '/' + name for name in libraries]]
-    for relative in ('dotnet', 'sdk/10.0.404/dotnet.runtimeconfig.json',
-                     'sdk/10.0.404/Microsoft.NETCoreSdk.BundledVersions.props',
-                     'sdk/10.0.404/Roslyn/bincore/csc.dll',
-                     'sdk/10.0.404/Roslyn/bincore/csc.deps.json',
-                     'packs/Microsoft.NETCore.App.Ref/10.0.15/data/FrameworkList.xml'):
-        report['files'].append(identity(sdk_root + '/' + relative, budget))
+    for relative in SDK_FILES:
+        report['sdk_observations'].append(sdk_observation(sdk_root, relative, budget))
     report['commands'].append(command([str(trusted(TOOLS['dpkg-query'])), '-S', *package_paths], budget))
     report['origin_limits'] = 'dpkg associations cover compiler/linker/readelf/dpkg and selected loader/libraries only; configuration/cache and SDK authentication unresolved'
     report['status'] = 'COLLECTED_UNQUALIFIED_PROFILE'
@@ -263,7 +420,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     report = {'schema': 1, 'status': 'REFUSED', 'runtime_pin': None, 'runtime_readiness': 'REFUSED',
               'first_failure': None, 'publication_uncertainty': None, 'cleanup_uncertainty': None,
-              'unknowns': UNKNOWN, 'files': [], 'commands': [], 'collector_maps_used': False}
+              'unknowns': UNKNOWN, 'files': [], 'sdk_observations': [], 'commands': [], 'collector_maps_used': False}
     def interrupted(number, frame):
         raise Interrupted('signal ' + str(number))
     previous = signal.signal(signal.SIGTERM, interrupted)
@@ -288,6 +445,8 @@ def main(argv=None):
         if hasattr(error, 'command_evidence'):
             report['commands'].append(error.command_evidence)
             report['cleanup_uncertainty'] = error.command_evidence['cleanup_uncertainty']
+        if hasattr(error, 'sdk_cleanup_uncertainty'):
+            report['cleanup_uncertainty'] = error.sdk_cleanup_uncertainty
     finally:
         try:
             if destination is None:

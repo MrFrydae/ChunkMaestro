@@ -47,6 +47,7 @@ jobs:
           test "$(uname -m)" = "$EXPECTED_ARCHITECTURE"
           { uname -a; id; cc --version; dotnet --info; git rev-parse HEAD; } > .artifacts/ci/inspector-metadata/environment.txt
           sha256sum src/ChunkMaestro.Inspector.Native/* tests/ChunkMaestro.InspectorNativeTests/* src/ChunkMaestro.PrivilegedHelper/*.cs tests/ChunkMaestro.HelperPolicyTests/*.cs > .artifacts/ci/inspector-metadata/source.sha256
+          sha256sum tooling/ci/h1_profile.py tooling/ci/test_h1_profile.py tooling/ci/h1-profile-plan.json docs/qa/inspector-h1-profile.md .github/workflows/ci.yml >> .artifacts/ci/inspector-metadata/source.sha256
       - name: Unprivileged native kernel and separate syscall-control tests
         shell: bash
         run: |

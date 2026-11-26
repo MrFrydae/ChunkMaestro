@@ -1,6 +1,7 @@
 """Inert reader/adapter tests. These do not emulate a native Linux profile."""
 import base64
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -84,6 +85,246 @@ class ReaderTests(unittest.TestCase):
         link.symlink_to(self.root, target_is_directory=True)
         with self.assertRaises(profile.Refusal):
             profile.output_namespace(link / 'output')
+
+
+class SdkObservationTests(unittest.TestCase):
+    def setUp(self):
+        self.scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(self.scratch.cleanup)
+        self.parent = Path(self.scratch.name).resolve()
+        self.root = self.parent / 'sdk'
+        self.root.mkdir()
+        self.file = self.root / 'dotnet'
+        self.file.write_bytes(b'inert SDK bytes, never execute')
+        patch = mock.patch.object(profile, 'SDK_ROOTS', (self.root,))
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def test_mutable_sdk_bytes_are_only_unqualified_observations(self):
+        self.file.chmod(0o666)
+        with mock.patch.object(profile.subprocess, 'Popen', side_effect=AssertionError('SDK must not execute')):
+            record = profile.sdk_observation(str(self.root), 'dotnet', profile.Budget())
+        self.assertEqual('UNQUALIFIED_SDK_OBSERVATION', record['trust'])
+        self.assertFalse(record['execution_authorized'])
+        self.assertEqual(hashlib.sha256(self.file.read_bytes()).hexdigest(), record['sha256'])
+        self.assertEqual('0o666', record['ownership_observed_before_read'][0]['mode'])
+
+    def test_root_outside_fixed_allowlist_refuses(self):
+        with self.assertRaisesRegex(profile.Refusal, 'fixed allowlist'):
+            profile.sdk_observation(str(self.parent), 'dotnet', profile.Budget())
+
+    def test_member_outside_fixed_allowlist_refuses(self):
+        with self.assertRaisesRegex(profile.Refusal, 'fixed allowlist'):
+            profile.sdk_observation(str(self.root), '../dotnet', profile.Budget())
+
+    def test_root_symlink_escape_refuses(self):
+        alias = self.parent / 'alias'
+        alias.symlink_to(self.root, target_is_directory=True)
+        with mock.patch.object(profile, 'SDK_ROOTS', (alias,)):
+            with self.assertRaisesRegex(profile.Refusal, 'SDK root escape'):
+                profile.sdk_observation(str(alias), 'dotnet', profile.Budget())
+
+    def test_member_symlink_escape_refuses(self):
+        outside = self.parent / 'outside'
+        outside.write_bytes(b'must not read')
+        self.file.unlink()
+        self.file.symlink_to(outside)
+        with self.assertRaisesRegex(profile.Refusal, 'SDK member escape'):
+            profile.sdk_observation(str(self.root), 'dotnet', profile.Budget())
+
+    def test_contained_member_link_is_passive_and_recorded(self):
+        target = self.root / 'target'
+        self.file.rename(target)
+        self.file.symlink_to(target)
+        record = profile.sdk_observation(str(self.root), 'dotnet', profile.Budget())
+        self.assertEqual(str(target), record['resolved'])
+        self.assertTrue(record['ownership_observed_before_read'][0]['symlink'])
+        self.assertFalse(record['execution_authorized'])
+
+    def test_sdk_aggregate_byte_limit_refuses(self):
+        with self.assertRaisesRegex(profile.Refusal, 'oversized input'):
+            profile.sdk_observation(str(self.root), 'dotnet', profile.Budget(total=1))
+
+    def test_sdk_special_file_refuses_without_execution(self):
+        self.file.unlink()
+        os.mkfifo(self.file)
+        with self.assertRaisesRegex(profile.Refusal, 'nonregular'):
+            profile.sdk_observation(str(self.root), 'dotnet', profile.Budget())
+
+    def test_sdk_observation_does_not_change_installed_trust_policy(self):
+        original = Path.lstat
+        def observed(path):
+            result = original(path)
+            if path == self.file:
+                values = list(result)
+                values[4] = 99999
+                return os.stat_result(values)
+            return result
+        with mock.patch.object(Path, 'lstat', observed):
+            with self.assertRaisesRegex(profile.Refusal, 'uid=99999'):
+                profile.trusted(self.file, roots=(self.root,))
+
+    def _rename_after_binding(self, nested):
+        relative = 'sdk/10.0.404/dotnet.runtimeconfig.json' if nested else 'dotnet'
+        file = self.root / relative
+        file.parent.mkdir(parents=True, exist_ok=True)
+        original_bytes = b'original anchored SDK bytes'
+        file.write_bytes(original_bytes)
+        pivot = file.parent if nested else self.root
+        outside = self.parent / 'outside'
+        outside.mkdir()
+        (outside / file.name).write_bytes(b'outside sentinel must not be read')
+        real_open = os.open
+        swapped = False
+        def swap(name, flags, *args, **kwargs):
+            nonlocal swapped
+            if (str(name) == file.name or Path(name) == file) and not flags & os.O_DIRECTORY and not swapped:
+                swapped = True
+                pivot.rename(pivot.with_name(pivot.name + '-held'))
+                pivot.symlink_to(outside, target_is_directory=True)
+            return real_open(name, flags, *args, **kwargs)
+        with mock.patch.object(profile.os, 'open', side_effect=swap):
+            record = profile.sdk_observation(str(self.root), relative, profile.Budget())
+        self.assertTrue(swapped)
+        self.assertEqual(hashlib.sha256(original_bytes).hexdigest(), record['sha256'])
+        self.assertEqual('UNQUALIFIED_SDK_OBSERVATION', record['trust'])
+
+    def test_root_rename_after_binding_cannot_redirect_read(self):
+        self._rename_after_binding(False)
+
+    def test_member_rename_after_binding_cannot_redirect_read(self):
+        self._rename_after_binding(True)
+
+    def test_root_swap_before_binding_refuses(self):
+        outside = self.parent / 'outside'
+        outside.mkdir()
+        (outside / 'dotnet').write_bytes(b'outside sentinel')
+        real_open = os.open
+        swapped = False
+        def swap(name, flags, *args, **kwargs):
+            nonlocal swapped
+            if str(name) == self.root.name and flags & os.O_DIRECTORY and not swapped:
+                swapped = True
+                self.root.rename(self.parent / 'held')
+                self.root.symlink_to(outside, target_is_directory=True)
+            return real_open(name, flags, *args, **kwargs)
+        with mock.patch.object(profile.os, 'open', side_effect=swap):
+            with self.assertRaises((profile.Refusal, OSError)):
+                profile.sdk_observation(str(self.root), 'dotnet', profile.Budget())
+        self.assertTrue(swapped)
+
+    def test_intermediate_swap_before_binding_refuses(self):
+        relative = 'sdk/10.0.404/dotnet.runtimeconfig.json'
+        file = self.root / relative
+        file.parent.mkdir(parents=True)
+        file.write_bytes(b'inside')
+        outside = self.parent / 'outside'
+        (outside / '10.0.404').mkdir(parents=True)
+        (outside / '10.0.404/dotnet.runtimeconfig.json').write_bytes(b'outside sentinel')
+        real_open = os.open
+        swapped = False
+        def swap(name, flags, *args, **kwargs):
+            nonlocal swapped
+            if str(name) == 'sdk' and flags & os.O_DIRECTORY and not swapped:
+                swapped = True
+                (self.root / 'sdk').rename(self.root / 'held')
+                (self.root / 'sdk').symlink_to(outside, target_is_directory=True)
+            return real_open(name, flags, *args, **kwargs)
+        with mock.patch.object(profile.os, 'open', side_effect=swap):
+            with self.assertRaises((profile.Refusal, OSError)):
+                profile.sdk_observation(str(self.root), relative, profile.Budget())
+        self.assertTrue(swapped)
+
+    def test_root_alias_to_other_fixed_root_is_bound(self):
+        alias = self.parent / 'alias'
+        alias.symlink_to(self.root, target_is_directory=True)
+        with mock.patch.object(profile, 'SDK_ROOTS', (self.root, alias)):
+            record = profile.sdk_observation(str(alias), 'dotnet', profile.Budget())
+        self.assertEqual(str(self.file), record['resolved'])
+        self.assertEqual(self.root.stat().st_ino, record['bound_root']['inode'])
+
+    def test_root_alias_cycle_is_bounded(self):
+        first = self.parent / 'first'
+        second = self.parent / 'second'
+        first.symlink_to(second, target_is_directory=True)
+        second.symlink_to(first, target_is_directory=True)
+        with mock.patch.object(profile, 'SDK_ROOTS', (first, second)):
+            with self.assertRaisesRegex(profile.Refusal, 'SDK root symlink limit'):
+                profile.sdk_observation(str(first), 'dotnet', profile.Budget())
+
+    def test_sdk_resolution_does_not_use_unanchored_realpath(self):
+        with mock.patch.object(Path, 'resolve', side_effect=AssertionError('unanchored resolution')):
+            record = profile.sdk_observation(str(self.root), 'dotnet', profile.Budget())
+        self.assertEqual(self.file.stat().st_ino, record['bound_file']['inode'])
+
+    def test_relative_parent_link_escape_refuses(self):
+        self.file.unlink()
+        outside = self.parent / 'outside'
+        outside.write_bytes(b'outside sentinel')
+        self.file.symlink_to('../outside')
+        with self.assertRaisesRegex(profile.Refusal, 'SDK member escape'):
+            profile.sdk_observation(str(self.root), 'dotnet', profile.Budget())
+
+    def test_symlink_loop_is_bounded(self):
+        self.file.unlink()
+        self.file.symlink_to('dotnet')
+        with self.assertRaisesRegex(profile.Refusal, 'SDK symlink limit'):
+            profile.sdk_observation(str(self.root), 'dotnet', profile.Budget())
+
+    def test_all_sdk_handles_close_on_read_failure(self):
+        real_open = os.open
+        descriptors = []
+        def opened(*args, **kwargs):
+            descriptor = real_open(*args, **kwargs)
+            descriptors.append(descriptor)
+            return descriptor
+        with mock.patch.object(profile.os, 'open', side_effect=opened):
+            with self.assertRaisesRegex(profile.Refusal, 'oversized input'):
+                profile.sdk_observation(str(self.root), 'dotnet', profile.Budget(total=1))
+        self.assertGreater(len(descriptors), 1)
+        for descriptor in descriptors:
+            with self.assertRaises(OSError):
+                os.fstat(descriptor)
+
+    def test_sdk_cleanup_error_preserves_first_refusal(self):
+        real_close = os.close
+        def closed(descriptor):
+            real_close(descriptor)
+            raise OSError('injected after actual close')
+        with mock.patch.object(profile.os, 'close', side_effect=closed):
+            with self.assertRaisesRegex(profile.Refusal, 'oversized input') as caught:
+                profile.sdk_observation(str(self.root), 'dotnet', profile.Budget(total=1))
+        self.assertIn('injected after actual close', caught.exception.sdk_cleanup_uncertainty)
+
+    def test_sdk_cleanup_error_never_returns_success(self):
+        real_close = os.close
+        def closed(descriptor):
+            real_close(descriptor)
+            raise OSError('injected after actual close')
+        with mock.patch.object(profile.os, 'close', side_effect=closed):
+            with self.assertRaisesRegex(profile.Refusal, 'SDK descriptor cleanup') as caught:
+                profile.sdk_observation(str(self.root), 'dotnet', profile.Budget())
+        self.assertIn('injected after actual close', caught.exception.sdk_cleanup_uncertainty)
+
+    def test_sdk_cleanup_interrupt_preserves_first_refusal(self):
+        real_close = os.close
+        def interrupted(descriptor):
+            real_close(descriptor)
+            raise KeyboardInterrupt()
+        with mock.patch.object(profile.os, 'close', side_effect=interrupted):
+            with self.assertRaisesRegex(profile.Refusal, 'oversized input') as caught:
+                profile.sdk_observation(str(self.root), 'dotnet', profile.Budget(total=1))
+        self.assertIn('KeyboardInterrupt', caught.exception.sdk_cleanup_uncertainty)
+
+    def test_sdk_cleanup_interrupt_never_returns_success(self):
+        real_close = os.close
+        def interrupted(descriptor):
+            real_close(descriptor)
+            raise KeyboardInterrupt()
+        with mock.patch.object(profile.os, 'close', side_effect=interrupted):
+            with self.assertRaises(KeyboardInterrupt) as caught:
+                profile.sdk_observation(str(self.root), 'dotnet', profile.Budget())
+        self.assertIn('KeyboardInterrupt', caught.exception.sdk_cleanup_uncertainty)
 
 
 class CommandTests(unittest.TestCase):

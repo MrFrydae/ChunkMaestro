@@ -8,10 +8,27 @@ not replace native evidence. This collector changes no product authority.
 `python3 tooling/ci/h1_profile.py --output ABSENT_NAMESPACE --architecture x86_64 --sdk-root /usr/share/dotnet`
 collects a bounded installed Linux profile as an unprivileged user. Use `aarch64`
 on native ARM64. It refuses non-Linux (77, NOTRUN), root, wrong architecture,
-missing tools/files, mutable installed paths, unexpected loader fragments,
+missing tools/files, mutable system/tool paths, unexpected loader fragments,
 unowned tool/library package associations, limits and command failures. SDK roots are a fixed
-allowlist, never a PATH or home-cache search. SDK and generated configuration/cache origins remain explicitly unresolved even
-when installed bytes have trusted ownership; hosted setup-dotnet origins require
+allowlist, never a PATH or home-cache search. SDK bytes are passive observations
+in the separate `sdk_observations` array, with requested/canonical paths, hashes
+and observed ownership/modes. They always carry `UNQUALIFIED_SDK_OBSERVATION`
+and `execution_authorized:false`, including when ownership happens to be root.
+Mutable SDK ownership is recorded without granting trust. A root link outside the
+two fixed SDK roots, or a member link outside the selected root, is refused.
+The selected canonical root is opened component by component from `/` with
+no-follow directory opens. Member resolution uses those held directory handles,
+including bounded readlink handling, and opens the final file relative to its
+held parent. Entry identities are checked against the opened handles. A rename
+after binding can retain the original object; it cannot redirect the read through
+a replacement pathname. The report records root/file device and inode identities;
+its resolved name describes this handle-based resolution, not a promise about a
+pathname's later location. Member traversal is limited to 128 steps, 40 symlinks
+and 4,096 bytes per link target. Handles close once on every exit; cleanup
+uncertainty is separate from the first refusal and prevents collection success.
+System tools and libraries retain
+their root-owned, nonmutable chain requirement. SDK and generated
+configuration/cache origins remain unresolved; hosted setup-dotnet origins require
 a separate reviewed authentication design. No runtime or downloaded tool
 is executed. Installed readelf, cc, ld and dpkg-query receive fixed version or
 static inventory arguments. No ldd, system service, network, credential lookup,
@@ -21,7 +38,8 @@ The JSON contains requested/canonical identities, SHA256 and byte counts,
 installed tool versions, kernel identity, dpkg inventory and tool/library associations, static
 ELF headers/dynamic/version requirements for a fixed loader/library set, loader
 configuration identities and selected SDK/ref/compiler metadata identities.
-This identifies installed bytes; it does not authenticate package origins or
+The `files` array contains system inputs checked by the installed trust policy;
+SDK observations do not enter that array. This identifies bytes; it does not authenticate package origins or
 reconstruct complete compiler, sysroot, OS or CLR dependencies. Config files are
 hashed without treating their contents as instructions to follow more paths.
 Installed root-owned system inputs are trusted against the unprivileged collector,

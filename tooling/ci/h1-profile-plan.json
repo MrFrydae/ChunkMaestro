@@ -18,6 +18,7 @@
   "max_packages": 4096,
   "max_loader_fragments": 32,
   "sdk_roots": ["/usr/share/dotnet", "/usr/lib/dotnet"],
+  "sdk_observation_trust": "UNQUALIFIED_SDK_OBSERVATION; passive fixed contained paths only; ownership recorded, no execution authority",
   "installed_roots": ["/usr", "/lib", "/lib64", "/etc", "/var/lib/dpkg"],
   "authority": "read-only fixture collector; no production caller",
   "maps": "not collected; collector mappings would not establish future CLR graph",
