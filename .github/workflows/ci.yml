@@ -28,6 +28,8 @@ jobs:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
         with:
           persist-credentials: false
+          # The candidate compatibility test compiles its pinned pre-candidate ABI.
+          fetch-depth: 0
       - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c
         with:
           python-version: '3.13'
@@ -71,6 +73,13 @@ jobs:
           set -eu -o pipefail
           python tooling/ci/command.py --timeout-seconds 150 -- dotnet build tests/ChunkMaestro.HelperPolicyTests/ChunkMaestro.HelperPolicyTests.csproj -c Release --no-restore 2>&1 | tee .artifacts/ci/inspector-metadata/build.log
           sha256sum tests/ChunkMaestro.HelperPolicyTests/bin/Release/net10.0/libchunkmaestro_policy_snapshot_v1.so > .artifacts/ci/inspector-metadata/test-shim.sha256
+      - name: Unprivileged candidate plain sanitizer and kernel controls
+        timeout-minutes: 4
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p .artifacts/ci/inspector-metadata/agent-candidate
+          python tooling/ci/command.py --timeout-seconds 180 -- sh tests/ChunkMaestro.InspectorNativeTests/run_agent_candidate.sh 2>&1 | tee .artifacts/ci/inspector-metadata/agent-candidate/run.log
       - name: Inspect exact additive escrow exports and binary provenance
         shell: bash
         run: |
@@ -83,7 +92,7 @@ jobs:
           # Every defined dynamic export must be a strong text symbol; do not
           # silently drop weak, IFUNC, object or other unexpected export types.
           awk 'NF < 2 || $2 != "T" {exit 1} {print $1}' "$output/escrow-dso.symbols.txt" | LC_ALL=C sort > "$output/exports.actual"
-          printf '%s\n' cm_escrow_bind cm_escrow_close cm_escrow_error cm_escrow_handback cm_escrow_measure_original_v1 cm_escrow_metadata cm_escrow_observe cm_escrow_upload | LC_ALL=C sort > "$output/exports.expected"
+          printf '%s\n' cm_agent_candidate_acquire_v1 cm_agent_candidate_measure_unqualified_v1 cm_agent_candidate_close_v1 cm_escrow_bind cm_escrow_close cm_escrow_error cm_escrow_handback cm_escrow_measure_original_v1 cm_escrow_metadata cm_escrow_observe cm_escrow_upload | LC_ALL=C sort > "$output/exports.expected"
           diff -u "$output/exports.expected" "$output/exports.actual"
           if grep -F cm_control_ "$output/escrow-dso.symbols.txt"; then exit 1; fi
       - name: Execute Linux ownership, cancellation and private handoff cases

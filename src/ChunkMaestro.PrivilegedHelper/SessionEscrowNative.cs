@@ -30,7 +30,7 @@ internal interface ISessionEscrowAbi
     int Close(ref nint session);
 }
 
-internal sealed partial class SessionEscrowNative : ISessionEscrowAbi, IOriginalMeasurementAbi
+internal sealed partial class SessionEscrowNative : ISessionEscrowAbi, IOriginalMeasurementAbi, IAgentCandidateAbi
 {
     internal static readonly SessionEscrowNative Instance = new();
 
@@ -76,6 +76,29 @@ internal sealed partial class SessionEscrowNative : ISessionEscrowAbi, IOriginal
         PolicySnapshotNative.RequireLinux();
         return MeasureOriginalNative(borrowed, out value);
     }
+
+    public int AcquireCandidate(int borrowed, out nint candidate, out AgentCandidateDiagnosticsAbi diagnostics)
+    {
+        PolicySnapshotNative.RequireLinux();
+        return AcquireCandidateNative(borrowed, out candidate, out diagnostics);
+    }
+
+    public int MeasureCandidate(nint candidate, out OriginalMeasurementAbi value, out AgentCandidateDiagnosticsAbi diagnostics)
+    {
+        return MeasureCandidateNative(candidate, out value, out diagnostics);
+    }
+
+    public int CloseCandidate(ref nint candidate, out AgentCandidateDiagnosticsAbi diagnostics)
+    {
+        return CloseCandidateNative(ref candidate, out diagnostics);
+    }
+
+    [LibraryImport(InspectorNativeLibrary.SessionEscrow, EntryPoint = "cm_agent_candidate_acquire_v1")]
+    private static partial int AcquireCandidateNative(int borrowed, out nint candidate, out AgentCandidateDiagnosticsAbi diagnostics);
+    [LibraryImport(InspectorNativeLibrary.SessionEscrow, EntryPoint = "cm_agent_candidate_measure_unqualified_v1")]
+    private static partial int MeasureCandidateNative(nint candidate, out OriginalMeasurementAbi value, out AgentCandidateDiagnosticsAbi diagnostics);
+    [LibraryImport(InspectorNativeLibrary.SessionEscrow, EntryPoint = "cm_agent_candidate_close_v1")]
+    private static partial int CloseCandidateNative(ref nint candidate, out AgentCandidateDiagnosticsAbi diagnostics);
 
     [LibraryImport(InspectorNativeLibrary.SessionEscrow, EntryPoint = "cm_escrow_measure_original_v1")]
     private static partial int MeasureOriginalNative(int borrowed, out OriginalMeasurementAbi value);

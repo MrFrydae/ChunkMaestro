@@ -8,6 +8,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 EXPORTS = (
+    'cm_agent_candidate_acquire_v1', 'cm_agent_candidate_measure_unqualified_v1',
+    'cm_agent_candidate_close_v1',
     'cm_escrow_bind', 'cm_escrow_close', 'cm_escrow_error',
     'cm_escrow_handback', 'cm_escrow_measure_original_v1',
     'cm_escrow_metadata', 'cm_escrow_observe', 'cm_escrow_upload',
@@ -29,7 +31,7 @@ def workflow_guard():
 
 
 class EscrowExportsTests(unittest.TestCase):
-    def run_guard(self, extra=(), expected_type='T'):
+    def run_guard(self, extra=(), expected_type='T', omit=()):
         with tempfile.TemporaryDirectory(prefix='escrow-exports-') as directory:
             root = Path(directory)
             commands = root / 'commands'
@@ -48,7 +50,7 @@ esac
                 executable = commands / name
                 executable.write_text(script)
                 executable.chmod(0o700)
-            symbols = [(name, expected_type) for name in EXPORTS] + list(extra)
+            symbols = [(name, expected_type) for name in EXPORTS if name not in omit] + list(extra)
             posix = root / 'posix-symbols.txt'
             bsd = root / 'bsd-symbols.txt'
             posix.write_text(''.join(f'{name} {kind} 1000 20\n' for name, kind in symbols))
@@ -68,6 +70,12 @@ esac
     def test_exact_strong_surface_passes(self):
         code, output = self.run_guard()
         self.assertEqual(0, code, output)
+
+    def test_missing_candidate_export_refuses_old_or_partial_surface(self):
+        for missing in EXPORTS[:3]:
+            with self.subTest(missing=missing):
+                code, output = self.run_guard(omit=(missing,))
+                self.assertNotEqual(0, code, output)
 
     def test_unexpected_export_types_refuse(self):
         for kind in ('T', 'W', 'w', 'i', 'I', 'D', 'R', 'B', 'V', 'A'):
