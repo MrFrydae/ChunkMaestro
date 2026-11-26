@@ -124,6 +124,13 @@ jobs:
           python tooling/ci/command.py --timeout-seconds 30 -- /bin/sh -c 'exec dotnet "$1" -preEnumerateTheories -noColor -list full/json > "$2"' policy-discovery "$assembly" "$results/discovery.json" > "$results/discovery-supervisor.log"
           python tooling/ci/command.py --timeout-seconds 120 -- dotnet "$assembly" -preEnumerateTheories -failSkips -noColor -xml "$results/results.xml" -trx "$results/results.trx" -ctrf "$results/results.ctrf.json" 2>&1 | tee .artifacts/ci/inspector-metadata/managed.log
           python tooling/ci/policy_runner.py "$results"
+      - name: Collect unqualified native H1 prerequisite profile
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          set -eu -o pipefail
+          mkdir -p .artifacts/ci/inspector-metadata/h1-profile-parent
+          python tooling/ci/command.py --timeout-seconds 100 -- python -B tooling/ci/h1_profile.py --output .artifacts/ci/inspector-metadata/h1-profile-parent/profile --architecture '${{ matrix.architecture }}' --sdk-root /usr/share/dotnet 2>&1 | tee .artifacts/ci/inspector-metadata/h1-profile-parent/supervisor.log
       - name: Retain native diagnostics including failures
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
