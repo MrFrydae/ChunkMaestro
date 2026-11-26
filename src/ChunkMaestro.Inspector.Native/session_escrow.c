@@ -15,6 +15,9 @@
 #include <time.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include "peer.h"
 
 /* Public sd-daemon.h ABI only, independently declared, no LGPL implementation
  * copied. Link public SONAME; required symbol versions fail closed at load. */
@@ -490,4 +493,336 @@ const char *cm_escrow_error(cm_escrow_result result)
         case CM_ESCROW_REPLAY: return "escrow-attempt-consumed";
         default: return "escrow-unknown";
     }
+}
+
+/* Private equivalent of peer.c validation; its existing ABI remains untouched. */
+static cm_peer_result candidate_peer_result(cm_peer_state state, int error)
+{
+    cm_peer_result value = {state, error};
+    return value;
+}
+
+static cm_peer_result candidate_peer_failed(void)
+{
+    int error = errno;
+    cm_peer_state state = CM_PEER_UNAVAILABLE;
+    if (error == EBADF || error == ENOTSOCK || error == ENOTCONN || error == EINVAL)
+    {
+        state = CM_PEER_INVALID;
+    }
+    return candidate_peer_result(state, error);
+}
+
+static cm_peer_result candidate_peer_query(int fd, cm_peer_facts *out)
+{
+    if (out == NULL)
+    {
+        return candidate_peer_result(CM_PEER_INVALID, 0);
+    }
+    memset(out, 0, sizeof(*out));
+    if (fd < 0)
+    {
+        return candidate_peer_result(CM_PEER_INVALID, 0);
+    }
+    int type = 0;
+    socklen_t length = sizeof(type);
+    if (getsockopt(fd, SOL_SOCKET, SO_TYPE, &type, &length) != 0)
+    {
+        return candidate_peer_failed();
+    }
+    if (length != sizeof(type) || type != SOCK_STREAM)
+    {
+        return candidate_peer_result(CM_PEER_INVALID, 0);
+    }
+    int listening = 0;
+    length = sizeof(listening);
+    if (getsockopt(fd, SOL_SOCKET, SO_ACCEPTCONN, &listening, &length) != 0)
+    {
+        return candidate_peer_failed();
+    }
+    if (length != sizeof(listening) || listening != 0)
+    {
+        return candidate_peer_result(CM_PEER_INVALID, 0);
+    }
+    struct sockaddr_storage address;
+    memset(&address, 0, sizeof(address));
+    length = sizeof(address);
+    if (getsockname(fd, (struct sockaddr *)&address, &length) != 0)
+    {
+        return candidate_peer_failed();
+    }
+    if (length < sizeof(sa_family_t) || length > sizeof(struct sockaddr_un) ||
+        address.ss_family != AF_UNIX)
+    {
+        return candidate_peer_result(CM_PEER_INVALID, 0);
+    }
+    memset(&address, 0, sizeof(address));
+    length = sizeof(address);
+    if (getpeername(fd, (struct sockaddr *)&address, &length) != 0)
+    {
+        return candidate_peer_failed();
+    }
+    if (length < sizeof(sa_family_t) || length > sizeof(struct sockaddr_un) ||
+        address.ss_family != AF_UNIX)
+    {
+        return candidate_peer_result(CM_PEER_INVALID, 0);
+    }
+    struct ucred credentials;
+    memset(&credentials, 0, sizeof(credentials));
+    length = sizeof(credentials);
+    if (getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &credentials, &length) != 0)
+    {
+        return candidate_peer_failed();
+    }
+    if (length != sizeof(credentials) || credentials.pid <= 0 ||
+        credentials.uid == (uid_t)-1 || credentials.gid == (gid_t)-1)
+    {
+        return candidate_peer_result(CM_PEER_INVALID, 0);
+    }
+    out->pid = credentials.pid;
+    out->uid = credentials.uid;
+    out->gid = credentials.gid;
+    return candidate_peer_result(CM_PEER_FACTS, 0);
+}
+
+#ifndef SO_PEERPIDFD
+#define SO_PEERPIDFD 77
+#endif
+_Static_assert(sizeof(cm_agent_candidate_diagnostics_v1) == 32, "diagnostics size");
+_Static_assert(_Alignof(cm_agent_candidate_diagnostics_v1) == 4, "diagnostics alignment");
+#define CM_DIAG_OFFSET(field, n) _Static_assert(offsetof(cm_agent_candidate_diagnostics_v1, field) == n, "diagnostics offset")
+CM_DIAG_OFFSET(version, 0);
+CM_DIAG_OFFSET(first_stage, 4);
+CM_DIAG_OFFSET(first_code, 8);
+CM_DIAG_OFFSET(first_errno, 12);
+CM_DIAG_OFFSET(cleanup_stage, 16);
+CM_DIAG_OFFSET(cleanup_code, 20);
+CM_DIAG_OFFSET(cleanup_errno, 24);
+CM_DIAG_OFFSET(ownership_flags, 28);
+struct cm_agent_candidate_v1
+{
+    int owned;
+    cm_agent_candidate_diagnostics_v1 diagnostics;
+};
+static void candidate_failure(cm_agent_candidate_diagnostics_v1 *d, unsigned stage,
+    cm_escrow_result code, int error)
+{
+    if (d->first_code == 0)
+    {
+        d->first_stage = stage;
+        d->first_code = code;
+        d->first_errno = error > 0 && error <= 4095 ? error : 0;
+    }
+}
+static void candidate_cleanup(cm_agent_candidate_diagnostics_v1 *d, int fd, unsigned stage)
+{
+    if (fd >= 0 && close(fd) < 0)
+    {
+        int error = errno;
+        candidate_failure(d, stage, CM_ESCROW_IO, error);
+        if (d->cleanup_code == 0)
+        {
+            d->cleanup_stage = stage;
+            d->cleanup_code = CM_ESCROW_IO;
+            d->cleanup_errno = error > 0 && error <= 4095 ? error : 0;
+        }
+        d->ownership_flags |= 2;
+        if (error <= 0 || error > 4095)
+        {
+            d->ownership_flags |= 4;
+        }
+    }
+}
+static void candidate_profile(cm_agent_candidate_diagnostics_v1 *d, int fd,
+    cm_escrow_identity *value, unsigned stage)
+{
+    cm_escrow_result code = identity_profile(fd, value, 1);
+    int error = code == CM_ESCROW_IO ? errno : 0;
+    if (code != CM_ESCROW_OK)
+    {
+        candidate_failure(d, stage, code, error);
+    }
+}
+static void candidate_liveness(cm_agent_candidate_diagnostics_v1 *d, int fd)
+{
+    struct pollfd p = { .fd = fd, .events = POLLIN };
+    int count = poll(&p, 1, 0);
+    int error = count < 0 ? errno : 0;
+    if (count != 0 || p.revents != 0)
+    {
+        candidate_failure(d, 8, count < 0 ? CM_ESCROW_IO : CM_ESCROW_IDENTITY, error);
+    }
+}
+cm_escrow_result cm_agent_candidate_close_v1(cm_agent_candidate_v1 **candidate,
+    cm_agent_candidate_diagnostics_v1 *diagnostics)
+{
+    if (!diagnostics)
+    {
+        return CM_ESCROW_INVALID;
+    }
+    cm_agent_candidate_diagnostics_v1 d = { .version = 1 };
+    if (!candidate)
+    {
+        candidate_failure(&d, 1, CM_ESCROW_INVALID, 0);
+    }
+    else if (*candidate)
+    {
+        cm_agent_candidate_v1 *s = *candidate;
+        d = s->diagnostics;
+        *candidate = NULL;
+        int owned = s->owned;
+        s->owned = -1;
+        d.ownership_flags &= ~1u;
+        candidate_cleanup(&d, owned, 12);
+        free(s);
+    }
+    *diagnostics = d;
+    return (cm_escrow_result)d.first_code;
+}
+cm_escrow_result cm_agent_candidate_acquire_v1(int borrowed, cm_agent_candidate_v1 **out,
+    cm_agent_candidate_diagnostics_v1 *diagnostics)
+{
+    if (!diagnostics)
+    {
+        return CM_ESCROW_INVALID;
+    }
+    cm_agent_candidate_diagnostics_v1 d = { .version = 1 };
+    if (!out)
+    {
+        candidate_failure(&d, 1, CM_ESCROW_INVALID, 0);
+        *diagnostics = d;
+        return CM_ESCROW_INVALID;
+    }
+    *out = NULL;
+    cm_peer_facts facts;
+    cm_peer_result peer = candidate_peer_query(borrowed, &facts);
+    if (peer.state != CM_PEER_FACTS)
+    {
+        candidate_failure(&d, 3, peer.state == CM_PEER_INVALID ? CM_ESCROW_INVALID : CM_ESCROW_UNAVAILABLE, peer.error);
+        *diagnostics = d;
+        return (cm_escrow_result)d.first_code;
+    }
+    cm_agent_candidate_v1 *s = calloc(1, sizeof(*s));
+    if (!s)
+    {
+        int error = errno;
+        candidate_failure(&d, 2, CM_ESCROW_IO, error);
+        *diagnostics = d;
+        return (cm_escrow_result)d.first_code;
+    }
+    s->owned = -1;
+    int acquired = -1;
+    socklen_t length = sizeof(acquired);
+    int status = getsockopt(borrowed, SOL_SOCKET, SO_PEERPIDFD, &acquired, &length);
+    int error = status != 0 ? errno : 0;
+    if (status != 0)
+    {
+        candidate_failure(&d, 4, CM_ESCROW_UNAVAILABLE, error);
+        if (error == EFAULT || error <= 0 || error > 4095 || acquired != -1)
+        {
+            d.ownership_flags |= 4;
+        }
+    }
+    else
+    {
+        /* Claim known returned integer immediately, including descriptor zero. */
+        s->owned = acquired;
+        if (length != sizeof(acquired) || acquired < 0)
+        {
+            candidate_failure(&d, 5, CM_ESCROW_INVALID, 0);
+            if (acquired < 0)
+            {
+                d.ownership_flags |= 4;
+            }
+        }
+        else
+        {
+            int flags = fcntl(s->owned, F_GETFD);
+            error = flags < 0 ? errno : 0;
+            if (flags < 0 || flags != FD_CLOEXEC)
+            {
+                candidate_failure(&d, 6, flags < 0 ? CM_ESCROW_IO : CM_ESCROW_IDENTITY, error);
+            }
+            if (d.first_code == 0)
+            {
+                cm_escrow_identity value = {0};
+                candidate_profile(&d, s->owned, &value, 7);
+            }
+            if (d.first_code == 0)
+            {
+                candidate_liveness(&d, s->owned);
+            }
+        }
+    }
+    if (d.first_code != 0)
+    {
+        int owned = s->owned;
+        s->owned = -1;
+        candidate_cleanup(&d, owned, 12);
+        free(s);
+    }
+    else
+    {
+        d.ownership_flags |= 1;
+        s->diagnostics = d;
+        *out = s;
+    }
+    *diagnostics = d;
+    return (cm_escrow_result)d.first_code;
+}
+cm_escrow_result cm_agent_candidate_measure_unqualified_v1(cm_agent_candidate_v1 *s,
+    cm_original_measurement_v1 *out, cm_agent_candidate_diagnostics_v1 *diagnostics)
+{
+    if (!diagnostics)
+    {
+        return CM_ESCROW_INVALID;
+    }
+    cm_agent_candidate_diagnostics_v1 d = s ? s->diagnostics :
+        (cm_agent_candidate_diagnostics_v1){ .version = 1 };
+    if (out)
+    {
+        memset(out, 0, sizeof(*out));
+    }
+    if (!s || !out)
+    {
+        candidate_failure(&d, 1, CM_ESCROW_INVALID, 0);
+    }
+    if (d.first_code == 0)
+    {
+        candidate_liveness(&d, s->owned);
+    }
+    cm_escrow_identity value = {0};
+    if (d.first_code == 0)
+    {
+        int owned = fcntl(s->owned, F_DUPFD_CLOEXEC, 3);
+        int error = owned < 0 ? errno : 0;
+        if (owned < 0)
+        {
+            candidate_failure(&d, 9, CM_ESCROW_IO, error);
+            if (error <= 0 || error > 4095)
+            {
+                d.ownership_flags |= 4;
+            }
+        }
+        else
+        {
+            candidate_profile(&d, owned, &value, 10);
+            candidate_cleanup(&d, owned, 11);
+        }
+    }
+    if (d.first_code == 0 && d.cleanup_code == 0 && (d.ownership_flags & 6) == 0)
+    {
+        out->device = value.device;
+        out->inode = value.inode;
+        out->flags = value.flags;
+        out->architecture = CM_ARCHITECTURE;
+        out->normalization = 1;
+        out->source = 1;
+    }
+    if (s)
+    {
+        s->diagnostics = d;
+    }
+    *diagnostics = d;
+    return (cm_escrow_result)d.first_code;
 }

@@ -71,4 +71,28 @@ cm_escrow_result cm_escrow_handback(const char *epoch, const cm_escrow_identity 
 cm_escrow_result cm_escrow_observe(cm_escrow *session, unsigned role, cm_escrow_observation *out);
 cm_escrow_result cm_escrow_close(cm_escrow **session);
 const char *cm_escrow_error(cm_escrow_result result);
+/* PRIVATE UNQUALIFIED connection-time peer only. Borrowed accepted socket must
+ * have trusted provenance/exclusion supplied by enclosing process (absent here).
+ * Mandatory nonoverlapping diagnostics; synchronous completion, not atomic32.
+ * No concurrent access, raw descriptor getter, authority or production caller. */
+typedef struct cm_agent_candidate_v1 cm_agent_candidate_v1;
+typedef struct
+{
+    uint32_t version;
+    uint32_t first_stage;
+    uint32_t first_code;
+    int32_t first_errno;
+    uint32_t cleanup_stage;
+    uint32_t cleanup_code;
+    int32_t cleanup_errno;
+    uint32_t ownership_flags;
+} cm_agent_candidate_diagnostics_v1;
+cm_escrow_result cm_agent_candidate_acquire_v1(int borrowed, cm_agent_candidate_v1 **out,
+    cm_agent_candidate_diagnostics_v1 *diagnostics);
+cm_escrow_result cm_agent_candidate_measure_unqualified_v1(cm_agent_candidate_v1 *candidate,
+    cm_original_measurement_v1 *out, cm_agent_candidate_diagnostics_v1 *diagnostics);
+/* Missing diagnostics leaves owner untouched; pointer-to-NULL is idempotent.
+ * Consumes token before sole close (including EINTR); final record survives free. */
+cm_escrow_result cm_agent_candidate_close_v1(cm_agent_candidate_v1 **candidate,
+    cm_agent_candidate_diagnostics_v1 *diagnostics);
 #endif

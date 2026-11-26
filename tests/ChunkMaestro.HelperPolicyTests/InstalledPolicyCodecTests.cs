@@ -347,7 +347,8 @@ public sealed class InstalledPolicyCodecTests
                         DllImportAttribute escrowImport = Assert.IsType<DllImportAttribute>(method.GetCustomAttribute<DllImportAttribute>());
                         Assert.Equal("chunkmaestro_session_escrow_v1", escrowImport.Value);
                         Assert.True(escrowImport.EntryPoint is "cm_escrow_bind" or "cm_escrow_metadata" or
-                            "cm_escrow_upload" or "cm_escrow_handback" or "cm_escrow_observe" or "cm_escrow_close" or "cm_escrow_measure_original_v1");
+                            "cm_escrow_upload" or "cm_escrow_handback" or "cm_escrow_observe" or "cm_escrow_close" or "cm_escrow_measure_original_v1" or
+                            "cm_agent_candidate_acquire_v1" or "cm_agent_candidate_measure_unqualified_v1" or "cm_agent_candidate_close_v1");
                         Assert.True(escrowImports.Add(escrowImport.EntryPoint!));
                         continue;
                     }
@@ -360,7 +361,7 @@ public sealed class InstalledPolicyCodecTests
             }
         }
         Assert.Equal(3, journalImports.Count);
-        Assert.Equal(7, escrowImports.Count);
+        Assert.Equal(10, escrowImports.Count);
         Assert.All(typeof(ParsedData).GetProperties(BindingFlags.NonPublic | BindingFlags.Instance), property => Assert.Null(property.SetMethod));
         foreach (string proof in new[]
         {
