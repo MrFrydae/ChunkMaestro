@@ -30,7 +30,7 @@ internal interface ISessionEscrowAbi
     int Close(ref nint session);
 }
 
-internal sealed partial class SessionEscrowNative : ISessionEscrowAbi
+internal sealed partial class SessionEscrowNative : ISessionEscrowAbi, IOriginalMeasurementAbi
 {
     internal static readonly SessionEscrowNative Instance = new();
 
@@ -71,6 +71,14 @@ internal sealed partial class SessionEscrowNative : ISessionEscrowAbi
         return CloseNative(ref session);
     }
 
+    public int MeasureOriginal(int borrowed, out OriginalMeasurementAbi value)
+    {
+        PolicySnapshotNative.RequireLinux();
+        return MeasureOriginalNative(borrowed, out value);
+    }
+
+    [LibraryImport(InspectorNativeLibrary.SessionEscrow, EntryPoint = "cm_escrow_measure_original_v1")]
+    private static partial int MeasureOriginalNative(int borrowed, out OriginalMeasurementAbi value);
     [LibraryImport(InspectorNativeLibrary.SessionEscrow, EntryPoint = "cm_escrow_bind")]
     private static partial int BindNative(int worker, int agent, byte[] epoch, out nint session);
     [LibraryImport(InspectorNativeLibrary.SessionEscrow, EntryPoint = "cm_escrow_handback")]

@@ -9,6 +9,24 @@ namespace ChunkMaestro.HelperPolicyTests;
 [Collection(ProcessDescriptorTestGroup.Name)]
 public sealed class SessionEscrowLinuxAbiTests
 {
+    [Fact(Skip = "Real Linux pidfs ABI required; no native proof on macOS", SkipUnless = nameof(IsLinux))]
+    public void OriginalMeasurementUsesRealAbiAndLeavesBorrowedOriginalUsable()
+    {
+        Assert.NotEqual(0u, GetUid());
+        using SafeFileHandle original = Pidfd(Environment.ProcessId);
+        SessionEscrowOriginalMeasurement measured = SessionEscrowOriginalMeasurement.MeasureOriginalUnqualified(original,
+            TestContext.Current.CancellationToken);
+        Assert.NotEqual(0ul, measured.Device);
+        Assert.NotEqual(0ul, measured.Inode);
+        Assert.Equal(2u, measured.Flags);
+        Assert.Equal(RuntimeInformation.ProcessArchitecture == Architecture.X64 ? (byte) 1 : (byte) 2, measured.Architecture);
+        Assert.Equal(1, measured.Normalization);
+        Assert.Equal(1, measured.Source);
+        Assert.False(original.IsClosed);
+        Assert.Equal(measured, SessionEscrowOriginalMeasurement.MeasureOriginalUnqualified(original,
+            TestContext.Current.CancellationToken));
+    }
+
     private const string Epoch = "0123456789abcdef0123456789abcdef";
     public static bool IsLinux => OperatingSystem.IsLinux();
 

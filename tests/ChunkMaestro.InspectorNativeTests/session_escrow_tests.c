@@ -4,6 +4,8 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <pthread.h>
+#include <dirent.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -30,12 +32,23 @@ static int fail_dup, fail_stat, fail_fs, fail_close, notify_fail, barrier_fail;
 static int thread_fd, legacy, alias, poll_error, poll_events, listen_count;
 static int returned_names, clock_fail, nonblocking_origin;
 static uint64_t now_usec;
+static int fail_getfl, extra_flags, bad_device, bad_inode, bad_rdev, bad_mode;
+static unsigned getfl_calls, stat_calls, fs_calls;
+static char order[16];
+static unsigned order_count;
+static void step(char value)
+{
+    if (order_count < sizeof(order) - 1) order[order_count++] = value;
+}
 static int origin[64];
 static void reset(void)
 {
     memset(live, 0, sizeof(live));
     memset(origin, 0, sizeof(origin));
     next_fd = 10;
+    fail_getfl = extra_flags = bad_device = bad_inode = bad_rdev = bad_mode = 0;
+    getfl_calls = stat_calls = fs_calls = order_count = 0;
+    memset(order, 0, sizeof(order));
     closes = sends = barriers = listens = dup_calls = polls = clocks = 0;
     fail_dup = fail_stat = fail_fs = fail_close = notify_fail = barrier_fail = 0;
     thread_fd = legacy = alias = poll_error = poll_events = returned_names = clock_fail = 0;
@@ -47,6 +60,11 @@ int cm_control_fcntl(int fd, int cmd, ...)
 {
     if (cmd == F_DUPFD_CLOEXEC)
     {
+        step('D');
+        va_list args;
+        va_start(args, cmd);
+        assert(va_arg(args, int) == 3);
+        va_end(args);
         ++dup_calls;
         if ((int)dup_calls == fail_dup)
         {
@@ -61,7 +79,10 @@ int cm_control_fcntl(int fd, int cmd, ...)
     }
     if (cmd == F_GETFL)
     {
-        return O_RDWR | TEST_RAW_LARGEFILE | (thread_fd ? O_EXCL : 0) |
+        step('G');
+        ++getfl_calls;
+        if (fail_getfl) return -1;
+        return extra_flags | O_RDWR | TEST_RAW_LARGEFILE | (thread_fd ? O_EXCL : 0) |
             ((origin[fd] ? origin[fd] : fd) == nonblocking_origin ? O_NONBLOCK : 0);
     }
     assert(cmd == F_SETFD);
@@ -69,19 +90,25 @@ int cm_control_fcntl(int fd, int cmd, ...)
 }
 int cm_control_fstat(int fd, struct stat *st)
 {
+    step('S');
+    ++stat_calls;
     if (fail_stat)
     {
         errno = EINTR;
         return -1;
     }
     memset(st, 0, sizeof(*st));
-    st->st_dev = 7;
-    st->st_ino = (ino_t)(alias ? 42 : (origin[fd] ? origin[fd] : fd));
+    st->st_dev = bad_device ? 0 : 7;
+    st->st_rdev = bad_rdev ? 1 : 0;
+    st->st_mode = bad_mode ? S_IFREG : 0600;
+    st->st_ino = (ino_t)(bad_inode ? 0 : alias ? 42 : (origin[fd] ? origin[fd] : fd));
     return 0;
 }
 int cm_control_fstatfs(int fd, struct statfs *fs)
 {
     (void)fd;
+    step('F');
+    ++fs_calls;
     if (fail_fs)
     {
         errno = EINTR;
@@ -93,6 +120,7 @@ int cm_control_fstatfs(int fd, struct statfs *fs)
 }
 int cm_control_close(int fd)
 {
+    step('C');
     assert(fd >= 0 && fd < 64 && live[fd]);
     live[fd] = 0;
     ++closes;
@@ -173,8 +201,74 @@ static cm_escrow *bound(void)
     assert(cm_escrow_bind(40, 41, epoch, &s) == CM_ESCROW_OK && s);
     return s;
 }
+static void measurement_controls(void)
+{
+    cm_original_measurement_v1 value;
+    reset();
+    assert(cm_escrow_measure_original_v1(40, NULL) == CM_ESCROW_INVALID);
+    memset(&value, 0xa5, sizeof(value));
+    assert(cm_escrow_measure_original_v1(-1, &value) == CM_ESCROW_INVALID);
+    cm_original_measurement_v1 zero = {0};
+    assert(memcmp(&value, &zero, sizeof(value)) == 0 && dup_calls == 0 && closes == 0);
+    for (int fault = 0; fault <= 14; ++fault)
+    {
+        for (int close_fault = 0; close_fault <= 1; ++close_fault)
+        {
+            reset();
+            fail_close = close_fault;
+            if (fault == 1) fail_dup = 1;
+            if (fault == 2) fail_getfl = 1;
+            if (fault == 3) fail_stat = 1;
+            if (fault == 4) fail_fs = 1;
+            if (fault == 5) legacy = 1;
+            if (fault == 6) thread_fd = 1;
+            if (fault == 7) bad_device = 1;
+            if (fault == 8) bad_inode = 1;
+            if (fault == 9) bad_rdev = 1;
+            if (fault == 10) bad_mode = 1;
+            if (fault == 11) extra_flags = O_APPEND;
+            if (fault == 12) extra_flags = TEST_RAW_LARGEFILE == 0100000 ? 0400000 : 0100000;
+            if (fault == 13) nonblocking_origin = 40;
+            if (fault == 14) extra_flags = O_WRONLY;
+            memset(&value, 0xa5, sizeof(value));
+            cm_escrow_result result = cm_escrow_measure_original_v1(40, &value);
+            cm_escrow_result expected = fault >= 5 && fault != 13 ? CM_ESCROW_IDENTITY :
+                ((fault >= 1 && fault <= 4) || close_fault) ? CM_ESCROW_IO : CM_ESCROW_OK;
+            assert(result == expected);
+            assert(dup_calls == 1 && closes == (fault == 1 ? 0u : 1u));
+            assert(strcmp(order, fault == 1 ? "D" : fault == 2 ? "DGC" :
+                fault == 3 ? "DGSC" : "DGSFC") == 0);
+            if (result != CM_ESCROW_OK)
+            {
+                assert(memcmp(&value, &zero, sizeof(value)) == 0);
+            }
+            else
+            {
+                assert(value.device == 7 && value.inode == 40);
+                assert(value.flags == (fault == 13 ? 0x802u : 2u));
+                assert(value.architecture == (TEST_RAW_LARGEFILE == 0100000 ? 1 : 2));
+                assert(value.normalization == 1 && value.source == 1 && value.reserved == 0);
+            }
+            empty();
+            assert(sends == 0 && barriers == 0 && listens == 0 && polls == 0 && clocks == 0);
+        }
+    }
+    /* Every unsupported single bit must refuse; own raw bit alone normalizes. */
+    for (unsigned bit = 2; bit < 31; ++bit)
+    {
+        reset();
+        extra_flags = (int)(1u << bit);
+        cm_escrow_result result = cm_escrow_measure_original_v1(40, &value);
+        assert(result == ((extra_flags == TEST_RAW_LARGEFILE || extra_flags == O_NONBLOCK) ?
+            CM_ESCROW_OK : CM_ESCROW_IDENTITY));
+        assert(closes == 1);
+        empty();
+    }
+    puts("PASS: original measurement ordered fault/profile/zero/once-close controls (model only)");
+}
 static void controls(void)
 {
+    measurement_controls();
     unsigned cases = 0;
     for (int fault = 1; fault <= 6; ++fault)
     {
@@ -346,6 +440,32 @@ static void controls(void)
     printf("PASS: %u deterministic escrow cases (not manager/kernel acceptance)\n", cases);
 }
 #else
+static void descriptor_set(unsigned char out[4096])
+{
+    memset(out, 0, 4096);
+    DIR *directory = opendir("/proc/self/fd");
+    assert(directory);
+    struct dirent *entry;
+    while ((entry = readdir(directory)) != NULL)
+    {
+        if (entry->d_name[0] == '.') continue;
+        char *end = NULL;
+        long fd = strtol(entry->d_name, &end, 10);
+        assert(end && *end == '\0' && fd >= 0 && fd < 4096);
+        if (fd != dirfd(directory)) out[fd] = 1;
+    }
+    assert(closedir(directory) == 0);
+}
+static void *nonleader_measurement(void *unused)
+{
+    (void)unused;
+    int thread = (int)syscall(SYS_pidfd_open, syscall(SYS_gettid), O_EXCL);
+    assert(thread >= 0);
+    cm_original_measurement_v1 value;
+    assert(cm_escrow_measure_original_v1(thread, &value) == CM_ESCROW_IDENTITY);
+    assert(close(thread) == 0);
+    return NULL;
+}
 static void kernel(void)
 {
     /* No notify calls: never contact the host manager. */
@@ -386,6 +506,20 @@ static void kernel(void)
     assert(result == CM_ESCROW_OK && s);
     cm_escrow_identity before[2], after[2];
     assert(cm_escrow_metadata(s, before) == CM_ESCROW_OK);
+    cm_original_measurement_v1 measured;
+    assert(cm_escrow_measure_original_v1(worker, &measured) == CM_ESCROW_OK);
+    assert(measured.device == before[0].device && measured.inode == before[0].inode && measured.flags == before[0].flags);
+    unsigned char descriptors_before[4096], descriptors_after[4096];
+    descriptor_set(descriptors_before);
+    for (unsigned attempt = 0; attempt < 32; ++attempt)
+    {
+        assert(cm_escrow_measure_original_v1(worker, &measured) == CM_ESCROW_OK);
+    }
+    descriptor_set(descriptors_after);
+    assert(memcmp(descriptors_before, descriptors_after, sizeof(descriptors_before)) == 0);
+    assert(fcntl(worker, F_GETFD) >= 0);
+    int retained = fcntl(worker, F_DUPFD_CLOEXEC, 3);
+    assert(retained >= 3);
     close(worker);
     close(agent);
     cm_escrow_observation observed;
@@ -400,6 +534,10 @@ static void kernel(void)
     assert(waitpid(child, NULL, 0) == child);
     assert(cm_escrow_observe(s, 0, &observed) == CM_ESCROW_OK);
     assert(observed.readable && observed.hup);
+    cm_original_measurement_v1 dead;
+    assert(cm_escrow_measure_original_v1(retained, &dead) == CM_ESCROW_OK);
+    assert(memcmp(&measured, &dead, sizeof(dead)) == 0);
+    close(retained);
     assert(cm_escrow_metadata(s, after) == CM_ESCROW_OK);
     assert(memcmp(before, after, sizeof(before)) == 0);
     assert(cm_escrow_close(&s) == CM_ESCROW_OK && !s);
@@ -413,11 +551,16 @@ static void kernel(void)
     int thread = (int)syscall(SYS_pidfd_open, getpid(), O_EXCL);
     assert(thread >= 0);
     assert(cm_escrow_bind(thread, self, epoch, &s) == CM_ESCROW_IDENTITY && !s);
+    assert(cm_escrow_measure_original_v1(thread, &measured) == CM_ESCROW_IDENTITY);
     close(thread);
+    pthread_t nonleader;
+    assert(pthread_create(&nonleader, NULL, nonleader_measurement, NULL) == 0);
+    assert(pthread_join(nonleader, NULL) == 0);
     close(self);
     int regular = open("/dev/null", O_RDWR | O_CLOEXEC);
     assert(regular >= 0);
     assert(cm_escrow_bind(regular, regular, epoch, &s) == CM_ESCROW_IDENTITY && !s);
+    assert(cm_escrow_measure_original_v1(regular, &measured) == CM_ESCROW_IDENTITY);
     close(regular);
     puts("PASS: original pidfs ownership, live/zombie/reaped observations, duplicate/thread/type refusal");
 }

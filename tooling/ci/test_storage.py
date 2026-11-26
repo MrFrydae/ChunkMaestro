@@ -2,6 +2,7 @@
 import copy
 import hashlib
 import json
+import re
 from pathlib import Path
 import tempfile
 import unittest
@@ -48,6 +49,19 @@ class DirectStorageTests(unittest.TestCase):
         with patch.object(storage.PLAN.__class__, 'read_text', return_value=json.dumps(data)):
             with self.assertRaises(ValueError):
                 storage.plan('Darwin')
+
+    def test_workflow_runs_every_partition_once_on_each_controller_os(self):
+        workflow = (storage.ROOT / '.github/workflows/ci.yml').read_text()
+        section = workflow.split('\n  storage:\n', 1)[1].split('\n  volume:\n', 1)[0]
+        rows = re.findall(r'^\s*- \{os: ([\w.-]+), system: (Windows|Darwin), group: ([\w-]+)\}$',
+                          section, re.MULTILINE)
+        actual = [(system, group) for _, system, group in rows]
+        expected = {(system, group) for system in ('Windows', 'Darwin') for group in storage.plan(system)}
+        self.assertEqual(len(expected), len(actual))
+        self.assertEqual(expected, set(actual))
+        self.assertTrue(all((system == 'Windows' and os_name == 'windows-2025') or
+                            (system == 'Darwin' and os_name == 'macos-15-intel')
+                            for os_name, system, _ in rows))
 
     def test_duplicate_partition_refused(self):
         data = json.loads(storage.PLAN.read_text())

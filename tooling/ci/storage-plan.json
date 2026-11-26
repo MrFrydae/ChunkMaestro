@@ -13,7 +13,9 @@
       "InitialEndpointConstraintTests",
       "IntegerEndpointPortTests",
       "PersistedIdentityTests",
-      "SchemaReferenceContractTests",
+      "SchemaReferenceContractTests"
+    ],
+    "identity-integrity": [
       "ControllerIdentityMetadataTests",
       "ControllerIdentityLifecycleTests"
     ],
